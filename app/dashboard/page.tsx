@@ -295,6 +295,7 @@ export default function DashboardPage() {
                       }`} />
                     ) : (
                       <CheckCircle2 className={`w-5 h-5 ${
+                        alert.type === 'warning' ? 'text-yellow-600' :
                         alert.type === 'error' ? 'text-red-600' :
                         alert.type === 'success' ? 'text-green-600' :
                         'text-blue-600'
