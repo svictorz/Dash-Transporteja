@@ -1,16 +1,38 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, Truck } from 'lucide-react'
+import { useState, FormEvent, useEffect, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { Eye, EyeOff } from 'lucide-react'
+import { supabase } from '@/lib/supabase/client'
+import { validateEmail } from '@/lib/utils/validation'
+import { useAuthState } from '@/lib/hooks/useAuthState'
+import { BRAND_NAME } from '@/lib/constants/brand'
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const senhaRedefinida = searchParams.get('senha_redefinida') === '1'
+  const { session, loading: authLoading } = useAuthState()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const redirectAttemptedRef = useRef(false)
+  const [showForm, setShowForm] = useState(false)
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setShowForm(true), 1500)
+    return () => window.clearTimeout(t)
+  }, [])
+
+  useEffect(() => {
+    if (authLoading || !session) return
+    if (redirectAttemptedRef.current) return
+    redirectAttemptedRef.current = true
+    router.replace('/dashboard')
+  }, [authLoading, session, router])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -21,25 +43,74 @@ export default function LoginPage() {
       return
     }
 
+    const emailCheck = validateEmail(email.trim())
+    if (!emailCheck.valid) {
+      setError(emailCheck.error ?? 'E-mail inválido')
+      return
+    }
+
     setIsLoading(true)
 
-    // Simulação de autenticação
-    // TODO: Substituir por autenticação real
-    setTimeout(() => {
-      try {
-        // Salvar usuário no localStorage (substituir por autenticação real)
-        localStorage.setItem('transporteja-user', JSON.stringify({
-          name: email.split('@')[0],
-          email: email
-        }))
-        
+    try {
+      // Autenticação com Supabase
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+
+      if (authError) {
+        setError(authError.message || 'Erro ao fazer login. Verifique suas credenciais.')
         setIsLoading(false)
-        router.push('/dashboard')
-      } catch (err) {
-        setError('Erro ao fazer login. Tente novamente.')
-        setIsLoading(false)
+        return
       }
-    }, 1000)
+
+      if (data.user) {
+        // Buscar dados do usuário na tabela users
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .single()
+
+        if (userError && userError.code !== 'PGRST116') {
+          // PGRST116 = no rows returned, vamos criar o registro
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: data.user.id,
+              email: data.user.email!,
+              name: data.user.email?.split('@')[0] || null,
+              role: 'comercial'
+            })
+
+          if (insertError) {
+            console.error('Erro ao criar perfil:', insertError)
+          }
+        }
+
+        // Aguardar um pouco para garantir que a sessão foi estabelecida
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // Redirecionar usando replace para evitar histórico de navegação
+        // Não usar window.location.href para evitar refresh completo
+        router.replace('/dashboard')
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erro ao fazer login. Tente novamente.')
+      setIsLoading(false)
+    }
+  }
+
+  // Mostrar formulário após 1,5s ou quando a sessão terminar de carregar (evita travar em "Verificando sessão...")
+  if (authLoading && !showForm) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Verificando sessão...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -63,20 +134,19 @@ export default function LoginPage() {
           <div className="bg-white rounded-lg shadow-lg p-6 md:p-8">
             {/* Logo and Header */}
             <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-orange-400 via-orange-500 to-orange-600 rounded-lg mb-3">
-                <Truck className="w-8 h-8 text-white" />
+              <div className="inline-flex items-center justify-center mb-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/logo-header.png"
+                  alt={BRAND_NAME}
+                  className="h-12 w-auto max-w-[220px] object-contain"
+                />
               </div>
-              
-              <h1 className="text-xl font-bold text-gray-900 mb-1">
-                TRANSPORTEJA
-              </h1>
-              
               <h2 className="text-lg font-bold text-gray-800 mb-1">
-                BEM-VINDO AO TRANSPORTEJA
+                Bem-vindo — {BRAND_NAME}
               </h2>
-              
               <p className="text-xs text-gray-500">
-                Acesse seu painel e libere todo o poder do TRANSPORTEJA
+                Acesse seu painel
               </p>
             </div>
 
@@ -89,10 +159,12 @@ export default function LoginPage() {
                 </label>
                 <input
                   id="email"
+                  name="email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter Your Email"
+                  placeholder="seu@email.com"
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-400 focus:border-gray-400"
                   required
                 />
@@ -106,10 +178,12 @@ export default function LoginPage() {
                 <div className="relative">
                   <input
                     id="password"
+                    name="password"
                     type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter Your Password"
+                    placeholder="••••••••"
                     className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-400 focus:border-gray-400"
                     required
                   />
@@ -117,6 +191,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
                   >
                     {showPassword ? (
                       <EyeOff className="w-4 h-4" />
@@ -129,13 +204,20 @@ export default function LoginPage() {
 
               {/* Forgot Password Link */}
               <div className="text-right">
-                <a
-                  href="#"
+                <Link
+                  href="/login/recuperar-senha"
                   className="text-sm text-gray-600 hover:text-gray-800"
                 >
                   Esqueceu a Senha?
-                </a>
+                </Link>
               </div>
+
+              {/* Success: senha redefinida */}
+              {senhaRedefinida && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-700">Senha redefinida com sucesso. Faça login com sua nova senha.</p>
+                </div>
+              )}
 
               {/* Error Message */}
               {error && (
@@ -152,8 +234,8 @@ export default function LoginPage() {
               >
                 {isLoading ? (
                   <span className="flex items-center justify-center gap-2">
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Entrando...
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" aria-hidden />
+                    Entrando…
                   </span>
                 ) : (
                   'Login'
@@ -165,12 +247,12 @@ export default function LoginPage() {
             <div className="mt-5 text-center">
               <p className="text-sm text-gray-600">
                 Não tem uma conta?{' '}
-                <a
-                  href="#"
-                  className="text-gray-900 hover:text-gray-800"
+                <Link
+                  href="/register"
+                  className="text-gray-900 font-medium hover:underline"
                 >
                   Registrar
-                </a>
+                </Link>
               </p>
             </div>
           </div>

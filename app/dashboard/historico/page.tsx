@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { History, Calendar, Filter, Download } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { History, Calendar, Filter, Download, Loader2 } from 'lucide-react'
+import { supabase } from '@/lib/supabase/client'
 
 interface HistoryRecord {
   id: string
@@ -13,50 +14,64 @@ interface HistoryRecord {
 
 export default function HistoricoPage() {
   const [history, setHistory] = useState<HistoryRecord[]>([])
+  const [loading, setLoading] = useState(true)
   const [filterType, setFilterType] = useState<'all' | 'checkin' | 'route' | 'system'>('all')
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
+  const loadHistory = useCallback(async () => {
+    try {
+      setLoading(true)
 
-    // Carregar histórico de check-ins
-    const stored = localStorage.getItem('checkin-history')
-    const historyRecords: HistoryRecord[] = []
+      const { data: checkIns, error: checkInsError } = await supabase
+        .from('checkins')
+        .select('*')
+        .order('timestamp', { ascending: false })
 
-    if (stored) {
-      try {
-        const checkIns = JSON.parse(stored)
-        checkIns.forEach((checkIn: any) => {
+      if (checkInsError) throw checkInsError
+
+      const historyRecords: HistoryRecord[] = []
+
+      if (checkIns) {
+        checkIns.forEach((checkIn) => {
           historyRecords.push({
             id: checkIn.id,
             type: 'checkin',
             title: `Check-in de ${checkIn.type === 'pickup' ? 'Coleta' : 'Entrega'}`,
-            description: checkIn.address || `Frete #${checkIn.freightId || 'N/A'}`,
+            description: checkIn.address || `Frete #${checkIn.freight_id || 'N/A'}`,
             timestamp: checkIn.timestamp
           })
         })
-      } catch (error) {
-        console.error('Erro ao carregar histórico:', error)
       }
+
+      historyRecords.sort((a, b) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )
+
+      setHistory(historyRecords)
+    } catch (error) {
+      console.error('Erro ao carregar histórico:', error)
+    } finally {
+      setLoading(false)
     }
-
-    // Adicionar registros de sistema (mock)
-    historyRecords.push(
-      {
-        id: 'sys-1',
-        type: 'system',
-        title: 'Sistema iniciado',
-        description: 'Sistema TransporteJá foi iniciado',
-        timestamp: new Date().toISOString()
-      }
-    )
-
-    // Ordenar por data (mais recente primeiro)
-    historyRecords.sort((a, b) => 
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    )
-
-    setHistory(historyRecords)
   }, [])
+
+  useEffect(() => {
+    loadHistory()
+  }, [loadHistory])
+
+  // Realtime: atualizar histórico quando checkins mudarem
+  useEffect(() => {
+    const channel = supabase
+      .channel('historico-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'checkins' },
+        () => loadHistory()
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [loadHistory])
 
   const filteredHistory = filterType === 'all' 
     ? history 
@@ -155,7 +170,12 @@ export default function HistoricoPage() {
 
       {/* Lista de Histórico */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        {filteredHistory.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto text-gray-400" />
+            <p className="text-gray-500 mt-2">Carregando histórico...</p>
+          </div>
+        ) : filteredHistory.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <History className="w-16 h-16 mx-auto mb-4 opacity-50" />
             <p>Nenhum registro encontrado</p>

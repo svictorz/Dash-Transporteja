@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import SidebarTransporteja from '@/components/transporteja/SidebarTransporteja'
 import TopBarTransporteja from '@/components/transporteja/TopBarTransporteja'
+import { useAuthState } from '@/lib/hooks/useAuthState'
 
 export default function DashboardLayout({
   children,
@@ -11,25 +12,18 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const { session, loading: authLoading } = useAuthState()
   const [mounted, setMounted] = useState(false)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     setMounted(true)
-    // Verificar autenticação
-    try {
-      const user = localStorage.getItem('transporteja-user')
-      if (!user) {
-        router.push('/login')
-      } else {
-        setIsAuthenticated(true)
-      }
-    } catch (error) {
-      console.error('Erro ao verificar autenticação:', error)
-      router.push('/login')
-    }
-  }, [router])
+  }, [])
+
+  useEffect(() => {
+    if (!mounted || authLoading) return
+    if (!session) router.replace('/login')
+  }, [mounted, authLoading, session, router])
 
   // Fechar menu mobile ao redimensionar para desktop
   useEffect(() => {
@@ -42,12 +36,12 @@ export default function DashboardLayout({
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  if (!mounted || !isAuthenticated) {
+  if (!mounted || authLoading || !session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-slate-800 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
+          <div className="w-16 h-16 border-4 border-slate-800 border-t-transparent rounded-full animate-spin mx-auto mb-4" aria-hidden />
+          <p className="text-gray-600">{authLoading ? 'Verificando autenticação…' : 'Redirecionando para login…'}</p>
         </div>
       </div>
     )

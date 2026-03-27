@@ -3,18 +3,20 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "clean": "node scripts/clean-next.mjs",
     "dev": "next dev -p 3003",
     "build": "next build",
     "start": "next start -p 3003",
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.89.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "autoprefixer": "^10.4.16",
     "framer-motion": "^12.23.26",
     "jspdf": "^3.0.4",
-    "lottie-react": "^2.4.1",
     "lucide-react": "^0.294.0",
     "next": "^14.0.0",
     "postcss": "^8.4.31",
@@ -26,6 +28,7 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "eslint": "^8.51.0",
-    "eslint-config-next": "^14.0.0"
+    "eslint-config-next": "^14.0.0",
+    "vercel": "^50.25.0"
   }
 }

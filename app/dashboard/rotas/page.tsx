@@ -1,288 +1,69 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Route, MapPin, ArrowRight, X, Truck, User, Calendar, Package, Send, Copy, Check, Building2, Phone, Mail, Plus, Search, ChevronDown } from 'lucide-react'
+import { Route, MapPin, ArrowRight, X, Truck, User, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Camera, CheckCircle2, RefreshCw, Upload, Eye } from 'lucide-react'
+import { useRoutes } from '@/lib/hooks/useRoutes'
+import { useDrivers } from '@/lib/hooks/useDrivers'
+import { useClients } from '@/lib/hooks/useClients'
+import { Route as RouteType, CreateRouteData } from '@/lib/services/routes'
+import { Driver } from '@/lib/services/drivers'
+import { Client } from '@/lib/services/clients'
+import CEPInput from '@/components/transporteja/CEPInput'
+import { CEPData } from '@/lib/services/cep'
+import { supabase } from '@/lib/supabase/client'
+import { generateFreightCode } from '@/lib/utils/freight-code'
+import { useAuthState } from '@/lib/hooks/useAuthState'
+import { canCreateRoute } from '@/lib/services/credits'
+import { useDebouncedRouteDistance } from '@/lib/hooks/useDebouncedRouteDistance'
 
-interface RouteData {
-  id: string
-  freightId: number
-  driver: string
-  driverCNH: string
-  driverPhone: string
-  origin: string
-  originState: string
-  originAddress?: string
-  destination: string
-  destinationState: string
-  destinationAddress?: string
-  vehicle: string
-  plate: string
-  weight: string
-  estimatedDelivery: string
-  pickupDate: string
-  status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered'
-  companyName: string
-  companyResponsible: string
-  companyPhone: string
-  companyEmail: string
-  companyAddress: string
-  companyCity: string
-  companyState: string
+// Interface para exibição (com dados do motorista e cliente)
+interface RouteDisplayData extends RouteType {
+  driver?: Driver
+  client?: Client
 }
 
-const MOCK_ROUTES: RouteData[] = [
-  {
-    id: '1',
-    freightId: 875412903,
-    driver: 'José Silva',
-    driverCNH: 'CNH: 12345678901',
-    driverPhone: '11999991111',
-    origin: 'São Paulo',
-    originState: 'SP',
-    originAddress: 'Rua das Flores, 123 - Centro',
-    destination: 'Curitiba',
-    destinationState: 'PR',
-    destinationAddress: 'Av. Principal, 456 - Batel',
-    vehicle: 'Volvo FH16',
-    plate: 'ABC-1234',
-    weight: '15.500 kg',
-    estimatedDelivery: '05 Out, 2025',
-    pickupDate: '03 Out, 2025',
-    status: 'inTransit',
-    companyName: 'Transportes ABC Ltda',
-    companyResponsible: 'João da Silva',
-    companyPhone: '(11) 3333-4444',
-    companyEmail: 'contato@transportesabc.com.br',
-    companyAddress: 'Rua Comercial, 789',
-    companyCity: 'São Paulo',
-    companyState: 'SP'
-  },
-  {
-    id: '2',
-    freightId: 458729654,
-    driver: 'Antônio Santos',
-    driverCNH: 'CNH: 98765432109',
-    driverPhone: '11999992222',
-    origin: 'Rio de Janeiro',
-    originState: 'RJ',
-    originAddress: 'Av. Atlântica, 1000 - Copacabana',
-    destination: 'Belo Horizonte',
-    destinationState: 'MG',
-    destinationAddress: 'Rua da Bahia, 2000 - Centro',
-    vehicle: 'Mercedes Actros',
-    plate: 'DEF-5678',
-    weight: '22.300 kg',
-    estimatedDelivery: '05 Out, 2025',
-    pickupDate: '04 Out, 2025',
-    status: 'delivered',
-    companyName: 'Logística XYZ S.A.',
-    companyResponsible: 'Maria Santos',
-    companyPhone: '(21) 2222-3333',
-    companyEmail: 'vendas@logisticaxyz.com.br',
-    companyAddress: 'Av. Brasil, 500',
-    companyCity: 'Rio de Janeiro',
-    companyState: 'RJ'
-  },
-  {
-    id: '3',
-    freightId: 913562478,
-    driver: 'Roberto Costa',
-    driverCNH: 'CNH: 11223344556',
-    driverPhone: '11999993333',
-    origin: 'Porto Alegre',
-    originState: 'RS',
-    originAddress: 'Rua dos Andradas, 300 - Centro Histórico',
-    destination: 'Florianópolis',
-    destinationState: 'SC',
-    destinationAddress: 'Av. Beira Mar, 1500 - Centro',
-    vehicle: 'MAN TGX',
-    plate: 'GHI-9012',
-    weight: '18.750 kg',
-    estimatedDelivery: '05 Out, 2025',
-    pickupDate: '04 Out, 2025',
-    status: 'pickedUp',
-    companyName: 'Fretes Sul Ltda',
-    companyResponsible: 'Carlos Oliveira',
-    companyPhone: '(51) 3333-5555',
-    companyEmail: 'fretes@fretessul.com.br',
-    companyAddress: 'Rua Independência, 600',
-    companyCity: 'Porto Alegre',
-    companyState: 'RS'
-  },
-  {
-    id: '4',
-    freightId: 782345612,
-    driver: 'Carlos Oliveira',
-    driverCNH: 'CNH: 55667788990',
-    driverPhone: '11999994444',
-    origin: 'Brasília',
-    originState: 'DF',
-    originAddress: 'SQN 305, Bloco A - Asa Norte',
-    destination: 'Goiânia',
-    destinationState: 'GO',
-    destinationAddress: 'Av. T-4, 2000 - Setor Bueno',
-    vehicle: 'Scania R450',
-    plate: 'JKL-3456',
-    weight: '12.800 kg',
-    estimatedDelivery: '06 Out, 2025',
-    pickupDate: '05 Out, 2025',
-    status: 'pending',
-    companyName: 'Cargas Centro-Oeste',
-    companyResponsible: 'Ana Paula',
-    companyPhone: '(61) 3444-6666',
-    companyEmail: 'contato@cargasco.com.br',
-    companyAddress: 'SCS Quadra 1, Bloco A',
-    companyCity: 'Brasília',
-    companyState: 'DF'
-  },
-  {
-    id: '5',
-    freightId: 654123789,
-    driver: 'Paulo Mendes',
-    driverCNH: 'CNH: 99887766554',
-    driverPhone: '11999995555',
-    origin: 'Salvador',
-    originState: 'BA',
-    originAddress: 'Av. Sete de Setembro, 1000 - Centro',
-    destination: 'Recife',
-    destinationState: 'PE',
-    destinationAddress: 'Rua da Aurora, 500 - Boa Vista',
-    vehicle: 'Iveco Stralis',
-    plate: 'MNO-7890',
-    weight: '20.100 kg',
-    estimatedDelivery: '06 Out, 2025',
-    pickupDate: '05 Out, 2025',
-    status: 'inTransit',
-    companyName: 'Transportes Nordeste',
-    companyResponsible: 'Roberto Alves',
-    companyPhone: '(71) 3555-7777',
-    companyEmail: 'vendas@transnordeste.com.br',
-    companyAddress: 'Av. ACM, 2000',
-    companyCity: 'Salvador',
-    companyState: 'BA'
-  },
-  {
-    id: '6',
-    freightId: 987654321,
-    driver: 'Fernando Lima',
-    driverCNH: 'CNH: 44332211000',
-    driverPhone: '11999996666',
-    origin: 'Fortaleza',
-    originState: 'CE',
-    originAddress: 'Av. Beira Mar, 2000 - Meireles',
-    destination: 'Natal',
-    destinationState: 'RN',
-    destinationAddress: 'Av. Eng. Roberto Freire, 3000 - Ponta Negra',
-    vehicle: 'Volvo FH',
-    plate: 'PQR-2468',
-    weight: '16.900 kg',
-    estimatedDelivery: '05 Out, 2025',
-    pickupDate: '03 Out, 2025',
-    status: 'delivered',
-    companyName: 'Fretes Ceará Express',
-    companyResponsible: 'Fernanda Costa',
-    companyPhone: '(85) 3666-8888',
-    companyEmail: 'contato@fretesceara.com.br',
-    companyAddress: 'Rua Ildefonso Albano, 1000',
-    companyCity: 'Fortaleza',
-    companyState: 'CE'
-  }
-]
-
-interface Driver {
+interface CheckInRecord {
   id: string
-  name: string
-  phone: string
-  email: string
-  vehicle: string
-  plate: string
-  cnh: string
+  type: 'pickup' | 'delivery'
+  timestamp: string
+  photo_url: string
+  coords_lat: number
+  coords_lng: number
+  address?: string
 }
 
-interface Company {
-  id: string
-  companyName: string
-  responsible: string
-  phone: string
-  email: string
-  address: string
-  city: string
-  state: string
-}
+type DocumentKey =
+  | 'driverDocs'
+  | 'freteDocs'
 
-const MOCK_DRIVERS: Driver[] = [
-  {
-    id: '1',
-    name: 'José Silva',
-    phone: '11999991111',
-    email: 'jose@transporteja.com',
-    vehicle: 'Mercedes-Benz Actros',
-    plate: 'ABC-1234',
-    cnh: '12345678901'
-  },
-  {
-    id: '2',
-    name: 'Antônio Santos',
-    phone: '11999992222',
-    email: 'antonio@transporteja.com',
-    vehicle: 'Volvo FH',
-    plate: 'DEF-5678',
-    cnh: '98765432109'
-  },
-  {
-    id: '3',
-    name: 'Roberto Costa',
-    phone: '11999993333',
-    email: 'roberto@transporteja.com',
-    vehicle: 'Scania R450',
-    plate: 'GHI-9012',
-    cnh: '11223344556'
-  },
-  {
-    id: '4',
-    name: 'Carlos Oliveira',
-    phone: '11999994444',
-    email: 'carlos@transporteja.com',
-    vehicle: 'Iveco Stralis',
-    plate: 'JKL-3456',
-    cnh: '55667788990'
-  },
-  {
-    id: '5',
-    name: 'Paulo Mendes',
-    phone: '11999995555',
-    email: 'paulo@transporteja.com',
-    vehicle: 'MAN TGX',
-    plate: 'MNO-7890',
-    cnh: '99887766554'
-  },
-  {
-    id: '6',
-    name: 'Fernando Lima',
-    phone: '11999996666',
-    email: 'fernando@transporteja.com',
-    vehicle: 'Volvo FH16',
-    plate: 'PQR-2468',
-    cnh: '44332211000'
-  }
-]
+const EMPTY_DOCUMENT_URLS: Record<DocumentKey, string | null> = {
+  driverDocs: null,
+  freteDocs: null,
+}
 
 export default function RotasPage() {
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inTransit' | 'pickedUp' | 'delivered'>('all')
-  const [routes, setRoutes] = useState<RouteData[]>(MOCK_ROUTES)
-  const [selectedRoute, setSelectedRoute] = useState<RouteData | null>(null)
-  const [linkCopied, setLinkCopied] = useState(false)
+  const { session } = useAuthState()
+  const { routes, loading: routesLoading, error: routesError, createRoute, updateRoute, deleteRoute } = useRoutes()
+  const { drivers, loading: driversLoading } = useDrivers()
+  const { clients, loading: clientsLoading } = useClients()
+  
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'>('all')
+  const [selectedRoute, setSelectedRoute] = useState<RouteDisplayData | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [companies, setCompanies] = useState<Company[]>([])
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingRoute, setEditingRoute] = useState<RouteType | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [checkIns, setCheckIns] = useState<CheckInRecord[]>([])
+  const [loadingCheckIns, setLoadingCheckIns] = useState(false)
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
+  const [documentUrls, setDocumentUrls] = useState<Record<DocumentKey, string | null>>(EMPTY_DOCUMENT_URLS)
+  const [uploadingDocument, setUploadingDocument] = useState<DocumentKey | null>(null)
   
   // Estados para seleção de motorista e empresa
-  const [driverSearch, setDriverSearch] = useState('')
-  const [companySearch, setCompanySearch] = useState('')
-  const [showDriverDropdown, setShowDriverDropdown] = useState(false)
-  const [showCompanyDropdown, setShowCompanyDropdown] = useState(false)
+  const [companyInput, setCompanyInput] = useState('')
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null)
-  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
+  const [selectedCompany, setSelectedCompany] = useState<Client | null>(null)
   
   // Estado do formulário
   const [formData, setFormData] = useState({
@@ -293,62 +74,71 @@ export default function RotasPage() {
     destinationState: '',
     destinationAddress: '',
     weight: '',
+    nfValue: '',
+    observation: '',
     estimatedDelivery: '',
     pickupDate: ''
   })
+  const [originCEP, setOriginCEP] = useState('')
+  const [destinationCEP, setDestinationCEP] = useState('')
 
-  // Carregar empresas do localStorage
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    
-    const stored = localStorage.getItem('transporteja-clients')
-    if (stored) {
-      try {
-        const clientsData = JSON.parse(stored)
-        const companiesData: Company[] = clientsData.map((client: any) => ({
-          id: client.id,
-          companyName: client.companyName,
-          responsible: client.responsible,
-          phone: client.whatsapp || '',
-          email: client.email,
-          address: client.address,
-          city: client.city,
-          state: client.state
-        }))
-        setCompanies(companiesData)
-      } catch (error) {
-        console.error('Erro ao carregar empresas:', error)
-      }
+  const origemGeoQuery = useMemo(() => {
+    if (!formData.origin.trim() || !formData.originState.trim()) return ''
+    return [formData.origin.trim(), formData.originState.trim(), formData.originAddress.trim()]
+      .filter(Boolean)
+      .join(', ')
+  }, [formData.origin, formData.originState, formData.originAddress])
+
+  const destinoGeoQuery = useMemo(() => {
+    if (!formData.destination.trim() || !formData.destinationState.trim()) return ''
+    return [formData.destination.trim(), formData.destinationState.trim(), formData.destinationAddress.trim()]
+      .filter(Boolean)
+      .join(', ')
+  }, [formData.destination, formData.destinationState, formData.destinationAddress])
+
+  const modalGeoActive = (showCreateModal || showEditModal) && !!origemGeoQuery && !!destinoGeoQuery
+
+  const routeDistance = useDebouncedRouteDistance(origemGeoQuery, destinoGeoQuery, modalGeoActive, 1000)
+
+  const displayedDistanceKm = useMemo(() => {
+    if (routeDistance.distanciaKm != null) return routeDistance.distanciaKm
+    if (showEditModal && editingRoute?.distance_km != null && editingRoute.distance_km > 0) {
+      return editingRoute.distance_km
     }
-  }, [])
+    return null
+  }, [routeDistance.distanciaKm, showEditModal, editingRoute?.distance_km])
 
-  // Fechar dropdowns ao clicar fora
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement
-      if (!target.closest('.dropdown-container')) {
-        setShowDriverDropdown(false)
-        setShowCompanyDropdown(false)
-      }
-    }
+  // Combinar rotas com dados de motoristas e clientes
+  const routesWithDetails = useMemo(() => {
+    return routes.map(route => {
+      const driver = drivers.find(d => d.id === route.driver_id)
+      const client = clients.find(c => 
+        c.company_name === route.company_name || 
+        (route.company_email && c.email === route.company_email)
+      )
+      
+      return {
+        ...route,
+        driver,
+        client
+      } as RouteDisplayData
+    })
+  }, [routes, drivers, clients])
 
-    if (showDriverDropdown || showCompanyDropdown) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [showDriverDropdown, showCompanyDropdown])
-
-  const filteredRoutes = routes.filter(route => {
+  const filteredRoutes = useMemo(() => {
+    return routesWithDetails.filter(route => {
     return filterStatus === 'all' || route.status === filterStatus
   })
+  }, [routesWithDetails, filterStatus])
 
-  const statusCounts = {
+  const statusCounts = useMemo(() => ({
     all: routes.length,
     pending: routes.filter(r => r.status === 'pending').length,
     inTransit: routes.filter(r => r.status === 'inTransit').length,
     pickedUp: routes.filter(r => r.status === 'pickedUp').length,
-    delivered: routes.filter(r => r.status === 'delivered').length
-  }
+    delivered: routes.filter(r => r.status === 'delivered').length,
+    cancelled: routes.filter(r => r.status === 'cancelled').length
+  }), [routes])
 
   const getStatusDisplay = (status: string) => {
     switch (status) {
@@ -390,124 +180,381 @@ export default function RotasPage() {
     }
   }
 
-  const handleViewMore = (route: RouteData) => {
+  const selectedRouteRef = useRef(selectedRoute)
+  useEffect(() => {
+    selectedRouteRef.current = selectedRoute
+  }, [selectedRoute])
+
+  const syncPhotosFromStorage = useCallback(async (route: RouteDisplayData) => {
+    if (!route.id || !route.freight_id || !route.driver_id) return
+    try {
+      await fetch('/api/admin/sync-photos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          route_id: route.id,
+          freight_id: route.freight_id,
+          driver_id: route.driver_id
+        })
+      })
+    } catch { /* silent */ }
+  }, [])
+
+  const fetchCheckInsForRoute = useCallback(async (route: RouteDisplayData) => {
+    try {
+      await syncPhotosFromStorage(route)
+
+      const freightId = route.freight_id
+      const driverId = route.driver_id
+
+      if (!driverId) {
+        const { data } = await supabase
+          .from('checkins')
+          .select('id, type, timestamp, photo_url, coords_lat, coords_lng, address')
+          .eq('freight_id', freightId)
+          .order('timestamp', { ascending: false })
+        setCheckIns(data || [])
+        return
+      }
+
+      const [ciResult, routesResult] = await Promise.all([
+        supabase
+          .from('checkins')
+          .select('id, type, timestamp, photo_url, coords_lat, coords_lng, address, freight_id, route_id')
+          .eq('driver_id', driverId)
+          .order('timestamp', { ascending: false }),
+        supabase
+          .from('routes')
+          .select('id, freight_id, created_at')
+          .eq('driver_id', driverId)
+          .order('created_at', { ascending: true })
+      ])
+
+      const allCheckins = ciResult.data || []
+      const allRoutes = routesResult.data || []
+
+      if (allRoutes.length === 0) {
+        setCheckIns([])
+        return
+      }
+
+      const routeTimestamps = allRoutes.map(r => ({
+        ...r,
+        createdMs: new Date(r.created_at).getTime()
+      }))
+
+      const toFix: { id: string; correctFreightId: number | null; correctRouteId: string | null }[] = []
+      const myCheckins: typeof allCheckins = []
+
+      for (const ci of allCheckins) {
+        const ciTime = new Date(ci.timestamp).getTime()
+
+        let bestRoute: typeof routeTimestamps[number] | null = null
+        for (const rt of routeTimestamps) {
+          if (rt.createdMs <= ciTime) {
+            bestRoute = rt
+          } else {
+            break
+          }
+        }
+
+        const correctFreightId = bestRoute ? bestRoute.freight_id : null
+        const correctRouteId = bestRoute ? bestRoute.id : null
+
+        if (ci.freight_id !== correctFreightId || ci.route_id !== correctRouteId) {
+          toFix.push({ id: ci.id, correctFreightId, correctRouteId })
+        }
+
+        if (correctFreightId === freightId) {
+          myCheckins.push(ci)
+        }
+      }
+
+      if (toFix.length > 0) {
+        try {
+          await fetch('/api/admin/fix-checkins', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fixes: toFix })
+          })
+        } catch { /* silent */ }
+      }
+
+      myCheckins.sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )
+      setCheckIns(myCheckins)
+    } catch {
+      setCheckIns([])
+    }
+  }, [syncPhotosFromStorage])
+
+  const handleViewMore = async (route: RouteDisplayData) => {
     setSelectedRoute(route)
-    setLinkCopied(false)
+    setDocumentUrls(EMPTY_DOCUMENT_URLS)
+    setUploadingDocument(null)
+    setLoadingCheckIns(true)
+    try {
+      await fetchCheckInsForRoute(route)
+    } finally {
+      setLoadingCheckIns(false)
+    }
+  }
+
+  // Realtime: atualizar check-ins do frete selecionado quando houver novos ou alterações
+  useEffect(() => {
+    const channel = supabase
+      .channel('rotas-checkins-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'checkins' },
+        () => {
+          const route = selectedRouteRef.current
+          if (route) {
+            fetchCheckInsForRoute(route)
+          }
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [fetchCheckInsForRoute])
+
+  const handleOpenEdit = (route: RouteDisplayData) => {
+    setEditingRoute(route)
+    // Buscar motorista e cliente relacionados
+    const driver = drivers.find(d => d.id === route.driver_id)
+    const client = clients.find(c => 
+      c.company_name === route.company_name || 
+      (route.company_email && c.email === route.company_email)
+    )
+    setSelectedDriver(driver || null)
+    setSelectedCompany(client || null)
+    setCompanyInput(client?.company_name || '')
+    setFormData({
+      origin: route.origin,
+      originState: route.origin_state,
+      originAddress: route.origin_address || '',
+      destination: route.destination,
+      destinationState: route.destination_state,
+      destinationAddress: route.destination_address || '',
+      weight: route.weight,
+      nfValue: route.nf_value != null ? String(route.nf_value).replace('.', ',') : '',
+      observation: route.observation || '',
+      estimatedDelivery: route.estimated_delivery,
+      pickupDate: route.pickup_date
+    })
+    setShowEditModal(true)
+  }
+
+  const handleDeleteRoute = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta rota?')) return
+    
+    try {
+      await deleteRoute(id)
+    } catch (err: any) {
+      alert(`Erro ao excluir: ${err.message}`)
+    }
   }
 
   const handleCloseModal = () => {
     setSelectedRoute(null)
-    setLinkCopied(false)
+    setCheckIns([])
+    setSelectedPhoto(null)
+    setDocumentUrls(EMPTY_DOCUMENT_URLS)
+    setUploadingDocument(null)
   }
 
-  const getTrackingLink = (freightId: number) => {
-    if (typeof window === 'undefined') return ''
-    return `${window.location.origin}/rastreio/driver?freight=${freightId}`
-  }
+  const handleUploadDocument = async (documentKey: DocumentKey, file: File | null) => {
+    if (!file || !selectedRoute) return
 
-  const handleCopyLink = () => {
-    if (selectedRoute) {
-      const link = getTrackingLink(selectedRoute.freightId)
-      navigator.clipboard.writeText(link)
-      setLinkCopied(true)
-      setTimeout(() => setLinkCopied(false), 2000)
+    const isImage = file.type.startsWith('image/')
+    if (!isImage) {
+      alert('Envie apenas imagem (JPG, PNG, WEBP).')
+      return
+    }
+
+    try {
+      setUploadingDocument(documentKey)
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const filePath = `documents/${selectedRoute.id}/${documentKey}-${Date.now()}-${safeName}`
+      const { data, error } = await supabase.storage
+        .from('checkin-photos')
+        .upload(filePath, file, { cacheControl: '3600', upsert: true })
+
+      if (error) throw error
+
+      const { data: publicData } = supabase.storage
+        .from('checkin-photos')
+        .getPublicUrl(data.path)
+
+      setDocumentUrls((prev) => ({ ...prev, [documentKey]: publicData.publicUrl }))
+    } catch (err: any) {
+      alert(`Erro ao anexar imagem: ${err?.message || 'tente novamente.'}`)
+    } finally {
+      setUploadingDocument(null)
     }
   }
 
-  const handleSendLink = () => {
-    if (selectedRoute) {
-      const link = getTrackingLink(selectedRoute.freightId)
-      const message = `Olá ${selectedRoute.driver}! Segue o link de rastreio do frete #${selectedRoute.freightId}:\n\n${link}`
-      const phoneNumber = selectedRoute.driverPhone.replace(/\D/g, '')
-      const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`
-      window.open(whatsappUrl, '_blank')
+  const formatDate = (timestamp: string) => {
+    const date = new Date(timestamp)
+    return {
+      date: date.toLocaleDateString('pt-BR'),
+      time: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     }
   }
 
-  const filteredDrivers = MOCK_DRIVERS.filter(driver =>
-    driver.name.toLowerCase().includes(driverSearch.toLowerCase()) ||
-    driver.plate.toLowerCase().includes(driverSearch.toLowerCase()) ||
-    driver.vehicle.toLowerCase().includes(driverSearch.toLowerCase())
-  )
-
-  const filteredCompanies = companies.filter(company =>
-    company.companyName.toLowerCase().includes(companySearch.toLowerCase()) ||
-    company.responsible.toLowerCase().includes(companySearch.toLowerCase()) ||
-    company.city.toLowerCase().includes(companySearch.toLowerCase())
-  )
+  const findCompanyByInput = useCallback((value: string): Client | null => {
+    const q = value.trim().toLowerCase()
+    if (!q) return null
+    return (
+      clients.find((c) =>
+        c.company_name.toLowerCase() === q || c.email.toLowerCase() === q || c.responsible.toLowerCase() === q
+      ) ||
+      clients.find((c) =>
+        c.company_name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        c.responsible.toLowerCase().includes(q)
+      ) ||
+      null
+    )
+  }, [clients])
 
   const formatDateBR = (dateString: string) => {
     if (!dateString) return ''
+    // Se já está formatado (ex: "05 Out, 2025"), retornar como está
+    if (dateString.includes(',')) return dateString
+    
+    try {
     const date = new Date(dateString)
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
     const day = date.getDate().toString().padStart(2, '0')
     const month = months[date.getMonth()]
     const year = date.getFullYear()
     return `${day} ${month}, ${year}`
+    } catch {
+      return dateString
+    }
   }
 
-  const handleCreateRoute = (e: React.FormEvent) => {
+  const handleCreateRoute = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!selectedDriver || !selectedCompany) {
-      alert('Por favor, selecione um motorista e uma empresa')
+    const driverToUse = selectedDriver ?? drivers[0] ?? null
+    if (!driverToUse || !selectedCompany) {
+      alert('Por favor, selecione uma empresa e tenha ao menos um motorista cadastrado')
       return
     }
 
-    const newRoute: RouteData = {
-      id: Date.now().toString(),
-      freightId: Math.floor(100000000 + Math.random() * 900000000),
-      driver: selectedDriver.name,
-      driverCNH: `CNH: ${selectedDriver.cnh}`,
-      driverPhone: selectedDriver.phone,
-      origin: formData.origin,
-      originState: formData.originState,
-      originAddress: formData.originAddress,
-      destination: formData.destination,
-      destinationState: formData.destinationState,
-      destinationAddress: formData.destinationAddress,
-      vehicle: selectedDriver.vehicle,
-      plate: selectedDriver.plate,
-      weight: formData.weight,
-      estimatedDelivery: formatDateBR(formData.estimatedDelivery),
-      pickupDate: formatDateBR(formData.pickupDate),
-      status: 'pending', // Todos os novos fretes começam como pendentes
-      companyName: selectedCompany.companyName,
-      companyResponsible: selectedCompany.responsible,
-      companyPhone: selectedCompany.phone,
-      companyEmail: selectedCompany.email,
-      companyAddress: selectedCompany.address,
-      companyCity: selectedCompany.city,
-      companyState: selectedCompany.state
+    if (session?.user?.id) {
+      const { ok, error: creditsError } = await canCreateRoute(session.user.id)
+      if (!ok && creditsError) {
+        alert(creditsError)
+        return
+      }
     }
 
-    setRoutes([...routes, newRoute])
-    setShowCreateModal(false)
-    setSelectedDriver(null)
-    setSelectedCompany(null)
-    setDriverSearch('')
-    setCompanySearch('')
-    setFormData({
-      origin: '',
-      originState: '',
-      originAddress: '',
-      destination: '',
-      destinationState: '',
-      destinationAddress: '',
-      weight: '',
-      estimatedDelivery: '',
-      pickupDate: ''
-    })
+    setIsSubmitting(true)
+
+    try {
+      const routeData: CreateRouteData = {
+        freight_id: generateFreightCode(),
+        driver_id: driverToUse.id,
+      origin: formData.origin,
+        origin_state: formData.originState,
+        origin_address: formData.originAddress || undefined,
+      destination: formData.destination,
+        destination_state: formData.destinationState,
+        destination_address: formData.destinationAddress || undefined,
+      vehicle: driverToUse.vehicle,
+      plate: driverToUse.plate,
+      weight: formData.weight,
+      nf_value: formData.nfValue.trim() ? parseFloat(formData.nfValue.replace(',', '.')) : null,
+      observation: formData.observation.trim() || null,
+        estimated_delivery: formData.estimatedDelivery,
+        pickup_date: formData.pickupDate,
+        status: 'pending',
+        company_name: selectedCompany.company_name,
+        company_responsible: selectedCompany.responsible,
+        company_phone: selectedCompany.whatsapp,
+        company_email: selectedCompany.email,
+        company_address: selectedCompany.address,
+        company_city: selectedCompany.city,
+        company_state: selectedCompany.state,
+        distance_km:
+          routeDistance.distanciaKm ??
+          null,
+      }
+
+      await createRoute(routeData)
+      handleCloseCreateModal()
+    } catch (err: any) {
+      alert(`Erro ao criar rota: ${err.message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleUpdateRoute = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    const driverToUse =
+      selectedDriver ??
+      drivers.find((d) => d.id === editingRoute?.driver_id) ??
+      null
+    if (!editingRoute || !driverToUse || !selectedCompany) {
+      alert('Por favor, selecione uma empresa e mantenha um motorista válido no frete')
+      return
+    }
+
+    setIsSubmitting(true)
+
+    try {
+      await updateRoute(editingRoute.id, {
+        driver_id: driverToUse.id,
+        origin: formData.origin,
+        origin_state: formData.originState,
+        origin_address: formData.originAddress || null,
+        destination: formData.destination,
+        destination_state: formData.destinationState,
+        destination_address: formData.destinationAddress || null,
+        vehicle: driverToUse.vehicle,
+        plate: driverToUse.plate,
+        weight: formData.weight,
+        nf_value: formData.nfValue.trim() ? parseFloat(formData.nfValue.replace(',', '.')) : null,
+        observation: formData.observation.trim() || null,
+        estimated_delivery: formData.estimatedDelivery,
+        pickup_date: formData.pickupDate,
+        status: editingRoute.status,
+        company_name: selectedCompany.company_name,
+        company_responsible: selectedCompany.responsible,
+        company_phone: selectedCompany.whatsapp,
+        company_email: selectedCompany.email,
+        company_address: selectedCompany.address,
+        company_city: selectedCompany.city,
+        company_state: selectedCompany.state,
+        distance_km:
+          routeDistance.distanciaKm ??
+          editingRoute.distance_km ??
+          null,
+      })
+
+      handleCloseEditModal()
+    } catch (err: any) {
+      alert(`Erro ao atualizar rota: ${err.message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleCloseCreateModal = () => {
     setShowCreateModal(false)
     setSelectedDriver(null)
     setSelectedCompany(null)
-    setDriverSearch('')
-    setCompanySearch('')
-    setShowDriverDropdown(false)
-    setShowCompanyDropdown(false)
+    setCompanyInput('')
+    setOriginCEP('')
+    setDestinationCEP('')
     setFormData({
       origin: '',
       originState: '',
@@ -516,6 +563,31 @@ export default function RotasPage() {
       destinationState: '',
       destinationAddress: '',
       weight: '',
+      nfValue: '',
+      observation: '',
+      estimatedDelivery: '',
+      pickupDate: ''
+    })
+  }
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false)
+    setEditingRoute(null)
+    setSelectedDriver(null)
+    setSelectedCompany(null)
+    setCompanyInput('')
+    setOriginCEP('')
+    setDestinationCEP('')
+    setFormData({
+      origin: '',
+      originState: '',
+      originAddress: '',
+      destination: '',
+      destinationState: '',
+      destinationAddress: '',
+      weight: '',
+      nfValue: '',
+      observation: '',
       estimatedDelivery: '',
       pickupDate: ''
     })
@@ -602,6 +674,9 @@ export default function RotasPage() {
                   Rota
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Km
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Veículo
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -624,13 +699,13 @@ export default function RotasPage() {
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-900">
-                        #{route.freightId}
+                        #{route.freight_id}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col">
-                        <span className="text-sm text-gray-900">{route.driver}</span>
-                        <span className="text-xs text-gray-500 mt-1">{route.driverCNH}</span>
+                        <span className="text-sm text-gray-900">{route.driver?.name || 'N/A'}</span>
+                        <span className="text-xs text-gray-500 mt-1">CNH: {route.driver?.cnh || 'N/A'}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -639,18 +714,25 @@ export default function RotasPage() {
                           <div className="flex items-center gap-2">
                             <MapPin className="w-4 h-4 text-gray-600" />
                             <span className="text-sm text-gray-900">
-                              {route.origin}, {route.originState}
+                              {route.origin}, {route.origin_state}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <ArrowRight className="w-4 h-4 text-gray-400" />
                             <MapPin className="w-4 h-4 text-gray-600" />
                             <span className="text-sm text-gray-900">
-                              {route.destination}, {route.destinationState}
+                              {route.destination}, {route.destination_state}
                             </span>
                           </div>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-medium text-gray-900 tabular-nums">
+                        {route.distance_km != null && route.distance_km > 0
+                          ? `${route.distance_km} km`
+                          : '—'}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col">
@@ -660,8 +742,8 @@ export default function RotasPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col">
-                        <span className="text-sm text-gray-900">{route.estimatedDelivery}</span>
-                        <span className="text-xs text-gray-500 mt-1">Coletado: {route.pickupDate}</span>
+                        <span className="text-sm text-gray-900">{formatDateBR(route.estimated_delivery)}</span>
+                        <span className="text-xs text-gray-500 mt-1">Coletado: {formatDateBR(route.pickup_date)}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -673,14 +755,30 @@ export default function RotasPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
                       <motion.button
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => handleViewMore(route)}
-                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                          className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
                       >
                         Ver mais
                       </motion.button>
+                        <button
+                          onClick={() => handleOpenEdit(route)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Editar"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRoute(route.id)}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Excluir"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -690,10 +788,31 @@ export default function RotasPage() {
         </div>
       </div>
 
-      {filteredRoutes.length === 0 && (
+      {/* Loading */}
+      {(routesLoading || driversLoading || clientsLoading) && (
+        <div className="text-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-gray-400" />
+          <p className="text-gray-500 mt-2">Carregando rotas...</p>
+        </div>
+      )}
+
+      {/* Erro */}
+      {routesError && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-sm text-red-600">{routesError}</p>
+        </div>
+      )}
+
+      {!routesLoading && !driversLoading && !clientsLoading && filteredRoutes.length === 0 && (
         <div className="text-center py-12 text-gray-500">
           <Route className="w-16 h-16 mx-auto mb-4 opacity-50" />
           <p>Nenhum frete encontrado</p>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="mt-4 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium"
+          >
+            Criar primeira rota
+          </button>
         </div>
       )}
 
@@ -711,7 +830,7 @@ export default function RotasPage() {
                   <Truck className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Frete #{selectedRoute.freightId}</h2>
+                  <h2 className="text-2xl font-bold text-gray-900">Frete #{selectedRoute.freight_id}</h2>
                   <div className="flex items-center gap-2 mt-1">
                     <div className={`w-2 h-2 rounded-full ${getStatusDisplay(selectedRoute.status).dotColor}`}></div>
                     <span className="text-sm text-gray-600">{getStatusDisplay(selectedRoute.status).label}</span>
@@ -736,15 +855,15 @@ export default function RotasPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Nome</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.driver}</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedRoute.driver?.name || 'N/A'}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">CNH</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.driverCNH}</p>
+                    <p className="text-sm font-medium text-gray-900">CNH: {selectedRoute.driver?.cnh || 'N/A'}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Telefone</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.driverPhone}</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedRoute.driver?.phone || 'N/A'}</p>
                   </div>
                 </div>
               </div>
@@ -758,25 +877,25 @@ export default function RotasPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Nome da Empresa</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.companyName}</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.company_name || selectedRoute.company_name || 'N/A'}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Responsável</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.companyResponsible}</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.responsible || selectedRoute.company_responsible || 'N/A'}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
                       <Phone className="w-3 h-3" />
                       Telefone
                     </p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.companyPhone}</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.whatsapp || selectedRoute.company_phone || 'N/A'}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
                       <Mail className="w-3 h-3" />
                       E-mail
                     </p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.companyEmail}</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.email || selectedRoute.company_email || 'N/A'}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4 md:col-span-2">
                     <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
@@ -784,7 +903,7 @@ export default function RotasPage() {
                       Endereço
                     </p>
                     <p className="text-sm font-medium text-gray-900">
-                      {selectedRoute.companyAddress}, {selectedRoute.companyCity} - {selectedRoute.companyState}
+                      {selectedRoute.client?.address || selectedRoute.company_address || 'N/A'}, {selectedRoute.client?.city || selectedRoute.company_city || ''} - {selectedRoute.client?.state || selectedRoute.company_state || ''}
                     </p>
                   </div>
                 </div>
@@ -804,11 +923,11 @@ export default function RotasPage() {
                       <div className="flex-1">
                         <p className="text-xs text-blue-600 font-semibold mb-2 uppercase tracking-wide">De onde foi coletado</p>
                         <p className="text-sm font-bold text-gray-900 mb-1">
-                          {selectedRoute.origin}, {selectedRoute.originState}
+                          {selectedRoute.origin}, {selectedRoute.origin_state}
                         </p>
-                        {selectedRoute.originAddress && (
+                        {selectedRoute.origin_address && (
                           <p className="text-xs text-gray-600 mt-1">
-                            {selectedRoute.originAddress}
+                            {selectedRoute.origin_address}
                           </p>
                         )}
                       </div>
@@ -822,11 +941,11 @@ export default function RotasPage() {
                       <div className="flex-1">
                         <p className="text-xs text-green-600 font-semibold mb-2 uppercase tracking-wide">Lugar de entrega</p>
                         <p className="text-sm font-bold text-gray-900 mb-1">
-                          {selectedRoute.destination}, {selectedRoute.destinationState}
+                          {selectedRoute.destination}, {selectedRoute.destination_state}
                         </p>
-                        {selectedRoute.destinationAddress && (
+                        {selectedRoute.destination_address && (
                           <p className="text-xs text-gray-600 mt-1">
-                            {selectedRoute.destinationAddress}
+                            {selectedRoute.destination_address}
                           </p>
                         )}
                       </div>
@@ -866,60 +985,251 @@ export default function RotasPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Data de Coleta</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.pickupDate}</p>
+                    <p className="text-sm font-medium text-gray-900">{formatDateBR(selectedRoute.pickup_date)}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Previsão de Entrega</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.estimatedDelivery}</p>
+                    <p className="text-sm font-medium text-gray-900">{formatDateBR(selectedRoute.estimated_delivery)}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Valor da NF</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {selectedRoute.nf_value != null
+                        ? `R$ ${selectedRoute.nf_value.toFixed(2).replace('.', ',')}`
+                        : '—'}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Observação</p>
+                    <p className="text-sm font-medium text-gray-900 whitespace-pre-wrap">
+                      {selectedRoute.observation || '—'}
+                    </p>
                   </div>
                 </div>
               </div>
 
-              {/* Link de Rastreio */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Package className="w-5 h-5" />
-                  Link de Rastreio
-                </h3>
-                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                  <div className="flex items-center gap-2">
+              {/* Documentação do Motorista e do Frete */}
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-4">
+                    <User className="w-5 h-5" />
+                    Informações do Motorista
+                  </h3>
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <p className="text-xs text-gray-700 font-semibold uppercase tracking-wide mb-1">
+                      Adicione fotos / documentos
+                    </p>
+                    <p className="text-sm text-gray-600 mb-3">
+                      CNH, documento pessoal e CRLV do motorista.
+                    </p>
                     <input
-                      type="text"
-                      readOnly
-                      value={getTrackingLink(selectedRoute.freightId)}
-                      className="flex-1 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none"
+                      id="upload-driver-docs"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleUploadDocument('driverDocs', e.target.files?.[0] ?? null)}
                     />
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={handleCopyLink}
-                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-2"
-                    >
-                      {linkCopied ? (
-                        <>
-                          <Check className="w-4 h-4 text-green-600" />
-                          <span className="text-sm">Copiado!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4" />
-                          <span className="text-sm">Copiar</span>
-                        </>
+                    <div className="flex gap-2">
+                      <label
+                        htmlFor="upload-driver-docs"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer"
+                      >
+                        {uploadingDocument === 'driverDocs' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                        Adicionar
+                      </label>
+                      {documentUrls.driverDocs && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPhoto(documentUrls.driverDocs)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Ver
+                        </button>
                       )}
-                    </motion.button>
+                    </div>
                   </div>
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={handleSendLink}
-                    className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center justify-center gap-2"
-                  >
-                    <Send className="w-5 h-5" />
-                    Enviar Link via WhatsApp
-                  </motion.button>
+                </div>
+
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      <Truck className="w-5 h-5" />
+                      Informações do Frete
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Frete #{selectedRoute.freight_id}</span>
+                      <motion.button
+                        type="button"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => {
+                          setLoadingCheckIns(true)
+                          fetchCheckInsForRoute(selectedRoute).finally(() => setLoadingCheckIns(false))
+                        }}
+                        disabled={loadingCheckIns}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${loadingCheckIns ? 'animate-spin' : ''}`} />
+                        Atualizar comprovantes
+                      </motion.button>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-4">
+                    <p className="text-xs text-gray-700 font-semibold uppercase tracking-wide mb-1">
+                      Adicione fotos / documentos
+                    </p>
+                    <p className="text-sm text-gray-600 mb-3">
+                      Nota fiscal, CT-e, comprovantes de pagamento e demais anexos do frete.
+                    </p>
+                    <input
+                      id="upload-frete-docs"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleUploadDocument('freteDocs', e.target.files?.[0] ?? null)}
+                    />
+                    <div className="flex gap-2">
+                      <label
+                        htmlFor="upload-frete-docs"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer"
+                      >
+                        {uploadingDocument === 'freteDocs' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                        Adicionar
+                      </label>
+                      {documentUrls.freteDocs && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPhoto(documentUrls.freteDocs)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Ver
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {loadingCheckIns ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                      <span className="ml-2 text-sm text-gray-500">Carregando comprovantes...</span>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Botões de acesso rápido às fotos de comprovante operacional */}
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        {(['pickup', 'delivery'] as const).map((type) => {
+                          const ci = checkIns.find((c) => c.type === type)
+                          const label = type === 'pickup' ? 'Comprovante de Coleta' : 'Comprovante de Entrega'
+                          const colorClass = type === 'pickup'
+                            ? 'bg-blue-600 hover:bg-blue-700'
+                            : 'bg-green-600 hover:bg-green-700'
+                          return ci?.photo_url ? (
+                            <motion.button
+                              key={type}
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => setSelectedPhoto(ci.photo_url)}
+                              className={`flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-white font-medium text-sm transition-colors ${colorClass}`}
+                            >
+                              <Camera className="w-4 h-4" />
+                              {label}
+                            </motion.button>
+                          ) : null
+                        })}
+                      </div>
+
+                      {/* Cards detalhados com miniatura */}
+                      {checkIns.length > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {checkIns.map((checkIn) => {
+                            const { date, time } = formatDate(checkIn.timestamp)
+                            return (
+                              <motion.div
+                                key={checkIn.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-gray-300 transition-colors cursor-pointer"
+                                onClick={() => setSelectedPhoto(checkIn.photo_url)}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div className="flex-shrink-0">
+                                    <img
+                                      src={checkIn.photo_url}
+                                      alt={checkIn.type === 'pickup' ? 'Comprovante de coleta' : 'Comprovante de entrega'}
+                                      className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                      onError={(e) => {
+                                        const target = e.target as HTMLImageElement
+                                        target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ESem imagem%3C/text%3E%3C/svg%3E'
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                        checkIn.type === 'pickup'
+                                          ? 'bg-blue-100 text-blue-700'
+                                          : 'bg-green-100 text-green-700'
+                                      }`}>
+                                        {checkIn.type === 'pickup' ? 'Coleta' : 'Entrega'}
+                                      </span>
+                                      <CheckCircle2 className="w-4 h-4 text-gray-400" />
+                                    </div>
+                                    <p className="text-xs text-gray-500 mb-1">{date} às {time}</p>
+                                    {checkIn.address && (
+                                      <p className="text-xs text-gray-600 truncate flex items-start gap-1">
+                                        <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                                        {checkIn.address}
+                                      </p>
+                                    )}
+                                    <p className="text-xs text-gray-400 mt-1">Clique para ampliar</p>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Modal de Visualização de Foto */}
+      {selectedPhoto && (
+        <div 
+          className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative max-w-5xl w-full max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSelectedPhoto(null)}
+              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={selectedPhoto}
+              alt="Foto do check-in"
+              className="w-full h-full object-contain rounded-lg"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement
+                target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="800" height="600"%3E%3Crect fill="%23ddd" width="800" height="600"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E'
+              }}
+            />
           </motion.div>
         </div>
       )}
@@ -948,159 +1258,61 @@ export default function RotasPage() {
             </div>
 
             <form onSubmit={handleCreateRoute} className="p-6 space-y-6">
-              {/* Seleção de Motorista */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">
-                  Motorista <span className="text-red-500">*</span>
-                </label>
-                <div className="relative dropdown-container">
-                  <div
-                    onClick={() => {
-                      setShowDriverDropdown(!showDriverDropdown)
-                      setShowCompanyDropdown(false)
-                    }}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg cursor-pointer flex items-center justify-between hover:border-gray-400 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      {selectedDriver ? (
-                        <div className="flex items-center gap-2">
-                          <User className="w-5 h-5 text-gray-600" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{selectedDriver.name}</p>
-                            <p className="text-xs text-gray-500">{selectedDriver.vehicle} • {selectedDriver.plate}</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-gray-500">Selecione um motorista</span>
-                      )}
-                    </div>
-                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showDriverDropdown ? 'rotate-180' : ''}`} />
-                  </div>
-                  
-                  {showDriverDropdown && (
-                    <div className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                      <div className="p-2 border-b border-gray-200 sticky top-0 bg-white">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                          <input
-                            type="text"
-                            placeholder="Buscar motorista..."
-                            value={driverSearch}
-                            onChange={(e) => setDriverSearch(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                          />
-                        </div>
-                      </div>
-                      <div className="p-2">
-                        {filteredDrivers.length > 0 ? (
-                          filteredDrivers.map((driver) => (
-                            <div
-                              key={driver.id}
-                              onClick={() => {
-                                setSelectedDriver(driver)
-                                setShowDriverDropdown(false)
-                                setDriverSearch('')
-                              }}
-                              className="p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
-                            >
-                              <div className="flex items-center gap-3">
-                                <User className="w-5 h-5 text-gray-600" />
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium text-gray-900">{driver.name}</p>
-                                  <p className="text-xs text-gray-500">{driver.vehicle} • {driver.plate}</p>
-                                  <p className="text-xs text-gray-400">CNH: {driver.cnh}</p>
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="p-3 text-sm text-gray-500 text-center">Nenhum motorista encontrado</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Seleção de Empresa */}
+              {/* CEP será adicionado antes dos campos de origem */}
+              {/* Empresa (preenchimento manual) */}
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">
                   Empresa <span className="text-red-500">*</span>
                 </label>
-                <div className="relative dropdown-container">
-                  <div
-                    onClick={() => {
-                      setShowCompanyDropdown(!showCompanyDropdown)
-                      setShowDriverDropdown(false)
-                    }}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg cursor-pointer flex items-center justify-between hover:border-gray-400 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      {selectedCompany ? (
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-5 h-5 text-gray-600" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{selectedCompany.companyName}</p>
-                            <p className="text-xs text-gray-500">{selectedCompany.responsible}</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-gray-500">Selecione uma empresa</span>
-                      )}
-                    </div>
-                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showCompanyDropdown ? 'rotate-180' : ''}`} />
-                  </div>
-                  
-                  {showCompanyDropdown && (
-                    <div className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                      <div className="p-2 border-b border-gray-200 sticky top-0 bg-white">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                          <input
-                            type="text"
-                            placeholder="Buscar empresa..."
-                            value={companySearch}
-                            onChange={(e) => setCompanySearch(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                          />
-                        </div>
-                      </div>
-                      <div className="p-2">
-                        {filteredCompanies.length > 0 ? (
-                          filteredCompanies.map((company) => (
-                            <div
-                              key={company.id}
-                              onClick={() => {
-                                setSelectedCompany(company)
-                                setShowCompanyDropdown(false)
-                                setCompanySearch('')
-                              }}
-                              className="p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
-                            >
-                              <div className="flex items-center gap-3">
-                                <Building2 className="w-5 h-5 text-gray-600" />
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium text-gray-900">{company.companyName}</p>
-                                  <p className="text-xs text-gray-500">{company.responsible}</p>
-                                  <p className="text-xs text-gray-400">{company.city} - {company.state}</p>
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="p-3 text-sm text-gray-500 text-center">
-                            {companies.length === 0 ? 'Nenhuma empresa cadastrada. Cadastre em "Clientes"' : 'Nenhuma empresa encontrada'}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <input
+                  type="text"
+                  list="companies-list-create"
+                  value={companyInput}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setCompanyInput(v)
+                    setSelectedCompany(findCompanyByInput(v))
+                  }}
+                  onBlur={() => setSelectedCompany(findCompanyByInput(companyInput))}
+                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  placeholder="Digite nome da empresa, responsável ou e-mail"
+                />
+                <datalist id="companies-list-create">
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.company_name}>
+                      {`${c.responsible} • ${c.city}/${c.state}`}
+                    </option>
+                  ))}
+                </datalist>
+                <p className="text-xs text-gray-500 mt-1">
+                  {selectedCompany
+                    ? `${selectedCompany.company_name} • ${selectedCompany.responsible}`
+                    : 'Digite para preencher manualmente e vincular ao cadastro'}
+                </p>
               </div>
 
-              {/* Origem */}
+              {/* Origem - Começando pelo CEP */}
+              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-blue-600" />
+                  Origem / Coleta
+                </h3>
+                
+                <CEPInput
+                  value={originCEP}
+                  onChange={setOriginCEP}
+                  onCEPFound={(data: CEPData) => {
+                    setFormData({
+                      ...formData,
+                      origin: data.localidade || formData.origin,
+                      originState: data.uf || formData.originState,
+                      originAddress: data.logradouro || formData.originAddress
+                    })
+                  }}
+                  required
+                  label="CEP de Origem * (Comece digitando o CEP para preencher automaticamente)"
+                />
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -1111,8 +1323,8 @@ export default function RotasPage() {
                     required
                     value={formData.origin}
                     onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: São Paulo"
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Cidade (preenchida automaticamente ao buscar CEP)"
                   />
                 </div>
                 <div>
@@ -1125,8 +1337,8 @@ export default function RotasPage() {
                     maxLength={2}
                     value={formData.originState}
                     onChange={(e) => setFormData({ ...formData, originState: e.target.value.toUpperCase() })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="SP"
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Estado (preenchido automaticamente)"
                   />
                 </div>
               </div>
@@ -1138,12 +1350,34 @@ export default function RotasPage() {
                   type="text"
                   value={formData.originAddress}
                   onChange={(e) => setFormData({ ...formData, originAddress: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                  placeholder="Ex: Rua das Flores, 123 - Centro"
+                    className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Rua, número, complemento (preenchido automaticamente ao buscar CEP)"
                 />
+                </div>
               </div>
 
-              {/* Destino */}
+              {/* Destino - Começando pelo CEP */}
+              <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-green-600" />
+                  Destino / Entrega
+                </h3>
+                
+                <CEPInput
+                  value={destinationCEP}
+                  onChange={setDestinationCEP}
+                  onCEPFound={(data: CEPData) => {
+                    setFormData({
+                      ...formData,
+                      destination: data.localidade || formData.destination,
+                      destinationState: data.uf || formData.destinationState,
+                      destinationAddress: data.logradouro || formData.destinationAddress
+                    })
+                  }}
+                  required
+                  label="CEP de Destino * (Comece digitando o CEP para preencher automaticamente)"
+                />
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -1154,8 +1388,8 @@ export default function RotasPage() {
                     required
                     value={formData.destination}
                     onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: Curitiba"
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Cidade (preenchida automaticamente ao buscar CEP)"
                   />
                 </div>
                 <div>
@@ -1168,8 +1402,8 @@ export default function RotasPage() {
                     maxLength={2}
                     value={formData.destinationState}
                     onChange={(e) => setFormData({ ...formData, destinationState: e.target.value.toUpperCase() })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="PR"
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Estado (preenchido automaticamente)"
                   />
                 </div>
               </div>
@@ -1181,9 +1415,10 @@ export default function RotasPage() {
                   type="text"
                   value={formData.destinationAddress}
                   onChange={(e) => setFormData({ ...formData, destinationAddress: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                  placeholder="Ex: Av. Principal, 456 - Batel"
+                    className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Rua, número, complemento (preenchido automaticamente ao buscar CEP)"
                 />
+                </div>
               </div>
 
               {/* Outras Informações */}
@@ -1227,6 +1462,34 @@ export default function RotasPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Valor da NF
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.nfValue}
+                    onChange={(e) => setFormData({ ...formData, nfValue: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: 12500,00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Observação
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={formData.observation}
+                    onChange={(e) => setFormData({ ...formData, observation: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 resize-y"
+                    placeholder="Informações adicionais do frete"
+                  />
+                </div>
+              </div>
+
               {/* Botões */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
                 <button
@@ -1238,11 +1501,324 @@ export default function RotasPage() {
                 </button>
                 <motion.button
                   type="submit"
+                  disabled={isSubmitting}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium"
+                  className="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  Criar Rota
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Criando...
+                    </>
+                  ) : (
+                    'Criar Rota'
+                  )}
+                </motion.button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Modal de Editar Rota */}
+      {showEditModal && editingRoute && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+          >
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center">
+                  <Edit className="w-6 h-6 text-white" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900">Editar Rota</h2>
+              </div>
+              <button
+                onClick={handleCloseEditModal}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateRoute} className="p-6 space-y-6">
+              {/* Empresa (preenchimento manual) */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Empresa <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  list="companies-list-edit"
+                  value={companyInput}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setCompanyInput(v)
+                    setSelectedCompany(findCompanyByInput(v))
+                  }}
+                  onBlur={() => setSelectedCompany(findCompanyByInput(companyInput))}
+                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  placeholder="Digite nome da empresa, responsável ou e-mail"
+                />
+                <datalist id="companies-list-edit">
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.company_name}>
+                      {`${c.responsible} • ${c.city}/${c.state}`}
+                    </option>
+                  ))}
+                </datalist>
+                <p className="text-xs text-gray-500 mt-1">
+                  {selectedCompany
+                    ? `${selectedCompany.company_name} • ${selectedCompany.responsible}`
+                    : 'Digite para preencher manualmente e vincular ao cadastro'}
+                </p>
+              </div>
+
+              {/* Origem - Começando pelo CEP */}
+              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-blue-600" />
+                  Origem / Coleta
+                </h3>
+                
+                <CEPInput
+                  value={originCEP}
+                  onChange={setOriginCEP}
+                  onCEPFound={(data: CEPData) => {
+                    setFormData({
+                      ...formData,
+                      origin: data.localidade || formData.origin,
+                      originState: data.uf || formData.originState,
+                      originAddress: data.logradouro || formData.originAddress
+                    })
+                  }}
+                  required
+                  label="CEP de Origem * (Comece digitando o CEP para preencher automaticamente)"
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Cidade de Origem <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.origin}
+                      onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Cidade (preenchida automaticamente ao buscar CEP)"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Estado <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={2}
+                      value={formData.originState}
+                      onChange={(e) => setFormData({ ...formData, originState: e.target.value.toUpperCase() })}
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Estado (preenchido automaticamente)"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Endereço de Origem
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.originAddress}
+                    onChange={(e) => setFormData({ ...formData, originAddress: e.target.value })}
+                    className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Rua, número, complemento (preenchido automaticamente ao buscar CEP)"
+                  />
+                </div>
+              </div>
+
+              {/* Destino - Começando pelo CEP */}
+              <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-green-600" />
+                  Destino / Entrega
+                </h3>
+                
+                <CEPInput
+                  value={destinationCEP}
+                  onChange={setDestinationCEP}
+                  onCEPFound={(data: CEPData) => {
+                    setFormData({
+                      ...formData,
+                      destination: data.localidade || formData.destination,
+                      destinationState: data.uf || formData.destinationState,
+                      destinationAddress: data.logradouro || formData.destinationAddress
+                    })
+                  }}
+                  required
+                  label="CEP de Destino * (Comece digitando o CEP para preencher automaticamente)"
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Cidade de Destino <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.destination}
+                      onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Cidade (preenchida automaticamente ao buscar CEP)"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Estado <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={2}
+                      value={formData.destinationState}
+                      onChange={(e) => setFormData({ ...formData, destinationState: e.target.value.toUpperCase() })}
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Estado (preenchido automaticamente)"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Endereço de Destino
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.destinationAddress}
+                    onChange={(e) => setFormData({ ...formData, destinationAddress: e.target.value })}
+                    className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Rua, número, complemento (preenchido automaticamente ao buscar CEP)"
+                  />
+                </div>
+              </div>
+
+              {/* Outras Informações */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Peso <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.weight}
+                    onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: 15.500 kg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Data de Coleta <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.pickupDate}
+                    onChange={(e) => setFormData({ ...formData, pickupDate: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Previsão de Entrega <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.estimatedDelivery}
+                    onChange={(e) => setFormData({ ...formData, estimatedDelivery: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Valor da NF
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.nfValue}
+                    onChange={(e) => setFormData({ ...formData, nfValue: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: 12500,00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Observação
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={formData.observation}
+                    onChange={(e) => setFormData({ ...formData, observation: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 resize-y"
+                    placeholder="Informações adicionais do frete"
+                  />
+                </div>
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Status <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={editingRoute.status}
+                  onChange={(e) => setEditingRoute({ ...editingRoute, status: e.target.value as any })}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                >
+                  <option value="pending">Pendente</option>
+                  <option value="inTransit">Em Trânsito</option>
+                  <option value="pickedUp">Coletado</option>
+                  <option value="delivered">Entregue</option>
+                  <option value="cancelled">Cancelado</option>
+                </select>
+              </div>
+
+              {/* Botões */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={handleCloseEditModal}
+                  className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                >
+                  Cancelar
+                </button>
+                <motion.button
+                  type="submit"
+                  disabled={isSubmitting}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    'Salvar Alterações'
+                  )}
                 </motion.button>
               </div>
             </form>

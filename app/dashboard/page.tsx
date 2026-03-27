@@ -1,20 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import FadeIn from '@/components/animations/FadeIn'
 import {
   Truck,
   CheckCircle2,
   MapPin,
-  DollarSign,
   ArrowUpRight,
   RefreshCw,
   AlertTriangle,
   Route as RouteIcon,
-  ArrowRight
+  ArrowRight,
+  Loader2
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useRoutes } from '@/lib/hooks/useRoutes'
+import { useDrivers } from '@/lib/hooks/useDrivers'
+import { supabase } from '@/lib/supabase/client'
 
 
 interface Alert {
@@ -45,7 +48,12 @@ interface RoutePreview {
 
 export default function DashboardPage() {
   const router = useRouter()
+  const { routes, loading: routesLoading } = useRoutes()
+  const { drivers, loading: driversLoading } = useDrivers()
+  
   const [mounted, setMounted] = useState(false)
+  const [checkIns, setCheckIns] = useState<any[]>([])
+  
   const [checkInStats, setCheckInStats] = useState({
     today: 0,
     week: 0,
@@ -54,100 +62,161 @@ export default function DashboardPage() {
     pickup: 0,
     delivery: 0
   })
-  const [driverStats, setDriverStats] = useState({
-    active: 12,
-    total: 15,
-    onRoute: 8,
-    available: 4,
-    inactive: 3
-  })
-  const [routeStats, setRouteStats] = useState({
-    active: 8,
-    completed: 24,
-    pending: 3,
-    delayed: 2,
-    totalRevenue: 446700,
-    avgDeliveryTime: '4h 32m',
-    successRate: 94.5
-  })
 
-  const alerts: Alert[] = [
-    {
-      id: '1',
-      type: 'warning',
-      title: 'Rota com Atraso',
-      message: 'Frete #1030 está 15 minutos atrasado',
-      time: '5 min atrás'
-    },
-    {
-      id: '2',
-      type: 'info',
-      title: 'Nova Rota Criada',
-      message: 'Frete #1032 foi adicionado ao sistema',
-      time: '12 min atrás'
-    },
-    {
-      id: '3',
-      type: 'success',
-      title: 'Entrega Concluída',
-      message: 'Frete #1028 foi entregue com sucesso',
-      time: '18 min atrás'
-    }
-  ]
+  const isLoadingCheckInsRef = useRef(false)
 
-  const recentRoutes: RoutePreview[] = [
-    {
-      id: '1',
-      freightId: 875412903,
-      driver: 'José Silva',
-      driverCNH: 'CNH: 12345678901',
-      driverPhone: '11999991111',
-      origin: 'São Paulo',
-      originState: 'SP',
-      destination: 'Curitiba',
-      destinationState: 'PR',
-      vehicle: 'Volvo FH16',
-      plate: 'ABC-1234',
-      weight: '15.500 kg',
-      estimatedDelivery: '05 Out, 2025',
-      pickupDate: '03 Out, 2025',
-      status: 'inTransit'
-    },
-    {
-      id: '2',
-      freightId: 458729654,
-      driver: 'Antônio Santos',
-      driverCNH: 'CNH: 98765432109',
-      driverPhone: '11999992222',
-      origin: 'Rio de Janeiro',
-      originState: 'RJ',
-      destination: 'Belo Horizonte',
-      destinationState: 'MG',
-      vehicle: 'Mercedes Actros',
-      plate: 'DEF-5678',
-      weight: '22.300 kg',
-      estimatedDelivery: '05 Out, 2025',
-      pickupDate: '04 Out, 2025',
-      status: 'delivered'
-    },
-    {
-      id: '3',
-      freightId: 913562478,
-      driver: 'Roberto Costa',
-      driverCNH: 'CNH: 11223344556',
-      driverPhone: '11999993333',
-      origin: 'Porto Alegre',
-      originState: 'RS',
-      destination: 'Florianópolis',
-      destinationState: 'SC',
-      vehicle: 'MAN TGX',
-      plate: 'GHI-9012',
-      weight: '18.750 kg',
-      estimatedDelivery: '05 Out, 2025',
-      pickupDate: '04 Out, 2025',
-      status: 'pickedUp'
+  // Carregar check-ins do Supabase (reutilizado no Realtime)
+  const loadCheckIns = useCallback(async () => {
+    if (isLoadingCheckInsRef.current) return
+    isLoadingCheckInsRef.current = true
+    try {
+      const { data, error } = await supabase
+        .from('checkins')
+        .select('*')
+        .order('timestamp', { ascending: false })
+      if (error) throw error
+      setCheckIns(data || [])
+    } catch (err) {
+      console.error('Erro ao carregar check-ins:', err)
+      setCheckIns([])
+    } finally {
+      isLoadingCheckInsRef.current = false
     }
-  ]
+  }, [])
+
+  // Carregar check-ins na montagem
+  useEffect(() => {
+    loadCheckIns()
+  }, [loadCheckIns])
+
+  // Realtime: atualizar check-ins quando o app motorista ou outro cliente inserir/alterar
+  useEffect(() => {
+    const channel = supabase
+      .channel('checkins-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'checkins' },
+        () => {
+          loadCheckIns()
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [loadCheckIns])
+
+  // Calcular estatísticas de check-ins
+  useEffect(() => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+    const todayCount = checkIns.filter(item => {
+      const itemDate = new Date(item.timestamp)
+      return itemDate >= today
+    }).length
+
+    const weekCount = checkIns.filter(item => {
+      const itemDate = new Date(item.timestamp)
+      return itemDate >= weekAgo
+    }).length
+
+    const monthCount = checkIns.filter(item => {
+      const itemDate = new Date(item.timestamp)
+      return itemDate >= monthAgo
+    }).length
+
+    const pickupCount = checkIns.filter(item => item.type === 'pickup').length
+    const deliveryCount = checkIns.filter(item => item.type === 'delivery').length
+
+    setCheckInStats({
+      today: todayCount,
+      week: weekCount,
+      month: monthCount,
+      total: checkIns.length,
+      pickup: pickupCount,
+      delivery: deliveryCount
+    })
+  }, [checkIns])
+
+  // Calcular estatísticas de motoristas
+  const driverStats = useMemo(() => {
+    const active = drivers.filter(d => d.status === 'active').length
+    const onRoute = drivers.filter(d => d.status === 'onRoute').length
+    const inactive = drivers.filter(d => d.status === 'inactive').length
+    const available = active - onRoute
+
+    return {
+      active,
+      total: drivers.length,
+      onRoute,
+      available: Math.max(0, available),
+      inactive
+    }
+  }, [drivers])
+
+  // Calcular estatísticas de rotas
+  const routeStats = useMemo(() => {
+    const active = routes.filter(r => r.status === 'inTransit' || r.status === 'pickedUp').length
+    const completed = routes.filter(r => r.status === 'delivered').length
+    const pending = routes.filter(r => r.status === 'pending').length
+    const cancelled = routes.filter(r => r.status === 'cancelled').length
+
+    return {
+      active,
+      completed,
+      pending,
+      delayed: 0, // TODO: Implementar cálculo de atrasos
+      avgDeliveryTime: 'N/A', // TODO: Implementar cálculo
+      successRate: completed > 0 ? (completed / (completed + cancelled) * 100) : 0
+    }
+  }, [routes])
+
+  // Função para formatar data
+  const formatDateBR = (dateString: string) => {
+    if (!dateString) return ''
+    try {
+      const date = new Date(dateString)
+      const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+      const day = date.getDate().toString().padStart(2, '0')
+      const month = months[date.getMonth()]
+      const year = date.getFullYear()
+      return `${day} ${month}, ${year}`
+    } catch {
+      return dateString
+    }
+  }
+
+  // Rotas recentes (últimas 5)
+  const recentRoutes = useMemo(() => {
+    return routes
+      .slice(0, 5)
+      .map(route => {
+        const driver = drivers.find(d => d.id === route.driver_id)
+        return {
+          id: route.id,
+          freightId: route.freight_id,
+          driver: driver?.name || 'N/A',
+          driverCNH: driver ? `CNH: ${driver.cnh}` : 'N/A',
+          driverPhone: driver?.phone || 'N/A',
+          origin: route.origin,
+          originState: route.origin_state,
+          destination: route.destination,
+          destinationState: route.destination_state,
+          vehicle: route.vehicle,
+          plate: route.plate,
+          weight: route.weight,
+          estimatedDelivery: formatDateBR(route.estimated_delivery),
+          pickupDate: formatDateBR(route.pickup_date),
+          status: route.status
+        } as RoutePreview
+      })
+  }, [routes, drivers])
+
+  // Alertas (mockados por enquanto - pode ser implementado depois)
+  const alerts: Alert[] = []
 
   const getStatusDisplay = (status: string) => {
     switch (status) {
@@ -181,57 +250,18 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setMounted(true)
-    
-    if (typeof window === 'undefined') return
-
-    // Carregar dados do localStorage
-    try {
-      const stored = localStorage.getItem('checkin-history')
-      if (stored) {
-        const history = JSON.parse(stored)
-        const now = new Date()
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-        const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
-        const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
-
-        const todayCount = history.filter((item: any) => {
-          const itemDate = new Date(item.timestamp)
-          return itemDate >= today
-        }).length
-
-        const weekCount = history.filter((item: any) => {
-          const itemDate = new Date(item.timestamp)
-          return itemDate >= weekAgo
-        }).length
-
-        const monthCount = history.filter((item: any) => {
-          const itemDate = new Date(item.timestamp)
-          return itemDate >= monthAgo
-        }).length
-
-        const pickupCount = history.filter((item: any) => item.type === 'pickup').length
-        const deliveryCount = history.filter((item: any) => item.type === 'delivery').length
-
-        setCheckInStats({
-          today: todayCount,
-          week: weekCount,
-          month: monthCount,
-          total: history.length,
-          pickup: pickupCount,
-          delivery: deliveryCount
-        })
-      }
-    } catch (error) {
-      console.error('Erro ao carregar histórico:', error)
-    }
   }, [])
+  
+  // Inicializar loading como false após montagem
+  const isLoading = !mounted
 
+  // Mostrar loading apenas na primeira carga
   if (!mounted) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-slate-800 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
+          <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4 text-slate-800" />
+          <p className="text-gray-600">Carregando dashboard...</p>
         </div>
       </div>
     )
@@ -286,17 +316,14 @@ export default function DashboardPage() {
                     alert.type === 'success' ? 'bg-green-100' :
                     'bg-blue-100'
                   }`}>
-                    {alert.type === 'warning' ? (
+                    {alert.type === 'warning' || alert.type === 'error' ? (
                       <AlertTriangle className={`w-5 h-5 ${
                         alert.type === 'warning' ? 'text-yellow-600' :
                         alert.type === 'error' ? 'text-red-600' :
-                        alert.type === 'success' ? 'text-green-600' :
-                        'text-blue-600'
+                        'text-gray-600'
                       }`} />
                     ) : (
                       <CheckCircle2 className={`w-5 h-5 ${
-                        alert.type === 'warning' ? 'text-yellow-600' :
-                        alert.type === 'error' ? 'text-red-600' :
                         alert.type === 'success' ? 'text-green-600' :
                         'text-blue-600'
                       }`} />
@@ -315,7 +342,7 @@ export default function DashboardPage() {
       )}
 
       {/* KPIs Principais */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <FadeIn delay={0.2} direction="up">
           <motion.div
             whileHover={{ scale: 1.02, y: -2 }}
@@ -376,27 +403,6 @@ export default function DashboardPage() {
           </motion.div>
         </FadeIn>
 
-        <FadeIn delay={0.35} direction="up">
-          <motion.div
-            whileHover={{ scale: 1.02, y: -2 }}
-            className="glass-card rounded-xl p-6 border border-white/30 backdrop-blur-xl"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-orange-600" />
-              </div>
-              <div className="flex items-center gap-1 text-green-600">
-                <ArrowUpRight className="w-4 h-4" />
-                <span className="text-xs font-semibold">+15.3%</span>
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-gray-900 mb-1">
-              R$ {(routeStats.totalRevenue / 1000).toFixed(1)}K
-            </div>
-            <div className="text-sm text-gray-600">Receita Total</div>
-            <div className="text-xs text-gray-500 mt-2">Este mês</div>
-          </motion.div>
-        </FadeIn>
       </div>
 
       {/* Preview de Rotas - Estilo Referência */}
@@ -421,34 +427,46 @@ export default function DashboardPage() {
 
           {/* Tabela Preview */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      ID do Frete
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Atribuído a
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Rota
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Veículo
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Previsão de Entrega
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {recentRoutes.map((route, index) => {
+            {recentRoutes.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <RouteIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <p>Nenhuma rota cadastrada</p>
+                <button
+                  onClick={() => router.push('/dashboard/rotas')}
+                  className="mt-4 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium"
+                >
+                  Criar primeira rota
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        ID do Frete
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Atribuído a
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Rota
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Veículo
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Previsão de Entrega
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {recentRoutes.map((route, index) => {
                     const statusDisplay = getStatusDisplay(route.status)
                     return (
                       <motion.tr
@@ -521,9 +539,10 @@ export default function DashboardPage() {
                       </motion.tr>
                     )
                   })}
-                </tbody>
-              </table>
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </FadeIn>

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { CheckCircle2, MapPin, Download, ExternalLink, Search, Filter, Calendar } from 'lucide-react'
+import { supabase } from '@/lib/supabase/client'
 
 interface CheckInRecord {
   id: string
@@ -13,26 +14,66 @@ interface CheckInRecord {
   freightId?: number
 }
 
+function formatCheckIns(checkins: { id: string; type: string; timestamp: string; photo_url: string; coords_lat: number; coords_lng: number; address?: string | null; freight_id?: number | null }[]): CheckInRecord[] {
+  return checkins.map(ci => ({
+    id: ci.id,
+    type: ci.type as 'pickup' | 'delivery',
+    timestamp: ci.timestamp,
+    photo: ci.photo_url,
+    coords: { lat: ci.coords_lat, lng: ci.coords_lng },
+    address: ci.address || undefined,
+    freightId: ci.freight_id ?? undefined
+  }))
+}
+
 export default function CheckInsPage() {
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([])
   const [filteredCheckIns, setFilteredCheckIns] = useState<CheckInRecord[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'pickup' | 'delivery'>('all')
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
+  const loadCheckIns = useCallback(async () => {
+    try {
+      const { data: checkins, error } = await supabase
+        .from('checkins')
+        .select('*')
+        .order('timestamp', { ascending: false })
+        .limit(1000)
 
-    const stored = localStorage.getItem('checkin-history')
-    if (stored) {
-      try {
-        const history = JSON.parse(stored)
-        setCheckIns(history)
-        setFilteredCheckIns(history)
-      } catch (error) {
+      if (error) {
         console.error('Erro ao carregar check-ins:', error)
+        return
       }
+
+      if (checkins) {
+        const formatted = formatCheckIns(checkins)
+        setCheckIns(formatted)
+        setFilteredCheckIns(formatted)
+      }
+    } catch (error) {
+      console.error('Erro ao carregar check-ins:', error)
     }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    loadCheckIns()
+  }, [loadCheckIns])
+
+  // Realtime: atualizar lista quando houver novos check-ins ou alterações
+  useEffect(() => {
+    const channel = supabase
+      .channel('checkins-page-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'checkins' },
+        () => loadCheckIns()
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [loadCheckIns])
 
   useEffect(() => {
     let filtered = checkIns

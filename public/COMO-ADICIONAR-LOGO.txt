@@ -1,0 +1,39 @@
+===========================================
+COMO ADICIONAR O LOGO DO TRANSPORTEJÁ
+===========================================
+
+1. Coloque o arquivo da imagem do logo nesta pasta (public/)
+2. Nomeie o arquivo como: logo.png
+   (Também funciona: logo.jpg, logo.svg, logo.jpeg)
+
+3. Reinicie o servidor Next.js:
+   - Pare o servidor (Ctrl+C)
+   - Execute: npm run dev
+
+4. Limpe o cache do navegador:
+   - Pressione Ctrl+Shift+R (ou Ctrl+F5)
+   - Ou abra em modo anônimo
+
+5. Verifique o console do navegador (F12):
+   - Se aparecer "Logo image loaded successfully" = funcionou!
+   - Se aparecer "Logo image not found" = verifique o nome do arquivo
+
+===========================================
+LOCALIZAÇÃO DO ARQUIVO:
+===========================================
+C:\Dash-Transporteja\public\logo.png
+
+===========================================
+FORMATOS SUPORTADOS:
+===========================================
+- PNG (recomendado)
+- SVG (melhor qualidade)
+- JPG/JPEG
+
+===========================================
+TAMANHO RECOMENDADO:
+===========================================
+- Mínimo: 64x64px
+- Ideal: 128x128px ou maior
+(O componente redimensiona automaticamente para 20px)
+

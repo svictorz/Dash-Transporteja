@@ -1,20 +1,46 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase/client'
 
 export default function HomePage() {
   const router = useRouter()
+  const [checked, setChecked] = useState(false)
 
   useEffect(() => {
+    let isMounted = true
+    
     // Verificar se o usuário já está logado
-    const user = localStorage.getItem('transporteja-user')
-    if (user) {
-      router.push('/dashboard')
-    } else {
-      router.push('/login')
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!isMounted) return
+        
+        if (session) {
+          router.replace('/dashboard')
+        } else {
+          router.replace('/login')
+        }
+        
+        setChecked(true)
+      } catch (error) {
+        console.error('Erro ao verificar sessão:', error)
+        if (isMounted) {
+          router.replace('/login')
+          setChecked(true)
+        }
+      }
     }
-  }, [router])
+    
+    checkSession()
+    
+    return () => {
+      isMounted = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">

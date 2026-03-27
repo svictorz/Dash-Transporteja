@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import FadeIn from '@/components/animations/FadeIn'
 import { FileText, Calendar, Download, Building2, Truck, Plus, X, ChevronDown } from 'lucide-react'
+import { useClients } from '@/lib/hooks/useClients'
+import { useDrivers } from '@/lib/hooks/useDrivers'
 
 interface ReportFilter {
   type: 'general' | 'company' | 'driver'
@@ -14,6 +16,9 @@ interface ReportFilter {
 }
 
 export default function RelatoriosPage() {
+  const { clients } = useClients()
+  const { drivers } = useDrivers()
+  
   const [reportType, setReportType] = useState<'general' | 'company' | 'driver' | null>(null)
   const [showTypeOptions, setShowTypeOptions] = useState(false)
   const [startDate, setStartDate] = useState('')
@@ -23,20 +28,16 @@ export default function RelatoriosPage() {
   const [quickPeriod, setQuickPeriod] = useState<string>('')
   const [showPeriodOptions, setShowPeriodOptions] = useState(false)
 
-  // Mock data
-  const companies = [
-    { id: '1', name: 'Transportes ABC Ltda' },
-    { id: '2', name: 'Logística XYZ S.A.' },
-    { id: '3', name: 'Fretes Sul Ltda' },
-    { id: '4', name: 'Cargas Centro-Oeste' }
-  ]
+  // Converter clientes e motoristas para o formato esperado
+  const companies = clients.map(client => ({
+    id: client.id,
+    name: client.company_name
+  }))
 
-  const drivers = [
-    { id: '1', name: 'José Silva' },
-    { id: '2', name: 'Antônio Santos' },
-    { id: '3', name: 'Roberto Costa' },
-    { id: '4', name: 'Carlos Oliveira' }
-  ]
+  const driversList = drivers.map(driver => ({
+    id: driver.id,
+    name: driver.name
+  }))
 
   const getQuickPeriodDates = (period: string) => {
     const today = new Date()
@@ -112,12 +113,11 @@ export default function RelatoriosPage() {
       type: reportType,
       period: quickPeriod === 'custom' ? `${startDate} até ${endDate}` : getPeriodLabel(quickPeriod),
       company: reportType === 'company' ? companies.find(c => c.id === selectedCompany)?.name : null,
-      driver: reportType === 'driver' ? drivers.find(d => d.id === selectedDriver)?.name : null,
+      driver: reportType === 'driver' ? driversList.find(d => d.id === selectedDriver)?.name : null,
       data: {
         totalRoutes: 45,
         completedRoutes: 42,
         pendingRoutes: 3,
-        totalRevenue: 'R$ 125.450,00',
         averageDeliveryTime: '4h 32m',
         successRate: '93.3%'
       }
@@ -143,12 +143,11 @@ export default function RelatoriosPage() {
       type: reportType,
       period: quickPeriod === 'custom' ? `${startDate} até ${endDate}` : getPeriodLabel(quickPeriod),
       company: reportType === 'company' ? companies.find(c => c.id === selectedCompany)?.name : null,
-      driver: reportType === 'driver' ? drivers.find(d => d.id === selectedDriver)?.name : null,
+      driver: reportType === 'driver' ? driversList.find(d => d.id === selectedDriver)?.name : null,
       data: {
         totalRoutes: 45,
         completedRoutes: 42,
         pendingRoutes: 3,
-        totalRevenue: 'R$ 125.450,00',
         averageDeliveryTime: '4h 32m',
         successRate: '93.3%'
       }
@@ -164,7 +163,6 @@ ${reportData.driver ? `Motorista: ${reportData.driver}` : ''}
 Total de Rotas: ${reportData.data.totalRoutes}
 Rotas Concluídas: ${reportData.data.completedRoutes}
 Rotas Pendentes: ${reportData.data.pendingRoutes}
-Receita Total: ${reportData.data.totalRevenue}
 Tempo Médio de Entrega: ${reportData.data.averageDeliveryTime}
 Taxa de Sucesso: ${reportData.data.successRate}
     `
@@ -415,7 +413,7 @@ Taxa de Sucesso: ${reportData.data.successRate}
                   className="w-full px-4 py-3 glass-card border border-white/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-800"
                 >
                   <option value="">Selecione um motorista</option>
-                  {drivers.map((driver) => (
+                  {driversList.map((driver) => (
                     <option key={driver.id} value={driver.id}>
                       {driver.name}
                     </option>
