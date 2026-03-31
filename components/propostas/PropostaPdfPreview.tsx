@@ -9,12 +9,13 @@ interface Props {
   form: PropostaFormState
   calc: PropostaCalculo
   dataEmissao: string
+  className?: string
 }
 
 const navy = '#0f2847'
 const border = '#1e293b'
 
-export default function PropostaPdfPreview({ form, calc, dataEmissao }: Props) {
+export default function PropostaPdfPreview({ form, calc, dataEmissao, className }: Props) {
   const fmtKg = (n: number) =>
     n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' KG'
   const fmtM3 = (n: number) =>
@@ -26,8 +27,7 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao }: Props) {
 
   return (
     <article
-      id="proposta-a4-root"
-      className="proposta-a4 bg-white text-black print:shadow-none"
+      className={`proposta-a4 bg-white text-black print:shadow-none ${className ?? ''}`}
       style={{
         width: '210mm',
         minHeight: '297mm',
@@ -75,7 +75,7 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao }: Props) {
           </div>
           <div className="border p-2 rounded-sm" style={{ borderColor: border }}>
             <p className="font-bold text-[7.5pt] uppercase mb-0.5" style={{ color: navy }}>
-              Destinatário (pagador):
+              Destinatário:
             </p>
             <p className="text-gray-900">{form.destinatario || '—'}</p>
             {form.cnpjDestinatario && <p className="text-gray-600 text-[8pt]">CNPJ: {form.cnpjDestinatario}</p>}

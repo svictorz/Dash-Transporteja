@@ -1,29 +1,25 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 10mm;
+    margin: 0;
   }
 
-  body * {
-    visibility: hidden;
-  }
-
-  #proposta-a4-root,
-  #proposta-a4-root * {
-    visibility: visible;
-  }
-
-  #proposta-a4-root {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 210mm !important;
-    max-width: none !important;
-    min-height: auto !important;
+  html,
+  body {
     margin: 0 !important;
-    padding: 10mm 12mm !important;
-    box-shadow: none !important;
-    border: none !important;
+    padding: 0 !important;
     background: #fff !important;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .proposta-a4-print {
+    width: 210mm !important;
+    min-height: 297mm !important;
+    margin: 0 auto !important;
+    padding: 10mm 12mm !important;
   }
 }

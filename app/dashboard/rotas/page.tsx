@@ -485,6 +485,7 @@ export default function RotasPage() {
         distance_km:
           routeDistance.distanciaKm ??
           null,
+        created_by_user_id: session?.user?.id,
       }
 
       await createRoute(routeData)

@@ -27,6 +27,7 @@ export interface Route {
   distance_km?: number | null
   nf_value?: number | null
   observation?: string | null
+  created_by_user_id?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -56,6 +57,7 @@ export interface CreateRouteData {
   distance_km?: number | null
   nf_value?: number | null
   observation?: string | null
+  created_by_user_id?: string
 }
 
 export interface UpdateRouteData {

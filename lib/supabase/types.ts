@@ -119,6 +119,7 @@ export interface Database {
           company_address: string | null
           company_city: string | null
           company_state: string | null
+          created_by_user_id?: string | null
           distance_km?: number | null
           nf_value?: number | null
           observation?: string | null
@@ -148,6 +149,7 @@ export interface Database {
           company_address?: string | null
           company_city?: string | null
           company_state?: string | null
+          created_by_user_id?: string | null
           distance_km?: number | null
           nf_value?: number | null
           observation?: string | null
@@ -177,6 +179,7 @@ export interface Database {
           company_address?: string | null
           company_city?: string | null
           company_state?: string | null
+          created_by_user_id?: string | null
           distance_km?: number | null
           nf_value?: number | null
           observation?: string | null
@@ -268,6 +271,38 @@ export interface Database {
           city?: string
           neighborhood?: string
           state?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      calendar_events: {
+        Row: {
+          id: string
+          event_type: 'entrega' | 'recebimento' | 'reuniao' | 'outro'
+          title: string
+          description: string | null
+          event_at: string
+          created_by_user_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          event_type: 'entrega' | 'recebimento' | 'reuniao' | 'outro'
+          title: string
+          description?: string | null
+          event_at: string
+          created_by_user_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          event_type?: 'entrega' | 'recebimento' | 'reuniao' | 'outro'
+          title?: string
+          description?: string | null
+          event_at?: string
+          created_by_user_id?: string | null
           created_at?: string
           updated_at?: string
         }

@@ -16,7 +16,8 @@ import {
   FileText,
   X,
   Shield,
-  Calculator
+  BarChart3,
+  CalendarDays
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Logo from './Logo'
@@ -83,10 +84,11 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
 
   const allMenuItems: MenuItem[] = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: Calculator, label: 'Cotação', path: '/dashboard/cotacao' },
-    { icon: FileText, label: 'Propostas', path: '/dashboard/propostas' },
-    { icon: Route, label: 'Rotas', path: '/dashboard/rotas' },
     { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
+    { icon: Route, label: 'Rotas', path: '/dashboard/rotas' },
+    { icon: FileText, label: 'Propostas', path: '/dashboard/propostas' },
+    { icon: CalendarDays, label: 'Calendário', path: '/dashboard/calendario' },
+    { icon: BarChart3, label: 'Performance', path: '/dashboard/performance' },
     { icon: Truck, label: 'Motoristas', path: '/dashboard/motoristas' },
   ]
 

@@ -43,7 +43,8 @@ export default function LoginPage() {
       return
     }
 
-    const emailCheck = validateEmail(email.trim())
+    const normalizedEmail = email.trim().toLowerCase()
+    const emailCheck = validateEmail(normalizedEmail)
     if (!emailCheck.valid) {
       setError(emailCheck.error ?? 'E-mail inválido')
       return
@@ -54,7 +55,7 @@ export default function LoginPage() {
     try {
       // Autenticação com Supabase
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: normalizedEmail,
         password
       })
 
@@ -143,7 +144,7 @@ export default function LoginPage() {
                 />
               </div>
               <h2 className="text-lg font-bold text-gray-800 mb-1">
-                Bem-vindo — {BRAND_NAME}
+                Bem-vindo
               </h2>
               <p className="text-xs text-gray-500">
                 Acesse seu painel

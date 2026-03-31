@@ -14,9 +14,10 @@ import { readFileSync, existsSync } from 'fs'
 import { pathToFileURL } from 'url'
 import path from 'path'
 
-const EMAIL = 'admin@transporteja.com'
-// Supabase exige senha com no mínimo 6 caracteres; se der erro, mude para '123456'
-const PASSWORD = '123456'
+const EMAIL = process.argv[2] || 'admin@transporteja.com'
+// Supabase exige senha com no mínimo 6 caracteres
+const PASSWORD = process.argv[3] || '123456'
+const DISPLAY_NAME = process.argv[4] || 'Admin'
 
 function loadEnv() {
   const envPath = path.join(process.cwd(), '.env.local')
@@ -70,7 +71,7 @@ async function main() {
     email: EMAIL,
     password: PASSWORD,
     email_confirm: true,
-    user_metadata: { name: 'Admin', role: 'admin' }
+    user_metadata: { name: DISPLAY_NAME, role: 'admin' }
   })
 
   if (createError) {
@@ -93,7 +94,7 @@ async function main() {
   if (!profileError && profile && profile.role !== 'admin') {
     const { error: updateError } = await supabase
       .from('users')
-      .update({ role: 'admin', name: 'Admin', updated_at: new Date().toISOString() })
+      .update({ role: 'admin', name: DISPLAY_NAME, updated_at: new Date().toISOString() })
       .eq('id', newUser.user.id)
     if (updateError) {
       console.warn('Aviso: não foi possível definir role admin em public.users:', updateError.message)
@@ -104,7 +105,7 @@ async function main() {
     const { error: insertError } = await supabase.from('users').insert({
       id: newUser.user.id,
       email: EMAIL,
-      name: 'Admin',
+      name: DISPLAY_NAME,
       role: 'admin'
     })
     if (insertError) {
