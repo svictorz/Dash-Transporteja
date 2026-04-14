@@ -9,7 +9,8 @@ import { validatePhone } from '@/lib/utils/validation'
 import FadeIn from '@/components/animations/FadeIn'
 import { BRAND_NAME } from '@/lib/constants/brand'
 
-const WELCOME_CREDITS = 5
+/** Créditos de boas-vindas desativados (SaaS sem limite por saldo). */
+const WELCOME_CREDITS = 0
 
 export default function BemVindoPage() {
   const router = useRouter()
@@ -176,8 +177,7 @@ export default function BemVindoPage() {
         <div className="text-center mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Bem-vindo — {BRAND_NAME}</h1>
           <p className="text-gray-600 mt-2">
-            Conte um pouco sobre sua empresa (opcional). Você já receberá {WELCOME_CREDITS} créditos para criar suas
-            primeiras rotas.
+            Conte um pouco sobre sua empresa (opcional). Depois você pode usar o painel para criar e gerenciar rotas.
           </p>
         </div>
       </FadeIn>

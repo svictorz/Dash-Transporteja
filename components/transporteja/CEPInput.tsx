@@ -11,6 +11,8 @@ interface CEPInputProps {
   onCEPFound?: (data: CEPData) => void
   error?: string
   required?: boolean
+  /** Se true (padrão), busca ao completar 8 dígitos e no blur. Se false, só ao clicar em Buscar. */
+  autoSearch?: boolean
   label?: string
 }
 
@@ -20,6 +22,7 @@ export default function CEPInput({
   onCEPFound,
   error,
   required = false,
+  autoSearch = true,
   label = 'CEP *'
 }: CEPInputProps) {
   const [isSearching, setIsSearching] = useState(false)
@@ -74,6 +77,7 @@ export default function CEPInput({
   }
 
   const handleBlur = () => {
+    if (!autoSearch) return
     if (value.length === 8) {
       handleSearchCEP()
     }
@@ -90,7 +94,7 @@ export default function CEPInput({
       setIsValid(false)
       
       // Auto-buscar quando completar 8 dígitos
-      if (inputValue.length === 8) {
+      if (autoSearch && inputValue.length === 8) {
         // Pequeno delay para permitir que o usuário termine de digitar
         setTimeout(() => {
           handleSearchCEP()

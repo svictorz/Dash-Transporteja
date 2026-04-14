@@ -167,9 +167,16 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
         >
           Composição de preços
         </div>
+        {calc.modoFreteInclusivo && calc.freteBaseInformado != null ? (
+          <p className="text-[8.5pt] font-semibold text-gray-900 px-2 py-1.5 border border-t-0 bg-white" style={{ borderColor: border }}>
+            Frete base: <span className="tabular-nums">{formatBRLProposta(calc.freteBaseInformado)}</span>
+          </p>
+        ) : null}
         <div className="grid grid-cols-3 border border-t-0 text-[8.5pt]" style={{ borderColor: border }}>
           <div className="border-r p-2" style={{ borderColor: border }}>
-            <span className="font-semibold">Frete base: </span>
+            <span className="font-semibold">
+              {calc.modoFreteInclusivo ? 'Frete líquido: ' : 'Frete base: '}
+            </span>
             <strong>{formatBRLProposta(calc.freteBase)}</strong>
           </div>
           <div className="border-r p-2" style={{ borderColor: border }}>
@@ -181,6 +188,9 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
               Seguro ({form.seguroPct.replace('.', ',')}%):{' '}
             </span>
             <strong>{formatBRLProposta(calc.seguro)}</strong>
+            {calc.seguro > 0 ? (
+              <span className="block text-[7pt] text-gray-500 mt-0.5">Não entra no total do CT-e</span>
+            ) : null}
           </div>
         </div>
         <div className="grid grid-cols-3 border border-t-0 min-h-[4.5rem]" style={{ borderColor: border }}>
@@ -194,7 +204,9 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
               <strong className="text-orange-600">{formatBRLProposta(calc.descontoValor)}</strong>
             </p>
             <p className="mt-1">
-              <span className="font-semibold">ICMS ({form.icmsPct.replace('.', ',')}%): </span>
+              <span className="font-semibold">
+                ICMS ({form.icmsPct.replace('.', ',')}%):{' '}
+              </span>
               <strong>{formatBRLProposta(calc.icmsValor)}</strong>
             </p>
           </div>

@@ -6,7 +6,7 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUB
 
 /**
  * POST /api/admin/sync-photos
- * Body: { route_id, freight_id, driver_id }
+ * Body: { route_id, freight_id, driver_id? }
  *
  * Checks Supabase Storage for photos in transport-photos/{route_id}/
  * and creates missing check-in records in the checkins table.
@@ -15,8 +15,8 @@ export async function POST(request: NextRequest) {
   try {
     const { route_id, freight_id, driver_id } = await request.json()
 
-    if (!route_id || !freight_id || !driver_id) {
-      return NextResponse.json({ error: 'route_id, freight_id e driver_id são obrigatórios' }, { status: 400 })
+    if (!route_id || !freight_id) {
+      return NextResponse.json({ error: 'route_id e freight_id são obrigatórios' }, { status: 400 })
     }
 
     const supabase = createClient(supabaseUrl, serviceKey)
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
           coords_lat: -22.8584,
           coords_lng: -47.2187,
           freight_id: freight_id,
-          driver_id: driver_id,
+          driver_id: driver_id ?? null,
           route_id: route_id,
           timestamp
         })

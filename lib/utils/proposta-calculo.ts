@@ -22,15 +22,35 @@ export interface PropostaCalculo {
   pesoCubadoKg: number
   pesoRealKg: number
   pesoExibicaoKg: number
+  /** Quando o frete base é informado “cheio” (taxas + ICMS já dentro), é o valor digitado; senão null. */
+  freteBaseInformado: number | null
+  /** Frete líquido (transporte), após separar taxas e ICMS embutidos, ou frete por km quando não há valor informado. */
   freteBase: number
+  /** Taxas: embutidas no frete informado, ou somadas por fora no modo legado. */
   taxas: number
+  /** ICMS: valor embutido extraído do frete informado, ou calculado por fora no modo legado. */
+  icmsValor: number
   seguro: number
   subtotalAntesDesc: number
   descontoValor: number
   baseIcms: number
-  icmsValor: number
   totalLiquido: number
   rotaTexto: string
+  /** true = frete base único já inclui taxas e ICMS (não somar de novo). */
+  modoFreteInclusivo: boolean
+}
+
+/**
+ * Frete base informado já inclui ICMS e taxas.
+ * Extrai ICMS “por dentro”: base_sem_icms = T / (1 + p/100); depois separa taxas fixas embutidas.
+ */
+function decomporFreteBaseInclusivo(T: number, taxasEmbutidas: number, icmsPct: number) {
+  const p = Math.max(0, icmsPct)
+  const baseSemIcms = p > 0 ? T / (1 + p / 100) : T
+  const icmsIncluso = Math.max(0, T - baseSemIcms)
+  const taxas = Math.min(Math.max(0, taxasEmbutidas), baseSemIcms)
+  const freteLiquido = Math.max(0, baseSemIcms - taxas)
+  return { freteLiquido, taxas, icmsIncluso, baseSemIcms }
 }
 
 export function calcularProposta(s: PropostaFormState): PropostaCalculo {
@@ -44,21 +64,51 @@ export function calcularProposta(s: PropostaFormState): PropostaCalculo {
 
   const dist = parseDecimalBR(s.distanciaKm)
   const vk = parseDecimalBR(s.valorKm)
-  const manual = s.freteManual.trim() ? parseDecimalBR(s.freteManual) : null
-  const freteBase = manual != null && manual > 0 ? manual : Math.max(0, dist * vk)
+  const manualRaw = s.freteManual.trim() ? parseDecimalBR(s.freteManual) : null
+  const manual = manualRaw != null && manualRaw > 0 ? manualRaw : null
 
-  const taxas = parseDecimalBR(s.taxasFixas)
+  const taxasInput = parseDecimalBR(s.taxasFixas)
   const valorNf = parseDecimalBR(s.valorNf)
   const seguroPct = parseDecimalBR(s.seguroPct)
   const seguro = valorNf > 0 && seguroPct > 0 ? (valorNf * seguroPct) / 100 : 0
 
-  const subtotalAntesDesc = freteBase + taxas + seguro
   const descPct = parseDecimalBR(s.descontoPct)
-  const descontoValor = (subtotalAntesDesc * descPct) / 100
-  const baseIcms = Math.max(0, subtotalAntesDesc - descontoValor)
   const icmsPct = parseDecimalBR(s.icmsPct)
-  const icmsValor = (baseIcms * icmsPct) / 100
-  const totalLiquido = baseIcms + icmsValor
+
+  let freteBaseInformado: number | null = null
+  let freteBase: number
+  let taxas: number
+  let icmsValor: number
+  let subtotalAntesDesc: number
+  let descontoValor: number
+  let baseIcms: number
+  let totalLiquido: number
+  let modoFreteInclusivo: boolean
+
+  if (manual != null) {
+    modoFreteInclusivo = true
+    freteBaseInformado = manual
+    const dec = decomporFreteBaseInclusivo(manual, taxasInput, icmsPct)
+    freteBase = dec.freteLiquido
+    taxas = dec.taxas
+    icmsValor = dec.icmsIncluso
+    // Seguro: apenas referência sobre a NF; não entra no total líquido (CT-e)
+    subtotalAntesDesc = manual
+    descontoValor = (subtotalAntesDesc * descPct) / 100
+    baseIcms = Math.max(0, subtotalAntesDesc - descontoValor)
+    totalLiquido = baseIcms
+  } else {
+    modoFreteInclusivo = false
+    freteBaseInformado = null
+    freteBase = Math.max(0, dist * vk)
+    taxas = taxasInput
+    // Frete + taxas + ICMS por fora; seguro calculado mas fora do CT-e
+    subtotalAntesDesc = freteBase + taxas
+    descontoValor = (subtotalAntesDesc * descPct) / 100
+    baseIcms = Math.max(0, subtotalAntesDesc - descontoValor)
+    icmsValor = (baseIcms * icmsPct) / 100
+    totalLiquido = baseIcms + icmsValor
+  }
 
   const o = [s.cidadeOrigem, s.ufOrigem].filter(Boolean).join(' / ')
   const de = [s.cidadeDestino, s.ufDestino].filter(Boolean).join(' / ')
@@ -69,15 +119,17 @@ export function calcularProposta(s: PropostaFormState): PropostaCalculo {
     pesoCubadoKg,
     pesoRealKg,
     pesoExibicaoKg,
+    freteBaseInformado,
     freteBase,
     taxas,
+    icmsValor,
     seguro,
     subtotalAntesDesc,
     descontoValor,
     baseIcms,
-    icmsValor,
     totalLiquido,
     rotaTexto,
+    modoFreteInclusivo,
   }
 }
 

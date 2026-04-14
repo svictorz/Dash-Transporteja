@@ -1,7 +1,7 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Clock3, Plus, Truck, HandCoins, Users, BellRing } from 'lucide-react'
+import { CalendarDays, Clock3, Plus, Truck, Users, BellRing } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 
 type TipoCompromisso = 'entrega' | 'recebimento' | 'reuniao' | 'outro'
@@ -47,11 +47,13 @@ function toDateInputValue(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
+/** Grade do mês com semana começando na segunda-feira (padrão comum no Brasil). */
 function buildMonthGrid(baseDate: Date): Date[] {
   const firstDay = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1)
-  const startWeekday = firstDay.getDay()
+  const weekdaySun0 = firstDay.getDay()
+  const daysFromMonday = (weekdaySun0 + 6) % 7
   const gridStart = new Date(firstDay)
-  gridStart.setDate(firstDay.getDate() - startWeekday)
+  gridStart.setDate(firstDay.getDate() - daysFromMonday)
 
   const days: Date[] = []
   for (let i = 0; i < 42; i += 1) {
@@ -60,6 +62,24 @@ function buildMonthGrid(baseDate: Date): Date[] {
     days.push(d)
   }
   return days
+}
+
+const WEEKDAYS_BR_SHORT = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'] as const
+
+function formatDayHeadingBR(isoYmd: string): string {
+  const parts = isoYmd.split('-').map(Number)
+  const y = parts[0]
+  const m = parts[1]
+  const d = parts[2]
+  if (!y || !m || !d) return isoYmd
+  const date = new Date(y, m - 1, d)
+  const s = date.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function labelTipo(tipo: TipoCompromisso): string {
@@ -80,7 +100,7 @@ function iconTipo(tipo: TipoCompromisso) {
     case 'entrega':
       return Truck
     case 'recebimento':
-      return HandCoins
+      return CalendarDays
     case 'reuniao':
       return Users
     default:
@@ -213,10 +233,11 @@ export default function CalendarioPage() {
   const monthGrid = useMemo(() => buildMonthGrid(calendarBaseDate), [calendarBaseDate])
 
   const monthLabel = useMemo(() => {
-    return calendarBaseDate.toLocaleDateString('pt-BR', {
+    const s = calendarBaseDate.toLocaleDateString('pt-BR', {
       month: 'long',
       year: 'numeric',
     })
+    return s.charAt(0).toUpperCase() + s.slice(1)
   }, [calendarBaseDate])
 
   const eventCountByDay = useMemo(() => {
@@ -261,7 +282,7 @@ export default function CalendarioPage() {
   }
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-6">
+    <div lang="pt-BR" className="max-w-[1400px] mx-auto space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Agenda</h1>
@@ -302,7 +323,7 @@ export default function CalendarioPage() {
             >
               ←
             </button>
-            <p className="text-sm font-semibold text-gray-900 capitalize">{monthLabel}</p>
+            <p className="text-sm font-semibold text-gray-900">{monthLabel}</p>
             <button
               type="button"
               onClick={() => setCalendarBaseDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
@@ -312,8 +333,8 @@ export default function CalendarioPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-7 text-[10px] text-gray-500 mb-1">
-            {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((w) => (
+          <div className="grid grid-cols-7 text-[10px] text-gray-500 mb-1 font-medium">
+            {WEEKDAYS_BR_SHORT.map((w) => (
               <div key={w} className="text-center py-1">
                 {w}
               </div>
@@ -361,7 +382,7 @@ export default function CalendarioPage() {
         <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-800">
-              Compromissos de {selectedDate.split('-').reverse().join('/')}
+              Compromissos de {formatDayHeadingBR(selectedDate)}
             </h2>
           </div>
           <div className="p-4 space-y-3">

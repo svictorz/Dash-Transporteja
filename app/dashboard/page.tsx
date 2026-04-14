@@ -16,7 +16,6 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useRoutes } from '@/lib/hooks/useRoutes'
-import { useDrivers } from '@/lib/hooks/useDrivers'
 import { supabase } from '@/lib/supabase/client'
 
 
@@ -31,9 +30,8 @@ interface Alert {
 interface RoutePreview {
   id: string
   freightId: number
-  driver: string
-  driverCNH: string
-  driverPhone: string
+  companyName: string
+  companyResponsible: string
   origin: string
   originState: string
   destination: string
@@ -48,8 +46,7 @@ interface RoutePreview {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { routes, loading: routesLoading } = useRoutes()
-  const { drivers, loading: driversLoading } = useDrivers()
+  const { routes } = useRoutes()
   
   const [mounted, setMounted] = useState(false)
   const [checkIns, setCheckIns] = useState<any[]>([])
@@ -89,7 +86,7 @@ export default function DashboardPage() {
     loadCheckIns()
   }, [loadCheckIns])
 
-  // Realtime: atualizar check-ins quando o app motorista ou outro cliente inserir/alterar
+  // Realtime: atualizar check-ins quando o app ou outro cliente inserir/alterar
   useEffect(() => {
     const channel = supabase
       .channel('checkins-realtime')
@@ -141,22 +138,6 @@ export default function DashboardPage() {
     })
   }, [checkIns])
 
-  // Calcular estatísticas de motoristas
-  const driverStats = useMemo(() => {
-    const active = drivers.filter(d => d.status === 'active').length
-    const onRoute = drivers.filter(d => d.status === 'onRoute').length
-    const inactive = drivers.filter(d => d.status === 'inactive').length
-    const available = active - onRoute
-
-    return {
-      active,
-      total: drivers.length,
-      onRoute,
-      available: Math.max(0, available),
-      inactive
-    }
-  }, [drivers])
-
   // Calcular estatísticas de rotas
   const routeStats = useMemo(() => {
     const active = routes.filter(r => r.status === 'inTransit' || r.status === 'pickedUp').length
@@ -194,13 +175,11 @@ export default function DashboardPage() {
     return routes
       .slice(0, 5)
       .map(route => {
-        const driver = drivers.find(d => d.id === route.driver_id)
         return {
           id: route.id,
           freightId: route.freight_id,
-          driver: driver?.name || 'N/A',
-          driverCNH: driver ? `CNH: ${driver.cnh}` : 'N/A',
-          driverPhone: driver?.phone || 'N/A',
+          companyName: route.company_name?.trim() || '—',
+          companyResponsible: route.company_responsible?.trim() || '—',
           origin: route.origin,
           originState: route.origin_state,
           destination: route.destination,
@@ -213,7 +192,7 @@ export default function DashboardPage() {
           status: route.status
         } as RoutePreview
       })
-  }, [routes, drivers])
+  }, [routes])
 
   // Alertas (mockados por enquanto - pode ser implementado depois)
   const alerts: Alert[] = []
@@ -397,9 +376,9 @@ export default function DashboardPage() {
                 <span className="text-xs font-semibold">+8%</span>
               </div>
             </div>
-            <div className="text-2xl font-bold text-gray-900 mb-1">{driverStats.onRoute}</div>
-            <div className="text-sm text-gray-600">Motoristas em Rota</div>
-            <div className="text-xs text-gray-500 mt-2">{driverStats.available} disponíveis</div>
+            <div className="text-2xl font-bold text-gray-900 mb-1">{routeStats.pending}</div>
+            <div className="text-sm text-gray-600">Fretes pendentes</div>
+            <div className="text-xs text-gray-500 mt-2">{routeStats.completed} entregues</div>
           </motion.div>
         </FadeIn>
 
@@ -447,7 +426,7 @@ export default function DashboardPage() {
                         ID do Frete
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Atribuído a
+                        Cliente
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Rota
@@ -483,8 +462,8 @@ export default function DashboardPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex flex-col">
-                            <span className="text-sm text-gray-900">{route.driver}</span>
-                            <span className="text-xs text-gray-500 mt-1">{route.driverCNH}</span>
+                            <span className="text-sm text-gray-900">{route.companyName}</span>
+                            <span className="text-xs text-gray-500 mt-1">{route.companyResponsible}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4">

@@ -1,10 +1,14 @@
 import { supabase } from '@/lib/supabase/client'
 import { generateFreightCode } from '@/lib/utils/freight-code'
 
+/** Quando não há motorista: valores aceitos pelo trigger validate_plate no Supabase */
+export const ROUTE_NO_DRIVER_VEHICLE = 'A definir'
+export const ROUTE_NO_DRIVER_PLATE = 'ABC1D23'
+
 export interface Route {
   id: string
   freight_id: number
-  driver_id: string
+  driver_id: string | null
   origin: string
   origin_state: string
   origin_address?: string | null
@@ -34,18 +38,19 @@ export interface Route {
 
 export interface CreateRouteData {
   freight_id?: number
-  driver_id: string
+  driver_id?: string | null
   origin: string
   origin_state: string
   origin_address?: string
   destination: string
   destination_state: string
   destination_address?: string
-  vehicle: string
-  plate: string
+  vehicle?: string
+  plate?: string
   weight: string
-  estimated_delivery: string
-  pickup_date: string
+  /** ISO yyyy-mm-dd ou vazio se ainda não definido */
+  estimated_delivery?: string
+  pickup_date?: string
   status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
   company_name?: string
   company_responsible?: string
@@ -62,7 +67,7 @@ export interface CreateRouteData {
 
 export interface UpdateRouteData {
   freight_id?: number
-  driver_id?: string
+  driver_id?: string | null
   origin?: string
   origin_state?: string
   origin_address?: string | null
@@ -151,11 +156,34 @@ export async function createRoute(routeData: CreateRouteData): Promise<Route> {
     routeData.freight_id = generateFreightCode()
   }
 
+  const pickup_date = routeData.pickup_date ?? ''
+  const estimated_delivery = routeData.estimated_delivery ?? ''
+
+  const hasDriver = Boolean(routeData.driver_id)
+  const driver_id = hasDriver ? routeData.driver_id! : null
+  const vehicle = routeData.vehicle ?? ROUTE_NO_DRIVER_VEHICLE
+  const plate = routeData.plate ?? ROUTE_NO_DRIVER_PLATE
+
+  const {
+    pickup_date: _pd,
+    estimated_delivery: _ed,
+    driver_id: _ignoreDriver,
+    vehicle: _ignoreVeh,
+    plate: _ignorePlate,
+    status: _st,
+    ...rest
+  } = routeData
+
   const { data, error } = await supabase
     .from('routes')
     .insert({
-      ...routeData,
-      status: routeData.status || 'pending'
+      ...rest,
+      driver_id,
+      vehicle,
+      plate,
+      pickup_date,
+      estimated_delivery,
+      status: routeData.status || 'pending',
     })
     .select()
     .single()

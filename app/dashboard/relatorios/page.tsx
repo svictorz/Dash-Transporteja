@@ -3,40 +3,23 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import FadeIn from '@/components/animations/FadeIn'
-import { FileText, Calendar, Download, Building2, Truck, Plus, X, ChevronDown } from 'lucide-react'
+import { FileText, Calendar, Download, Building2, Plus, X, ChevronDown } from 'lucide-react'
 import { useClients } from '@/lib/hooks/useClients'
-import { useDrivers } from '@/lib/hooks/useDrivers'
-
-interface ReportFilter {
-  type: 'general' | 'company' | 'driver'
-  startDate: string
-  endDate: string
-  companyId?: string
-  driverId?: string
-}
 
 export default function RelatoriosPage() {
   const { clients } = useClients()
-  const { drivers } = useDrivers()
   
-  const [reportType, setReportType] = useState<'general' | 'company' | 'driver' | null>(null)
+  const [reportType, setReportType] = useState<'general' | 'company' | null>(null)
   const [showTypeOptions, setShowTypeOptions] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [selectedCompany, setSelectedCompany] = useState<string>('')
-  const [selectedDriver, setSelectedDriver] = useState<string>('')
   const [quickPeriod, setQuickPeriod] = useState<string>('')
   const [showPeriodOptions, setShowPeriodOptions] = useState(false)
 
-  // Converter clientes e motoristas para o formato esperado
   const companies = clients.map(client => ({
     id: client.id,
     name: client.company_name
-  }))
-
-  const driversList = drivers.map(driver => ({
-    id: driver.id,
-    name: driver.name
   }))
 
   const getQuickPeriodDates = (period: string) => {
@@ -103,17 +86,11 @@ export default function RelatoriosPage() {
       return
     }
 
-    if (reportType === 'driver' && !selectedDriver) {
-      alert('Por favor, selecione um motorista')
-      return
-    }
-
     // Simular geração de relatório
     const report = {
       type: reportType,
       period: quickPeriod === 'custom' ? `${startDate} até ${endDate}` : getPeriodLabel(quickPeriod),
       company: reportType === 'company' ? companies.find(c => c.id === selectedCompany)?.name : null,
-      driver: reportType === 'driver' ? driversList.find(d => d.id === selectedDriver)?.name : null,
       data: {
         totalRoutes: 45,
         completedRoutes: 42,
@@ -143,7 +120,6 @@ export default function RelatoriosPage() {
       type: reportType,
       period: quickPeriod === 'custom' ? `${startDate} até ${endDate}` : getPeriodLabel(quickPeriod),
       company: reportType === 'company' ? companies.find(c => c.id === selectedCompany)?.name : null,
-      driver: reportType === 'driver' ? driversList.find(d => d.id === selectedDriver)?.name : null,
       data: {
         totalRoutes: 45,
         completedRoutes: 42,
@@ -154,11 +130,10 @@ export default function RelatoriosPage() {
     }
     
     const reportContent = `
-RELATÓRIO DE ${reportData.type === 'company' ? 'EMPRESA' : reportData.type === 'driver' ? 'MOTORISTA' : 'GERAL'}
+RELATÓRIO DE ${reportData.type === 'company' ? 'EMPRESA' : 'GERAL'}
 
 Período: ${reportData.period}
 ${reportData.company ? `Empresa: ${reportData.company}` : ''}
-${reportData.driver ? `Motorista: ${reportData.driver}` : ''}
 
 Total de Rotas: ${reportData.data.totalRoutes}
 Rotas Concluídas: ${reportData.data.completedRoutes}
@@ -180,7 +155,6 @@ Taxa de Sucesso: ${reportData.data.successRate}
     setStartDate('')
     setEndDate('')
     setSelectedCompany('')
-    setSelectedDriver('')
     setReportType(null)
     setQuickPeriod('')
     setShowTypeOptions(false)
@@ -205,7 +179,6 @@ Taxa de Sucesso: ${reportData.data.successRate}
             >
               {reportType === 'general' && <FileText className="w-6 h-6" />}
               {reportType === 'company' && <Building2 className="w-6 h-6" />}
-              {reportType === 'driver' && <Truck className="w-6 h-6" />}
               {!reportType && <Plus className="w-6 h-6" />}
             </motion.button>
 
@@ -223,7 +196,6 @@ Taxa de Sucesso: ${reportData.data.successRate}
                         setReportType('general')
                         setShowTypeOptions(false)
                         setSelectedCompany('')
-                        setSelectedDriver('')
                       }}
                       className="w-full p-3 rounded-lg hover:bg-white/50 transition-colors flex items-center gap-3 text-left"
                     >
@@ -234,23 +206,11 @@ Taxa de Sucesso: ${reportData.data.successRate}
                       onClick={() => {
                         setReportType('company')
                         setShowTypeOptions(false)
-                        setSelectedDriver('')
                       }}
                       className="w-full p-3 rounded-lg hover:bg-white/50 transition-colors flex items-center gap-3 text-left"
                     >
                       <Building2 className="w-5 h-5 text-blue-600" />
                       <span className="font-medium text-gray-900">Relatório por Empresa</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setReportType('driver')
-                        setShowTypeOptions(false)
-                        setSelectedCompany('')
-                      }}
-                      className="w-full p-3 rounded-lg hover:bg-white/50 transition-colors flex items-center gap-3 text-left"
-                    >
-                      <Truck className="w-5 h-5 text-green-600" />
-                      <span className="font-medium text-gray-900">Relatório por Motorista</span>
                     </button>
                   </div>
                 </motion.div>
@@ -398,33 +358,9 @@ Taxa de Sucesso: ${reportData.data.successRate}
               </motion.div>
             )}
 
-            {/* Filtro de Motorista */}
-            {reportType === 'driver' && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <label className="block text-sm font-semibold text-gray-900 mb-3">
-                  Motorista
-                </label>
-                <select
-                  value={selectedDriver}
-                  onChange={(e) => setSelectedDriver(e.target.value)}
-                  className="w-full px-4 py-3 glass-card border border-white/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-800"
-                >
-                  <option value="">Selecione um motorista</option>
-                  {driversList.map((driver) => (
-                    <option key={driver.id} value={driver.id}>
-                      {driver.name}
-                    </option>
-                  ))}
-                </select>
-              </motion.div>
-            )}
-
             {/* Botões de Ação */}
             <div className="flex items-center gap-3 pt-4 border-t border-white/20">
-              {(reportType || quickPeriod || selectedCompany || selectedDriver) && (
+              {(reportType || quickPeriod || selectedCompany) && (
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}

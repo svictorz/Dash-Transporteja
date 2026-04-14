@@ -2,24 +2,25 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Route, MapPin, ArrowRight, X, Truck, User, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Camera, CheckCircle2, RefreshCw, Upload, Eye } from 'lucide-react'
+import { Route, MapPin, ArrowRight, X, Truck, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Camera, CheckCircle2, RefreshCw, Upload, Eye } from 'lucide-react'
 import { useRoutes } from '@/lib/hooks/useRoutes'
-import { useDrivers } from '@/lib/hooks/useDrivers'
 import { useClients } from '@/lib/hooks/useClients'
-import { Route as RouteType, CreateRouteData } from '@/lib/services/routes'
-import { Driver } from '@/lib/services/drivers'
+import {
+  Route as RouteType,
+  CreateRouteData,
+  ROUTE_NO_DRIVER_PLATE,
+  ROUTE_NO_DRIVER_VEHICLE,
+} from '@/lib/services/routes'
 import { Client } from '@/lib/services/clients'
 import CEPInput from '@/components/transporteja/CEPInput'
 import { CEPData } from '@/lib/services/cep'
 import { supabase } from '@/lib/supabase/client'
 import { generateFreightCode } from '@/lib/utils/freight-code'
 import { useAuthState } from '@/lib/hooks/useAuthState'
-import { canCreateRoute } from '@/lib/services/credits'
 import { useDebouncedRouteDistance } from '@/lib/hooks/useDebouncedRouteDistance'
 
-// Interface para exibição (com dados do motorista e cliente)
+// Interface para exibição (com dados do cliente)
 interface RouteDisplayData extends RouteType {
-  driver?: Driver
   client?: Client
 }
 
@@ -33,19 +34,15 @@ interface CheckInRecord {
   address?: string
 }
 
-type DocumentKey =
-  | 'driverDocs'
-  | 'freteDocs'
+type DocumentKey = 'freteDocs'
 
 const EMPTY_DOCUMENT_URLS: Record<DocumentKey, string | null> = {
-  driverDocs: null,
   freteDocs: null,
 }
 
 export default function RotasPage() {
   const { session } = useAuthState()
   const { routes, loading: routesLoading, error: routesError, createRoute, updateRoute, deleteRoute } = useRoutes()
-  const { drivers, loading: driversLoading } = useDrivers()
   const { clients, loading: clientsLoading } = useClients()
   
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'>('all')
@@ -60,10 +57,7 @@ export default function RotasPage() {
   const [documentUrls, setDocumentUrls] = useState<Record<DocumentKey, string | null>>(EMPTY_DOCUMENT_URLS)
   const [uploadingDocument, setUploadingDocument] = useState<DocumentKey | null>(null)
   
-  // Estados para seleção de motorista e empresa
   const [companyInput, setCompanyInput] = useState('')
-  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null)
-  const [selectedCompany, setSelectedCompany] = useState<Client | null>(null)
   
   // Estado do formulário
   const [formData, setFormData] = useState({
@@ -108,10 +102,9 @@ export default function RotasPage() {
     return null
   }, [routeDistance.distanciaKm, showEditModal, editingRoute?.distance_km])
 
-  // Combinar rotas com dados de motoristas e clientes
+  // Combinar rotas com dados de clientes
   const routesWithDetails = useMemo(() => {
     return routes.map(route => {
-      const driver = drivers.find(d => d.id === route.driver_id)
       const client = clients.find(c => 
         c.company_name === route.company_name || 
         (route.company_email && c.email === route.company_email)
@@ -119,11 +112,10 @@ export default function RotasPage() {
       
       return {
         ...route,
-        driver,
         client
       } as RouteDisplayData
     })
-  }, [routes, drivers, clients])
+  }, [routes, clients])
 
   const filteredRoutes = useMemo(() => {
     return routesWithDetails.filter(route => {
@@ -186,7 +178,7 @@ export default function RotasPage() {
   }, [selectedRoute])
 
   const syncPhotosFromStorage = useCallback(async (route: RouteDisplayData) => {
-    if (!route.id || !route.freight_id || !route.driver_id) return
+    if (!route.id || !route.freight_id) return
     try {
       await fetch('/api/admin/sync-photos', {
         method: 'POST',
@@ -194,7 +186,7 @@ export default function RotasPage() {
         body: JSON.stringify({
           route_id: route.id,
           freight_id: route.freight_id,
-          driver_id: route.driver_id
+          ...(route.driver_id ? { driver_id: route.driver_id } : {})
         })
       })
     } catch { /* silent */ }
@@ -204,86 +196,13 @@ export default function RotasPage() {
     try {
       await syncPhotosFromStorage(route)
 
-      const freightId = route.freight_id
-      const driverId = route.driver_id
+      const { data } = await supabase
+        .from('checkins')
+        .select('id, type, timestamp, photo_url, coords_lat, coords_lng, address')
+        .eq('freight_id', route.freight_id)
+        .order('timestamp', { ascending: false })
 
-      if (!driverId) {
-        const { data } = await supabase
-          .from('checkins')
-          .select('id, type, timestamp, photo_url, coords_lat, coords_lng, address')
-          .eq('freight_id', freightId)
-          .order('timestamp', { ascending: false })
-        setCheckIns(data || [])
-        return
-      }
-
-      const [ciResult, routesResult] = await Promise.all([
-        supabase
-          .from('checkins')
-          .select('id, type, timestamp, photo_url, coords_lat, coords_lng, address, freight_id, route_id')
-          .eq('driver_id', driverId)
-          .order('timestamp', { ascending: false }),
-        supabase
-          .from('routes')
-          .select('id, freight_id, created_at')
-          .eq('driver_id', driverId)
-          .order('created_at', { ascending: true })
-      ])
-
-      const allCheckins = ciResult.data || []
-      const allRoutes = routesResult.data || []
-
-      if (allRoutes.length === 0) {
-        setCheckIns([])
-        return
-      }
-
-      const routeTimestamps = allRoutes.map(r => ({
-        ...r,
-        createdMs: new Date(r.created_at).getTime()
-      }))
-
-      const toFix: { id: string; correctFreightId: number | null; correctRouteId: string | null }[] = []
-      const myCheckins: typeof allCheckins = []
-
-      for (const ci of allCheckins) {
-        const ciTime = new Date(ci.timestamp).getTime()
-
-        let bestRoute: typeof routeTimestamps[number] | null = null
-        for (const rt of routeTimestamps) {
-          if (rt.createdMs <= ciTime) {
-            bestRoute = rt
-          } else {
-            break
-          }
-        }
-
-        const correctFreightId = bestRoute ? bestRoute.freight_id : null
-        const correctRouteId = bestRoute ? bestRoute.id : null
-
-        if (ci.freight_id !== correctFreightId || ci.route_id !== correctRouteId) {
-          toFix.push({ id: ci.id, correctFreightId, correctRouteId })
-        }
-
-        if (correctFreightId === freightId) {
-          myCheckins.push(ci)
-        }
-      }
-
-      if (toFix.length > 0) {
-        try {
-          await fetch('/api/admin/fix-checkins', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fixes: toFix })
-          })
-        } catch { /* silent */ }
-      }
-
-      myCheckins.sort(
-        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      )
-      setCheckIns(myCheckins)
+      setCheckIns(data || [])
     } catch {
       setCheckIns([])
     }
@@ -323,15 +242,11 @@ export default function RotasPage() {
 
   const handleOpenEdit = (route: RouteDisplayData) => {
     setEditingRoute(route)
-    // Buscar motorista e cliente relacionados
-    const driver = drivers.find(d => d.id === route.driver_id)
     const client = clients.find(c => 
       c.company_name === route.company_name || 
       (route.company_email && c.email === route.company_email)
     )
-    setSelectedDriver(driver || null)
-    setSelectedCompany(client || null)
-    setCompanyInput(client?.company_name || '')
+    setCompanyInput(client?.company_name || route.company_name || '')
     setFormData({
       origin: route.origin,
       originState: route.origin_state,
@@ -421,6 +336,42 @@ export default function RotasPage() {
     )
   }, [clients])
 
+  /** Cliente do cadastro ou nome digitado (texto livre) para preencher os campos da rota. */
+  const resolveCompanyForRoute = useCallback(
+    (matched: Client | null, rawInput: string) => {
+      const raw = rawInput.trim()
+      if (matched) {
+        return {
+          company_name: matched.company_name,
+          company_responsible: matched.responsible,
+          company_phone: matched.whatsapp,
+          company_email: matched.email,
+          company_address: matched.address,
+          company_city: matched.city,
+          company_state: matched.state,
+        }
+      }
+      if (raw) {
+        return {
+          company_name: raw,
+          company_responsible: 'Não informado',
+          company_phone: '',
+          company_email: '',
+          company_address: '',
+          company_city: '',
+          company_state: '',
+        }
+      }
+      return null
+    },
+    []
+  )
+
+  const companyInputMatch = useMemo(
+    () => findCompanyByInput(companyInput),
+    [companyInput, findCompanyByInput]
+  )
+
   const formatDateBR = (dateString: string) => {
     if (!dateString) return ''
     // Se já está formatado (ex: "05 Out, 2025"), retornar como está
@@ -440,19 +391,33 @@ export default function RotasPage() {
 
   const handleCreateRoute = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    const driverToUse = selectedDriver ?? drivers[0] ?? null
-    if (!driverToUse || !selectedCompany) {
-      alert('Por favor, selecione uma empresa e tenha ao menos um motorista cadastrado')
+
+    const matchedCompany = findCompanyByInput(companyInput)
+    const companyResolved = resolveCompanyForRoute(matchedCompany, companyInput)
+    if (!companyResolved) {
+      alert('Informe a empresa: escolha um cliente da lista ou digite o nome da empresa.')
       return
     }
 
-    if (session?.user?.id) {
-      const { ok, error: creditsError } = await canCreateRoute(session.user.id)
-      if (!ok && creditsError) {
-        alert(creditsError)
-        return
-      }
+    if (!formData.origin.trim() || !formData.originState.trim()) {
+      alert('Preencha cidade e UF de origem.')
+      return
+    }
+    if (formData.originState.trim().length !== 2) {
+      alert('UF de origem deve ter 2 letras (ex.: SP).')
+      return
+    }
+    if (!formData.destination.trim() || !formData.destinationState.trim()) {
+      alert('Preencha cidade e UF de destino.')
+      return
+    }
+    if (formData.destinationState.trim().length !== 2) {
+      alert('UF de destino deve ter 2 letras (ex.: RJ).')
+      return
+    }
+    if (!formData.weight.trim()) {
+      alert('Preencha o peso do frete.')
+      return
     }
 
     setIsSubmitting(true)
@@ -460,28 +425,28 @@ export default function RotasPage() {
     try {
       const routeData: CreateRouteData = {
         freight_id: generateFreightCode(),
-        driver_id: driverToUse.id,
+        driver_id: null,
       origin: formData.origin,
         origin_state: formData.originState,
         origin_address: formData.originAddress || undefined,
       destination: formData.destination,
         destination_state: formData.destinationState,
         destination_address: formData.destinationAddress || undefined,
-      vehicle: driverToUse.vehicle,
-      plate: driverToUse.plate,
+      vehicle: ROUTE_NO_DRIVER_VEHICLE,
+      plate: ROUTE_NO_DRIVER_PLATE,
       weight: formData.weight,
       nf_value: formData.nfValue.trim() ? parseFloat(formData.nfValue.replace(',', '.')) : null,
       observation: formData.observation.trim() || null,
-        estimated_delivery: formData.estimatedDelivery,
-        pickup_date: formData.pickupDate,
+        estimated_delivery: formData.estimatedDelivery.trim(),
+        pickup_date: formData.pickupDate.trim(),
         status: 'pending',
-        company_name: selectedCompany.company_name,
-        company_responsible: selectedCompany.responsible,
-        company_phone: selectedCompany.whatsapp,
-        company_email: selectedCompany.email,
-        company_address: selectedCompany.address,
-        company_city: selectedCompany.city,
-        company_state: selectedCompany.state,
+        company_name: companyResolved.company_name,
+        company_responsible: companyResolved.company_responsible,
+        company_phone: companyResolved.company_phone,
+        company_email: companyResolved.company_email,
+        company_address: companyResolved.company_address,
+        company_city: companyResolved.company_city,
+        company_state: companyResolved.company_state,
         distance_km:
           routeDistance.distanciaKm ??
           null,
@@ -499,13 +464,36 @@ export default function RotasPage() {
 
   const handleUpdateRoute = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    const matchedCompany = findCompanyByInput(companyInput)
+    const companyResolved = resolveCompanyForRoute(matchedCompany, companyInput)
+    if (!companyResolved) {
+      alert('Informe a empresa: escolha um cliente da lista ou digite o nome da empresa.')
+      return
+    }
     
-    const driverToUse =
-      selectedDriver ??
-      drivers.find((d) => d.id === editingRoute?.driver_id) ??
-      null
-    if (!editingRoute || !driverToUse || !selectedCompany) {
-      alert('Por favor, selecione uma empresa e mantenha um motorista válido no frete')
+    if (!editingRoute) {
+      return
+    }
+
+    if (!formData.origin.trim() || !formData.originState.trim()) {
+      alert('Preencha cidade e UF de origem.')
+      return
+    }
+    if (formData.originState.trim().length !== 2) {
+      alert('UF de origem deve ter 2 letras (ex.: SP).')
+      return
+    }
+    if (!formData.destination.trim() || !formData.destinationState.trim()) {
+      alert('Preencha cidade e UF de destino.')
+      return
+    }
+    if (formData.destinationState.trim().length !== 2) {
+      alert('UF de destino deve ter 2 letras (ex.: RJ).')
+      return
+    }
+    if (!formData.weight.trim()) {
+      alert('Preencha o peso do frete.')
       return
     }
 
@@ -513,28 +501,28 @@ export default function RotasPage() {
 
     try {
       await updateRoute(editingRoute.id, {
-        driver_id: driverToUse.id,
+        driver_id: null,
         origin: formData.origin,
         origin_state: formData.originState,
         origin_address: formData.originAddress || null,
         destination: formData.destination,
         destination_state: formData.destinationState,
         destination_address: formData.destinationAddress || null,
-        vehicle: driverToUse.vehicle,
-        plate: driverToUse.plate,
+        vehicle: editingRoute.vehicle ?? ROUTE_NO_DRIVER_VEHICLE,
+        plate: editingRoute.plate ?? ROUTE_NO_DRIVER_PLATE,
         weight: formData.weight,
         nf_value: formData.nfValue.trim() ? parseFloat(formData.nfValue.replace(',', '.')) : null,
         observation: formData.observation.trim() || null,
-        estimated_delivery: formData.estimatedDelivery,
-        pickup_date: formData.pickupDate,
+        estimated_delivery: formData.estimatedDelivery.trim(),
+        pickup_date: formData.pickupDate.trim(),
         status: editingRoute.status,
-        company_name: selectedCompany.company_name,
-        company_responsible: selectedCompany.responsible,
-        company_phone: selectedCompany.whatsapp,
-        company_email: selectedCompany.email,
-        company_address: selectedCompany.address,
-        company_city: selectedCompany.city,
-        company_state: selectedCompany.state,
+        company_name: companyResolved.company_name,
+        company_responsible: companyResolved.company_responsible,
+        company_phone: companyResolved.company_phone,
+        company_email: companyResolved.company_email,
+        company_address: companyResolved.company_address,
+        company_city: companyResolved.company_city,
+        company_state: companyResolved.company_state,
         distance_km:
           routeDistance.distanciaKm ??
           editingRoute.distance_km ??
@@ -551,8 +539,6 @@ export default function RotasPage() {
 
   const handleCloseCreateModal = () => {
     setShowCreateModal(false)
-    setSelectedDriver(null)
-    setSelectedCompany(null)
     setCompanyInput('')
     setOriginCEP('')
     setDestinationCEP('')
@@ -574,8 +560,6 @@ export default function RotasPage() {
   const handleCloseEditModal = () => {
     setShowEditModal(false)
     setEditingRoute(null)
-    setSelectedDriver(null)
-    setSelectedCompany(null)
     setCompanyInput('')
     setOriginCEP('')
     setDestinationCEP('')
@@ -669,7 +653,7 @@ export default function RotasPage() {
                   ID do Frete
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  Atribuído a
+                  Cliente
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Rota
@@ -705,8 +689,12 @@ export default function RotasPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col">
-                        <span className="text-sm text-gray-900">{route.driver?.name || 'N/A'}</span>
-                        <span className="text-xs text-gray-500 mt-1">CNH: {route.driver?.cnh || 'N/A'}</span>
+                        <span className="text-sm text-gray-900">
+                          {route.client?.company_name || route.company_name || '—'}
+                        </span>
+                        <span className="text-xs text-gray-500 mt-1">
+                          {route.client?.responsible || route.company_responsible || '—'}
+                        </span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -790,7 +778,7 @@ export default function RotasPage() {
       </div>
 
       {/* Loading */}
-      {(routesLoading || driversLoading || clientsLoading) && (
+      {(routesLoading || clientsLoading) && (
         <div className="text-center py-12">
           <Loader2 className="w-8 h-8 animate-spin mx-auto text-gray-400" />
           <p className="text-gray-500 mt-2">Carregando rotas...</p>
@@ -804,7 +792,7 @@ export default function RotasPage() {
         </div>
       )}
 
-      {!routesLoading && !driversLoading && !clientsLoading && filteredRoutes.length === 0 && (
+      {!routesLoading && !clientsLoading && filteredRoutes.length === 0 && (
         <div className="text-center py-12 text-gray-500">
           <Route className="w-16 h-16 mx-auto mb-4 opacity-50" />
           <p>Nenhum frete encontrado</p>
@@ -847,28 +835,6 @@ export default function RotasPage() {
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Informações do Motorista */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <User className="w-5 h-5" />
-                  Motorista
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-1">Nome</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.driver?.name || 'N/A'}</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-1">CNH</p>
-                    <p className="text-sm font-medium text-gray-900">CNH: {selectedRoute.driver?.cnh || 'N/A'}</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-1">Telefone</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.driver?.phone || 'N/A'}</p>
-                  </div>
-                </div>
-              </div>
-
               {/* Informações da Empresa */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -1011,49 +977,8 @@ export default function RotasPage() {
                 </div>
               </div>
 
-              {/* Documentação do Motorista e do Frete */}
+              {/* Documentação do Frete */}
               <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-4">
-                    <User className="w-5 h-5" />
-                    Informações do Motorista
-                  </h3>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <p className="text-xs text-gray-700 font-semibold uppercase tracking-wide mb-1">
-                      Adicione fotos / documentos
-                    </p>
-                    <p className="text-sm text-gray-600 mb-3">
-                      CNH, documento pessoal e CRLV do motorista.
-                    </p>
-                    <input
-                      id="upload-driver-docs"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => handleUploadDocument('driverDocs', e.target.files?.[0] ?? null)}
-                    />
-                    <div className="flex gap-2">
-                      <label
-                        htmlFor="upload-driver-docs"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer"
-                      >
-                        {uploadingDocument === 'driverDocs' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                        Adicionar
-                      </label>
-                      {documentUrls.driverDocs && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPhoto(documentUrls.driverDocs)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          Ver
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                     <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -1258,7 +1183,7 @@ export default function RotasPage() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateRoute} className="p-6 space-y-6">
+            <form onSubmit={handleCreateRoute} noValidate className="p-6 space-y-6">
               {/* CEP será adicionado antes dos campos de origem */}
               {/* Empresa (preenchimento manual) */}
               <div>
@@ -1270,11 +1195,8 @@ export default function RotasPage() {
                   list="companies-list-create"
                   value={companyInput}
                   onChange={(e) => {
-                    const v = e.target.value
-                    setCompanyInput(v)
-                    setSelectedCompany(findCompanyByInput(v))
+                    setCompanyInput(e.target.value)
                   }}
-                  onBlur={() => setSelectedCompany(findCompanyByInput(companyInput))}
                   className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                   placeholder="Digite nome da empresa, responsável ou e-mail"
                 />
@@ -1286,9 +1208,11 @@ export default function RotasPage() {
                   ))}
                 </datalist>
                 <p className="text-xs text-gray-500 mt-1">
-                  {selectedCompany
-                    ? `${selectedCompany.company_name} • ${selectedCompany.responsible}`
-                    : 'Digite para preencher manualmente e vincular ao cadastro'}
+                  {companyInputMatch
+                    ? `${companyInputMatch.company_name} • ${companyInputMatch.responsible} (cadastro)`
+                    : companyInput.trim()
+                      ? `Será usado o nome digitado: "${companyInput.trim()}"`
+                      : 'Escolha um cliente da lista ou digite o nome da empresa'}
                 </p>
               </div>
 
@@ -1310,8 +1234,8 @@ export default function RotasPage() {
                       originAddress: data.logradouro || formData.originAddress
                     })
                   }}
-                  required
-                  label="CEP de Origem * (Comece digitando o CEP para preencher automaticamente)"
+                  autoSearch={false}
+                  label="CEP de Origem (opcional — clique em Buscar para preencher cidade e endereço)"
                 />
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1325,7 +1249,7 @@ export default function RotasPage() {
                     value={formData.origin}
                     onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Cidade (preenchida automaticamente ao buscar CEP)"
+                      placeholder="Digite a cidade ou use Buscar no CEP acima"
                   />
                 </div>
                 <div>
@@ -1352,7 +1276,7 @@ export default function RotasPage() {
                   value={formData.originAddress}
                   onChange={(e) => setFormData({ ...formData, originAddress: e.target.value })}
                     className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Rua, número, complemento (preenchido automaticamente ao buscar CEP)"
+                    placeholder="Rua, número, complemento (ou use Buscar no CEP acima)"
                 />
                 </div>
               </div>
@@ -1375,8 +1299,8 @@ export default function RotasPage() {
                       destinationAddress: data.logradouro || formData.destinationAddress
                     })
                   }}
-                  required
-                  label="CEP de Destino * (Comece digitando o CEP para preencher automaticamente)"
+                  autoSearch={false}
+                  label="CEP de Destino (opcional — clique em Buscar para preencher cidade e endereço)"
                 />
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1390,7 +1314,7 @@ export default function RotasPage() {
                     value={formData.destination}
                     onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Cidade (preenchida automaticamente ao buscar CEP)"
+                      placeholder="Digite a cidade ou use Buscar no CEP acima"
                   />
                 </div>
                 <div>
@@ -1417,7 +1341,7 @@ export default function RotasPage() {
                   value={formData.destinationAddress}
                   onChange={(e) => setFormData({ ...formData, destinationAddress: e.target.value })}
                     className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Rua, número, complemento (preenchido automaticamente ao buscar CEP)"
+                    placeholder="Rua, número, complemento (ou use Buscar no CEP acima)"
                 />
                 </div>
               </div>
@@ -1439,11 +1363,10 @@ export default function RotasPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Data de Coleta <span className="text-red-500">*</span>
+                    Data de Coleta <span className="text-gray-500 font-normal">(opcional)</span>
                   </label>
                   <input
                     type="date"
-                    required
                     value={formData.pickupDate}
                     onChange={(e) => setFormData({ ...formData, pickupDate: e.target.value })}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
@@ -1451,11 +1374,10 @@ export default function RotasPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Previsão de Entrega <span className="text-red-500">*</span>
+                    Previsão de Entrega <span className="text-gray-500 font-normal">(opcional)</span>
                   </label>
                   <input
                     type="date"
-                    required
                     value={formData.estimatedDelivery}
                     onChange={(e) => setFormData({ ...formData, estimatedDelivery: e.target.value })}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
@@ -1500,11 +1422,9 @@ export default function RotasPage() {
                 >
                   Cancelar
                 </button>
-                <motion.button
+                <button
                   type="submit"
                   disabled={isSubmitting}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
                   className="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isSubmitting ? (
@@ -1515,7 +1435,7 @@ export default function RotasPage() {
                   ) : (
                     'Criar Rota'
                   )}
-                </motion.button>
+                </button>
               </div>
             </form>
           </motion.div>
@@ -1545,7 +1465,7 @@ export default function RotasPage() {
               </button>
             </div>
 
-            <form onSubmit={handleUpdateRoute} className="p-6 space-y-6">
+            <form onSubmit={handleUpdateRoute} noValidate className="p-6 space-y-6">
               {/* Empresa (preenchimento manual) */}
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -1556,11 +1476,8 @@ export default function RotasPage() {
                   list="companies-list-edit"
                   value={companyInput}
                   onChange={(e) => {
-                    const v = e.target.value
-                    setCompanyInput(v)
-                    setSelectedCompany(findCompanyByInput(v))
+                    setCompanyInput(e.target.value)
                   }}
-                  onBlur={() => setSelectedCompany(findCompanyByInput(companyInput))}
                   className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                   placeholder="Digite nome da empresa, responsável ou e-mail"
                 />
@@ -1572,9 +1489,11 @@ export default function RotasPage() {
                   ))}
                 </datalist>
                 <p className="text-xs text-gray-500 mt-1">
-                  {selectedCompany
-                    ? `${selectedCompany.company_name} • ${selectedCompany.responsible}`
-                    : 'Digite para preencher manualmente e vincular ao cadastro'}
+                  {companyInputMatch
+                    ? `${companyInputMatch.company_name} • ${companyInputMatch.responsible} (cadastro)`
+                    : companyInput.trim()
+                      ? `Será usado o nome digitado: "${companyInput.trim()}"`
+                      : 'Escolha um cliente da lista ou digite o nome da empresa'}
                 </p>
               </div>
 
@@ -1596,8 +1515,8 @@ export default function RotasPage() {
                       originAddress: data.logradouro || formData.originAddress
                     })
                   }}
-                  required
-                  label="CEP de Origem * (Comece digitando o CEP para preencher automaticamente)"
+                  autoSearch={false}
+                  label="CEP de Origem (opcional — clique em Buscar para preencher cidade e endereço)"
                 />
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1611,7 +1530,7 @@ export default function RotasPage() {
                       value={formData.origin}
                       onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Cidade (preenchida automaticamente ao buscar CEP)"
+                      placeholder="Digite a cidade ou use Buscar no CEP acima"
                     />
                   </div>
                   <div>
@@ -1638,7 +1557,7 @@ export default function RotasPage() {
                     value={formData.originAddress}
                     onChange={(e) => setFormData({ ...formData, originAddress: e.target.value })}
                     className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Rua, número, complemento (preenchido automaticamente ao buscar CEP)"
+                    placeholder="Rua, número, complemento (ou use Buscar no CEP acima)"
                   />
                 </div>
               </div>
@@ -1661,8 +1580,8 @@ export default function RotasPage() {
                       destinationAddress: data.logradouro || formData.destinationAddress
                     })
                   }}
-                  required
-                  label="CEP de Destino * (Comece digitando o CEP para preencher automaticamente)"
+                  autoSearch={false}
+                  label="CEP de Destino (opcional — clique em Buscar para preencher cidade e endereço)"
                 />
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1676,7 +1595,7 @@ export default function RotasPage() {
                       value={formData.destination}
                       onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Cidade (preenchida automaticamente ao buscar CEP)"
+                      placeholder="Digite a cidade ou use Buscar no CEP acima"
                     />
                   </div>
                   <div>
@@ -1703,7 +1622,7 @@ export default function RotasPage() {
                     value={formData.destinationAddress}
                     onChange={(e) => setFormData({ ...formData, destinationAddress: e.target.value })}
                     className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Rua, número, complemento (preenchido automaticamente ao buscar CEP)"
+                    placeholder="Rua, número, complemento (ou use Buscar no CEP acima)"
                   />
                 </div>
               </div>
@@ -1725,11 +1644,10 @@ export default function RotasPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Data de Coleta <span className="text-red-500">*</span>
+                    Data de Coleta <span className="text-gray-500 font-normal">(opcional)</span>
                   </label>
                   <input
                     type="date"
-                    required
                     value={formData.pickupDate}
                     onChange={(e) => setFormData({ ...formData, pickupDate: e.target.value })}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
@@ -1737,11 +1655,10 @@ export default function RotasPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Previsão de Entrega <span className="text-red-500">*</span>
+                    Previsão de Entrega <span className="text-gray-500 font-normal">(opcional)</span>
                   </label>
                   <input
                     type="date"
-                    required
                     value={formData.estimatedDelivery}
                     onChange={(e) => setFormData({ ...formData, estimatedDelivery: e.target.value })}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
@@ -1805,11 +1722,9 @@ export default function RotasPage() {
                 >
                   Cancelar
                 </button>
-                <motion.button
+                <button
                   type="submit"
                   disabled={isSubmitting}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
                   className="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isSubmitting ? (
@@ -1820,7 +1735,7 @@ export default function RotasPage() {
                   ) : (
                     'Salvar Alterações'
                   )}
-                </motion.button>
+                </button>
               </div>
             </form>
           </motion.div>

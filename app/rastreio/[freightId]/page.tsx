@@ -18,11 +18,6 @@ interface RouteData {
   pickup_date: string
   estimated_delivery: string
   status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
-  driver?: {
-    name: string
-    phone: string
-    email: string
-  }
   vehicle?: string
   plate?: string
 }
@@ -85,10 +80,7 @@ export default function PublicTrackingPage() {
 
       const route = routes[0]
 
-      const [driverResult, checkinsResult, trackResult] = await Promise.all([
-        route.driver_id
-          ? supabase.from('drivers').select('name, phone, email').eq('id', route.driver_id).limit(1)
-          : Promise.resolve({ data: null, error: null }),
+      const [checkinsResult, trackResult] = await Promise.all([
         supabase
           .from('checkins')
           .select('id, type, timestamp, address, photo_url')
@@ -97,8 +89,6 @@ export default function PublicTrackingPage() {
         getRouteTrack(freightId).catch(() => [] as RouteTrack[])
       ])
 
-      const driverData =
-        driverResult.data && driverResult.data.length > 0 ? driverResult.data[0] : null
       if (!checkinsResult.error) setCheckIns(checkinsResult.data || [])
       setRouteTrack(Array.isArray(trackResult) ? trackResult : [])
       setLastUpdate(new Date())
@@ -114,7 +104,6 @@ export default function PublicTrackingPage() {
           pickup_date: route.pickup_date,
           estimated_delivery: route.estimated_delivery,
           status: route.status,
-          driver: driverData ?? undefined,
           vehicle: route.vehicle,
           plate: route.plate
         })
@@ -413,7 +402,7 @@ export default function PublicTrackingPage() {
           <TrackingTimeline steps={timelineSteps} activeColor={activeColor} />
         </motion.div>
 
-        {/* Fotos registradas pelo motorista — sempre visível quando há checkins */}
+        {/* Comprovantes de coleta/entrega — quando há check-ins */}
         {checkIns.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -423,7 +412,7 @@ export default function PublicTrackingPage() {
           >
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Camera className="w-5 h-5" />
-              Fotos registradas pelo motorista
+              Comprovantes de coleta e entrega
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(['pickup', 'delivery'] as const).map((type) => {
@@ -478,7 +467,7 @@ export default function PublicTrackingPage() {
           </motion.div>
         )}
 
-        {/* Localização Atual do Motorista — sempre visível quando em trânsito */}
+        {/* Rastreamento GPS — quando em trânsito ou após */}
         {(routeData.status === 'inTransit' || routeData.status === 'pickedUp' || routeData.status === 'delivered') && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -489,7 +478,7 @@ export default function PublicTrackingPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <Navigation className="w-5 h-5" />
-                Localização do Motorista
+                Rastreamento em tempo real
               </h2>
               <div className="flex items-center gap-2">
                 {isAutoUpdating && (
@@ -562,7 +551,7 @@ export default function PublicTrackingPage() {
                 <div>
                   <p className="text-sm font-medium text-gray-600">Rastreamento GPS ainda não iniciado</p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    Quando o motorista iniciar o rastreio, a cidade e o estado aparecerão aqui e serão atualizados a cada 1 hora.
+                    Quando o rastreio GPS for iniciado, a cidade e o estado aparecerão aqui e serão atualizados a cada 1 hora.
                   </p>
                 </div>
               </div>

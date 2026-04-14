@@ -99,7 +99,7 @@ export interface Database {
         Row: {
           id: string
           freight_id: number
-          driver_id: string
+          driver_id: string | null
           origin: string
           origin_state: string
           origin_address: string | null
@@ -129,7 +129,7 @@ export interface Database {
         Insert: {
           id?: string
           freight_id: number
-          driver_id: string
+          driver_id?: string | null
           origin: string
           origin_state: string
           origin_address?: string | null
@@ -159,7 +159,7 @@ export interface Database {
         Update: {
           id?: string
           freight_id?: number
-          driver_id?: string
+          driver_id?: string | null
           origin?: string
           origin_state?: string
           origin_address?: string | null

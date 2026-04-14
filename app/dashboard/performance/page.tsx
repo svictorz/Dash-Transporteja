@@ -5,7 +5,7 @@ import { BarChart3, CalendarDays, Filter, Truck } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 
 type Periodo = '7d' | '30d' | '90d' | 'mesAtual' | 'custom'
-type UserRole = 'admin' | 'comercial' | 'driver' | null
+type UserRole = 'admin' | 'comercial' | 'driver' | 'operator' | null
 
 interface ComercialUser {
   id: string
@@ -41,6 +41,16 @@ function formatBRL(value: number): string {
 
 function formatNumber(value: number): string {
   return value.toLocaleString('pt-BR')
+}
+
+function toNumberOrNull(v: unknown): number | null {
+  if (v == null) return null
+  if (typeof v === 'number' && !Number.isNaN(v)) return v
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v.replace(',', '.'))
+    return Number.isFinite(n) ? n : null
+  }
+  return null
 }
 
 function endOfTodayIso(): string {
@@ -107,25 +117,32 @@ export default function PerformancePage() {
           .eq('id', uid)
           .single()
 
-        if (meError) throw new Error(meError.message)
+        if (meError) {
+          console.warn('Performance: não foi possível ler public.users:', meError.message)
+        }
         if (cancelled) return
 
-        const userRole = (me?.role as UserRole) ?? null
+        const sessionEmail = session.user.email ?? ''
+        const userRole = (!meError && me?.role ? (me.role as UserRole) : null) ?? null
         setRole(userRole)
-        setCurrentUserName(me?.name || me?.email || 'Usuário')
+        setCurrentUserName(me?.name || me?.email || sessionEmail || 'Usuário')
 
         const { fromIso, toIso } = toIsoRange(periodo, customStart, customEnd)
 
         const isAdmin = userRole === 'admin'
         const routesQuery = supabase
           .from('routes')
-          .select('*')
+          .select('id, status, nf_value, distance_km, created_at, created_by_user_id')
           .gte('created_at', fromIso)
           .lte('created_at', toIso)
           .order('created_at', { ascending: false })
 
         const usersQuery = isAdmin
-          ? supabase.from('users').select('id, name, email, role').eq('role', 'comercial').order('name', { ascending: true })
+          ? supabase
+              .from('users')
+              .select('id, name, email, role')
+              .in('role', ['comercial', 'operator'])
+              .order('name', { ascending: true })
           : Promise.resolve({ data: [], error: null } as { data: ComercialUser[]; error: null })
 
         const [routesRes, usersRes] = await Promise.all([routesQuery, usersQuery])
@@ -134,32 +151,31 @@ export default function PerformancePage() {
         if (usersRes.error) throw new Error(usersRes.error.message)
 
         const rawRows = (routesRes.data as Record<string, unknown>[] | null) || []
-        const hasCreatedByColumn = rawRows.some((r) =>
-          Object.prototype.hasOwnProperty.call(r, 'created_by_user_id')
-        )
 
         const normalizedRows: RoutePerformanceRow[] = rawRows.map((r) => ({
           id: String(r.id ?? ''),
           status: (r.status as RoutePerformanceRow['status']) ?? 'pending',
-          nf_value: typeof r.nf_value === 'number' ? r.nf_value : null,
-          distance_km: typeof r.distance_km === 'number' ? r.distance_km : null,
+          nf_value: toNumberOrNull(r.nf_value),
+          distance_km: toNumberOrNull(r.distance_km),
           created_at: String(r.created_at ?? ''),
           created_by_user_id:
             typeof r.created_by_user_id === 'string' ? r.created_by_user_id : null,
         }))
 
-        const scopedRows = isAdmin
-          ? normalizedRows
-          : hasCreatedByColumn
-            ? normalizedRows.filter((r) => r.created_by_user_id === uid)
-            : []
+        /**
+         * Admin: todos os fretes do período (visão do time).
+         * Demais perfis do painel: mesmos fretes retornados pela query — o RLS já limita o que o usuário pode ver.
+         * Antes filtrávamos só por created_by_user_id; fretes antigos ou sem responsável zeravam a tela.
+         */
+        const scopedRows = isAdmin ? normalizedRows : normalizedRows
 
         if (cancelled) return
         setRows(scopedRows)
         setComerciais((usersRes.data as ComercialUser[]) || [])
       } catch (err: unknown) {
         if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Erro ao carregar performance')
+        const msg = err instanceof Error ? err.message : 'Erro ao carregar performance'
+        setError(msg)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -238,8 +254,13 @@ export default function PerformancePage() {
           <p className="text-sm text-gray-600 mt-1">
             {isAdmin
               ? 'Visão da performance de todo o time comercial'
-              : `Sua performance individual no período selecionado, ${currentUserName}`}
+              : `Métricas dos fretes no período — ${currentUserName}`}
           </p>
+          {!isAdmin && (
+            <p className="text-xs text-gray-500 mt-2 max-w-xl">
+              Os totais refletem os fretes disponíveis para sua conta no período, incluindo registros antigos sem responsável definido.
+            </p>
+          )}
         </div>
         <div className="rounded-xl border border-gray-200 bg-white/80 px-3 py-2 text-xs text-gray-600 flex items-center gap-2">
           <CalendarDays className="w-4 h-4" aria-hidden />

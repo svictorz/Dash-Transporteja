@@ -166,6 +166,28 @@ export default function PropostaFormulario({ value, onChange }: Props) {
             ))}
           </select>
 
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-[#0f2847]">Frete base</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input
+                className={inputClass}
+                inputMode="decimal"
+                placeholder="R$"
+                value={value.freteManual}
+                onChange={(e) => set('freteManual', e.target.value)}
+                aria-label="Frete base em reais"
+              />
+              <input
+                className={inputClass}
+                inputMode="decimal"
+                placeholder="R$/km (opcional)"
+                value={value.valorKm}
+                onChange={(e) => set('valorKm', e.target.value)}
+                aria-label="Valor por quilômetro"
+              />
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               className={inputClass}
@@ -216,21 +238,35 @@ export default function PropostaFormulario({ value, onChange }: Props) {
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <input
+                className={inputClass}
+                inputMode="decimal"
+                placeholder={
+                  value.freteManual.trim()
+                    ? 'Taxas embutidas no frete base (R$)'
+                    : 'Taxas fixas (R$) — somadas ao frete por km'
+                }
+                value={value.taxasFixas}
+                onChange={(e) => set('taxasFixas', e.target.value)}
+              />
+            </div>
             <input
               className={inputClass}
               inputMode="decimal"
-              placeholder="Taxas fixas (R$)"
-              value={value.taxasFixas}
-              onChange={(e) => set('taxasFixas', e.target.value)}
-            />
-            <input
-              className={inputClass}
-              inputMode="decimal"
-              placeholder="ICMS (%)"
+              placeholder={value.freteManual.trim() ? 'ICMS (%) — embutido no frete base' : 'ICMS (%)'}
               value={value.icmsPct}
               onChange={(e) => set('icmsPct', e.target.value)}
             />
           </div>
+
+          <input
+            className={inputClass}
+            inputMode="decimal"
+            placeholder="Desconto (%)"
+            value={value.descontoPct}
+            onChange={(e) => set('descontoPct', e.target.value)}
+          />
 
           <div>
             <label htmlFor="proposta-obs" className="block text-sm font-medium text-gray-700 mb-1.5">

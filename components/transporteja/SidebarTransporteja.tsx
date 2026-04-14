@@ -7,7 +7,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import FadeIn from '@/components/animations/FadeIn'
 import {
   LayoutDashboard,
-  Truck,
   Users,
   Settings,
   LogOut,
@@ -21,8 +20,6 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Logo from './Logo'
-import { supabase } from '@/lib/supabase/client'
-import { canAccessMotoristasPage } from '@/lib/utils/roles'
 
 interface MenuItem {
   icon: LucideIcon
@@ -40,7 +37,6 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   const pathname = usePathname()
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(true)
-  const [userRole, setUserRole] = useState<string | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -49,25 +45,6 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
     if (stored !== null) {
       setIsOpen(stored === 'true')
     }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.user || cancelled) return
-        const { data } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', session.user.id)
-          .single()
-        if (!cancelled && data?.role && typeof data.role === 'string') {
-          setUserRole(data.role)
-        }
-      } catch { /* silent */ }
-    })()
-    return () => { cancelled = true }
   }, [])
 
   const handleNavClick = () => {
@@ -82,19 +59,14 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
     })
   }
 
-  const allMenuItems: MenuItem[] = [
+  const menuItems: MenuItem[] = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
     { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
     { icon: Route, label: 'Rotas', path: '/dashboard/rotas' },
     { icon: FileText, label: 'Propostas', path: '/dashboard/propostas' },
     { icon: CalendarDays, label: 'Calendário', path: '/dashboard/calendario' },
     { icon: BarChart3, label: 'Performance', path: '/dashboard/performance' },
-    { icon: Truck, label: 'Motoristas', path: '/dashboard/motoristas' },
   ]
-
-  const menuItems = allMenuItems.filter(
-    (item) => item.path !== '/dashboard/motoristas' || canAccessMotoristasPage(userRole)
-  )
 
   const handleLogout = async () => {
     try {

@@ -15,7 +15,3 @@ export function dashboardRoleLabel(role: string | null | undefined): string {
   }
 }
 
-/** Área de frota: apenas administrador. */
-export function canAccessMotoristasPage(role: string | null | undefined): boolean {
-  return role === 'admin'
-}

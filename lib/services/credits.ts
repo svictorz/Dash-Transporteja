@@ -1,8 +1,6 @@
 /**
- * Serviço de créditos do usuário.
- * Quando a coluna credits_balance existir na tabela users no Supabase,
- * o consumo será debitado ao criar rota (e exibido no dashboard).
- * @see docs/PLAN-CREDITOS-E-SEGURANCA.md
+ * Saldo de créditos (legado / opcional na tabela users).
+ * A plataforma não bloqueia uso por saldo; o trigger de débito no Supabase pode ser desativado (migração 010).
  */
 
 import { supabase } from '@/lib/supabase/client'
@@ -33,27 +31,10 @@ export async function fetchUserCredits(userId: string): Promise<number | null> {
   }
 }
 
-/** Quantidade de créditos consumidos por nova rota (deve bater com o trigger no Supabase). */
+/** Legado: antes 10 créditos por rota quando o trigger debitava saldo. */
 export const CREDITS_PER_ROUTE = 10
 
-/**
- * Verifica se o usuário tem créditos para criar uma rota.
- * Cada nova rota consome CREDITS_PER_ROUTE (10) créditos.
- */
-export async function canCreateRoute(userId: string): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const current = await fetchUserCredits(userId)
-    if (current === null) {
-      return { ok: true }
-    }
-    if (current < CREDITS_PER_ROUTE) {
-      return {
-        ok: false,
-        error: `Saldo de créditos insuficiente. Cada rota consome ${CREDITS_PER_ROUTE} créditos. Adquira mais créditos para criar rotas.`,
-      }
-    }
-    return { ok: true }
-  } catch {
-    return { ok: true }
-  }
+/** Sempre permite criar rota (SaaS sem bloqueio por saldo). */
+export async function canCreateRoute(_userId: string): Promise<{ ok: boolean; error?: string }> {
+  return { ok: true }
 }

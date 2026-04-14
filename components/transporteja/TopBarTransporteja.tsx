@@ -12,7 +12,6 @@ import { dashboardRoleLabel } from '@/lib/utils/roles'
 interface UserInfo {
   name?: string | null
   email?: string | null
-  credits_balance?: number
   role?: string | null
   [key: string]: unknown
 }
@@ -47,7 +46,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
           try {
             const { data: userData, error } = await supabase
               .from('users')
-              .select('id, email, name, role, credits_balance')
+              .select('id, email, name, role')
               .eq('id', session.user.id)
               .single()
 
@@ -92,11 +91,6 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
       }
     })
 
-    const creditsInterval = setInterval(() => {
-      userLoadAttemptedRef.current = false
-      loadUser()
-    }, 60000)
-
     // Fechar dropdown ao clicar fora
     const handleClickOutside = (event: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
@@ -109,7 +103,6 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
     return () => {
       isMounted = false
       subscription.unsubscribe()
-      clearInterval(creditsInterval)
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [])
@@ -147,7 +140,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
       if (session?.user) {
         const { data: userData } = await supabase
           .from('users')
-          .select('id, email, name, role, credits_balance')
+          .select('id, email, name, role')
           .eq('id', session.user.id)
           .single()
         if (userData) setUser(userData)
