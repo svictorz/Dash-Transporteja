@@ -48,14 +48,18 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100">
-      <SidebarTransporteja 
-        isMobileOpen={isMobileMenuOpen}
-        onMobileClose={() => setIsMobileMenuOpen(false)}
-      />
+    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 print:block print:h-auto print:overflow-visible print:bg-white">
+      <div className="print:hidden">
+        <SidebarTransporteja
+          isMobileOpen={isMobileMenuOpen}
+          onMobileClose={() => setIsMobileMenuOpen(false)}
+        />
+      </div>
       <div className="flex-1 flex flex-col overflow-hidden w-full md:w-auto">
-        <TopBarTransporteja onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
-        <main className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 p-4 md:p-6">
+        <div className="print:hidden">
+          <TopBarTransporteja onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
+        </div>
+        <main className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 p-4 md:p-6 print:overflow-visible print:bg-white print:p-0">
           {children}
         </main>
       </div>

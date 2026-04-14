@@ -25,7 +25,7 @@ export default function PropostasPage() {
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-6 pb-10">
+    <div className="max-w-[1600px] mx-auto space-y-6 pb-10 print:max-w-none print:mx-0 print:space-y-0 print:pb-0">
       <div className="print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Propostas</h1>
@@ -73,7 +73,7 @@ export default function PropostasPage() {
         </div>
       </div>
 
-      <div className="hidden print:block">
+      <div className="hidden print:block print:m-0 print:p-0">
         <PropostaPdfPreview form={form} calc={calc} dataEmissao={dataEmissao} className="proposta-a4-print mx-auto" />
       </div>
     </div>
