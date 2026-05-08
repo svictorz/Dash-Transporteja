@@ -1,8 +1,12 @@
 /**
- * Gera um código de frete numérico aleatório (9 dígitos).
- * Usado como identificador único do frete para rastreio e login do motorista (placa + código).
- * Faixa: 100.000.000 a 999.999.999 (evita colisões e é fácil de digitar).
+ * @deprecated O `freight_id` agora é gerado pelo banco via sequence
+ * (`routes_freight_id_seq`, definida na migration 017). A partir dela, novas
+ * rotas recebem números em ordem crescente começando em 0.
+ *
+ * Função mantida apenas para compatibilidade caso outro fluxo precise de
+ * um identificador local antes do insert. Prefira deixar `freight_id`
+ * indefinido no `createRoute` para usar a sequence.
  */
 export function generateFreightCode(): number {
-  return Math.floor(100_000_000 + Math.random() * 900_000_000)
+  return Math.floor(100_000 + Math.random() * 900_000)
 }

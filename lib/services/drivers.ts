@@ -12,6 +12,7 @@ export interface Driver {
   status: 'active' | 'inactive' | 'onRoute'
   location?: string | null
   last_checkin?: string | null
+  created_by_user_id?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -79,10 +80,14 @@ export async function getDriverById(id: string): Promise<Driver | null> {
  * Criar novo motorista
  */
 export async function createDriver(driverData: CreateDriverData): Promise<Driver> {
+  const { data: { session } } = await supabase.auth.getSession()
+  const created_by_user_id = session?.user?.id ?? null
+
   const { data, error } = await supabase
     .from('drivers')
     .insert({
       ...driverData,
+      created_by_user_id,
       status: driverData.status || 'active'
     })
     .select()

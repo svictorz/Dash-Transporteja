@@ -12,6 +12,7 @@ export interface Client {
   city: string
   neighborhood: string
   state: string
+  created_by_user_id?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -19,14 +20,14 @@ export interface Client {
 export interface CreateClientData {
   company_name: string
   cnpj?: string
-  responsible: string
-  whatsapp: string
-  email: string
-  address: string
+  responsible?: string
+  whatsapp?: string
+  email?: string
+  address?: string
   extension?: string
-  city: string
-  neighborhood: string
-  state: string
+  city?: string
+  neighborhood?: string
+  state?: string
 }
 
 export interface UpdateClientData {
@@ -82,9 +83,12 @@ export async function getClientById(id: string): Promise<Client | null> {
  * Criar novo cliente
  */
 export async function createClient(clientData: CreateClientData): Promise<Client> {
+  const { data: { session } } = await supabase.auth.getSession()
+  const created_by_user_id = session?.user?.id ?? null
+
   const { data, error } = await supabase
     .from('clients')
-    .insert(clientData)
+    .insert({ ...clientData, created_by_user_id })
     .select()
     .single()
 
@@ -124,6 +128,88 @@ export async function deleteClient(id: string): Promise<void> {
 
   if (error) {
     throw new Error(`Erro ao deletar cliente: ${error.message}`)
+  }
+}
+
+/**
+ * Garante que existe um registro em `clients` para uma empresa informada
+ * no fluxo de criação/edição de rota.
+ *
+ * - Se a empresa já estiver cadastrada (match por nome ou e-mail), apenas
+ *   completa campos vazios (telefone, e-mail, responsável) com o que veio
+ *   da rota.
+ * - Caso contrário, cria um cliente "leve" com os dados disponíveis.
+ *
+ * Falhas aqui não devem interromper o fluxo da rota — por isso a função
+ * captura erros internamente.
+ */
+export interface EnsureClientFromRouteInput {
+  companyName: string
+  responsible?: string | null
+  phone?: string | null
+  email?: string | null
+  city?: string | null
+  state?: string | null
+  address?: string | null
+}
+
+export async function ensureClientFromRoute(
+  input: EnsureClientFromRouteInput,
+): Promise<Client | null> {
+  const companyName = input.companyName?.trim()
+  if (!companyName) return null
+
+  try {
+    const phone = input.phone?.trim() || null
+    const email = input.email?.trim().toLowerCase() || null
+
+    // 1) tenta achar match por nome (case-insensitive) ou e-mail
+    let existing: Client | null = null
+    {
+      const { data } = await supabase
+        .from('clients')
+        .select('*')
+        .or(
+          [
+            `company_name.ilike.${companyName.replace(/,/g, ' ')}`,
+            email ? `email.eq.${email}` : null,
+          ]
+            .filter(Boolean)
+            .join(','),
+        )
+        .limit(1)
+      existing = (data?.[0] as Client) ?? null
+    }
+
+    if (existing) {
+      const updates: UpdateClientData = {}
+      if (!existing.whatsapp && phone) updates.whatsapp = phone
+      if (!existing.email && email) updates.email = email
+      if (!existing.responsible && input.responsible)
+        updates.responsible = input.responsible
+      if (!existing.city && input.city) updates.city = input.city
+      if (!existing.state && input.state) updates.state = input.state
+      if (!existing.address && input.address) updates.address = input.address
+
+      if (Object.keys(updates).length > 0) {
+        return updateClient(existing.id, updates)
+      }
+      return existing
+    }
+
+    // 2) cria um cliente novo com o que está disponível
+    return createClient({
+      company_name: companyName,
+      responsible: input.responsible ?? undefined,
+      whatsapp: phone ?? undefined,
+      email: email ?? undefined,
+      address: input.address ?? undefined,
+      city: input.city ?? undefined,
+      state: input.state ?? undefined,
+    })
+  } catch (err) {
+    console.warn('ensureClientFromRoute falhou (ignorado):', err)
+    return null
   }
 }
 

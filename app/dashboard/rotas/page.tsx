@@ -1,49 +1,77 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Route, MapPin, ArrowRight, X, Truck, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Camera, CheckCircle2, RefreshCw, Upload, Eye } from 'lucide-react'
+import { Route, MapPin, ArrowRight, X, Truck, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Upload, Eye, ChevronDown } from 'lucide-react'
 import { useRoutes } from '@/lib/hooks/useRoutes'
 import { useClients } from '@/lib/hooks/useClients'
+import { useDrivers } from '@/lib/hooks/useDrivers'
 import {
   Route as RouteType,
   CreateRouteData,
   ROUTE_NO_DRIVER_PLATE,
   ROUTE_NO_DRIVER_VEHICLE,
 } from '@/lib/services/routes'
-import { Client } from '@/lib/services/clients'
+import { Client, ensureClientFromRoute } from '@/lib/services/clients'
+import { Driver } from '@/lib/services/drivers'
 import CEPInput from '@/components/transporteja/CEPInput'
 import { CEPData } from '@/lib/services/cep'
 import { supabase } from '@/lib/supabase/client'
-import { generateFreightCode } from '@/lib/utils/freight-code'
 import { useAuthState } from '@/lib/hooks/useAuthState'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { useDebouncedRouteDistance } from '@/lib/hooks/useDebouncedRouteDistance'
+
+const TAXES_PERCENT_OPTIONS = [0, 10, 12, 18] as const
+
+function normalizeTaxesPercent(value: unknown): (typeof TAXES_PERCENT_OPTIONS)[number] {
+  const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
+  if (n === 0 || n === 10 || n === 12 || n === 18) return n
+  return 18
+}
+
+/** Infere o percentual a partir de valores já gravados (rotas antigas sem coluna). */
+function inferTaxesPercentFromValues(
+  freight: number | null | undefined,
+  taxes: number | null | undefined,
+): (typeof TAXES_PERCENT_OPTIONS)[number] {
+  if (freight == null || freight <= 0 || taxes == null) return 18
+  for (const pct of [18, 12, 10, 0] as const) {
+    const expected = Math.round(freight * (pct / 100) * 100) / 100
+    if (Math.abs(expected - taxes) < 0.02) return pct
+  }
+  return 18
+}
+
+function getRouteTaxesPercent(route: RouteType): (typeof TAXES_PERCENT_OPTIONS)[number] {
+  const raw = route.taxes_percent
+  if (raw === 0 || raw === 10 || raw === 12 || raw === 18) return raw
+  return inferTaxesPercentFromValues(route.freight_value ?? route.nf_value ?? undefined, route.taxes_value ?? undefined)
+}
 
 // Interface para exibição (com dados do cliente)
 interface RouteDisplayData extends RouteType {
   client?: Client
-}
-
-interface CheckInRecord {
-  id: string
-  type: 'pickup' | 'delivery'
-  timestamp: string
-  photo_url: string
-  coords_lat: number
-  coords_lng: number
-  address?: string
+  driver?: Driver
 }
 
 type DocumentKey = 'freteDocs'
-
+type RouteStatus = RouteType['status']
 const EMPTY_DOCUMENT_URLS: Record<DocumentKey, string | null> = {
   freteDocs: null,
 }
 
+const ROUTE_STATUS_OPTIONS: RouteStatus[] = ['pending', 'pickedUp', 'inTransit', 'delivered', 'cancelled']
+const PAYMENT_STATUS_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
+const PAYMENT_TYPE_OPTIONS = ['Pix', 'Cartão de crédito', 'Transferencia', 'Boleto'] as const
+const DRIVER_PAYMENT_TYPE_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
+
 export default function RotasPage() {
   const { session } = useAuthState()
+  const { user: currentUser } = useCurrentUser()
+  const isAdminUser = currentUser?.role === 'admin'
   const { routes, loading: routesLoading, error: routesError, createRoute, updateRoute, deleteRoute } = useRoutes()
   const { clients, loading: clientsLoading } = useClients()
+  const { drivers, loading: driversLoading } = useDrivers()
   
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'>('all')
   const [selectedRoute, setSelectedRoute] = useState<RouteDisplayData | null>(null)
@@ -51,11 +79,10 @@ export default function RotasPage() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingRoute, setEditingRoute] = useState<RouteType | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [checkIns, setCheckIns] = useState<CheckInRecord[]>([])
-  const [loadingCheckIns, setLoadingCheckIns] = useState(false)
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
   const [documentUrls, setDocumentUrls] = useState<Record<DocumentKey, string | null>>(EMPTY_DOCUMENT_URLS)
   const [uploadingDocument, setUploadingDocument] = useState<DocumentKey | null>(null)
+  const [updatingStatusRouteId, setUpdatingStatusRouteId] = useState<string | null>(null)
   
   const [companyInput, setCompanyInput] = useState('')
   
@@ -67,11 +94,25 @@ export default function RotasPage() {
     destination: '',
     destinationState: '',
     destinationAddress: '',
+    companyPhone: '',
+    companyEmail: '',
     weight: '',
+    freightValue: '',
+    driverValue: '',
+    taxesValue: '',
+    netFreightValue: '',
+    commissionValue: '',
+    paymentStatus: '',
+    paymentType: '',
+    driverName: '',
+    driverPhone: '',
+    driverPaymentStatus: '',
+    driverPaymentType: '',
     nfValue: '',
     observation: '',
     estimatedDelivery: '',
-    pickupDate: ''
+    pickupDate: '',
+    taxesPercent: '18',
   })
   const [originCEP, setOriginCEP] = useState('')
   const [destinationCEP, setDestinationCEP] = useState('')
@@ -102,20 +143,24 @@ export default function RotasPage() {
     return null
   }, [routeDistance.distanciaKm, showEditModal, editingRoute?.distance_km])
 
-  // Combinar rotas com dados de clientes
+  // Combinar rotas com dados de clientes e motoristas
   const routesWithDetails = useMemo(() => {
     return routes.map(route => {
       const client = clients.find(c => 
         c.company_name === route.company_name || 
         (route.company_email && c.email === route.company_email)
       )
+      const driver = route.driver_id
+        ? drivers.find(d => d.id === route.driver_id)
+        : undefined
       
       return {
         ...route,
-        client
+        client,
+        driver
       } as RouteDisplayData
     })
-  }, [routes, clients])
+  }, [routes, clients, drivers])
 
   const filteredRoutes = useMemo(() => {
     return routesWithDetails.filter(route => {
@@ -137,108 +182,78 @@ export default function RotasPage() {
       case 'inTransit':
         return {
           label: 'Em Trânsito',
+          emoji: '🟠',
           dotColor: 'bg-orange-500',
           bgColor: 'bg-orange-100',
-          textColor: 'text-orange-700'
+          textColor: 'text-orange-700',
+          borderColor: 'border-orange-200'
         }
       case 'delivered':
         return {
           label: 'Entregue',
+          emoji: '🟢',
           dotColor: 'bg-green-500',
           bgColor: 'bg-green-100',
-          textColor: 'text-green-700'
+          textColor: 'text-green-700',
+          borderColor: 'border-green-200'
         }
       case 'pickedUp':
         return {
           label: 'Coletado',
+          emoji: '⚪',
           dotColor: 'bg-gray-500',
           bgColor: 'bg-gray-100',
-          textColor: 'text-gray-700'
+          textColor: 'text-gray-700',
+          borderColor: 'border-gray-200'
         }
       case 'pending':
         return {
           label: 'Pendente',
+          emoji: '🟡',
           dotColor: 'bg-yellow-500',
           bgColor: 'bg-yellow-100',
-          textColor: 'text-yellow-700'
+          textColor: 'text-yellow-700',
+          borderColor: 'border-yellow-200'
+        }
+      case 'cancelled':
+        return {
+          label: 'Cancelado',
+          emoji: '🔴',
+          dotColor: 'bg-red-500',
+          bgColor: 'bg-red-100',
+          textColor: 'text-red-700',
+          borderColor: 'border-red-200'
         }
       default:
         return {
           label: 'Desconhecido',
+          emoji: '⚫',
           dotColor: 'bg-gray-500',
           bgColor: 'bg-gray-100',
-          textColor: 'text-gray-700'
+          textColor: 'text-gray-700',
+          borderColor: 'border-gray-200'
         }
     }
   }
 
-  const selectedRouteRef = useRef(selectedRoute)
-  useEffect(() => {
-    selectedRouteRef.current = selectedRoute
-  }, [selectedRoute])
+  const handleUpdateRouteStatus = useCallback(async (route: RouteDisplayData, status: RouteStatus) => {
+    if (route.status === status) return
 
-  const syncPhotosFromStorage = useCallback(async (route: RouteDisplayData) => {
-    if (!route.id || !route.freight_id) return
     try {
-      await fetch('/api/admin/sync-photos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          route_id: route.id,
-          freight_id: route.freight_id,
-          ...(route.driver_id ? { driver_id: route.driver_id } : {})
-        })
-      })
-    } catch { /* silent */ }
-  }, [])
-
-  const fetchCheckInsForRoute = useCallback(async (route: RouteDisplayData) => {
-    try {
-      await syncPhotosFromStorage(route)
-
-      const { data } = await supabase
-        .from('checkins')
-        .select('id, type, timestamp, photo_url, coords_lat, coords_lng, address')
-        .eq('freight_id', route.freight_id)
-        .order('timestamp', { ascending: false })
-
-      setCheckIns(data || [])
-    } catch {
-      setCheckIns([])
+      setUpdatingStatusRouteId(route.id)
+      await updateRoute(route.id, { status })
+    } catch (err: any) {
+      alert(`Erro ao atualizar status: ${err.message}`)
+    } finally {
+      setUpdatingStatusRouteId(null)
     }
-  }, [syncPhotosFromStorage])
+  }, [updateRoute])
 
-  const handleViewMore = async (route: RouteDisplayData) => {
+  const handleViewMore = (route: RouteDisplayData) => {
     setSelectedRoute(route)
     setDocumentUrls(EMPTY_DOCUMENT_URLS)
     setUploadingDocument(null)
-    setLoadingCheckIns(true)
-    try {
-      await fetchCheckInsForRoute(route)
-    } finally {
-      setLoadingCheckIns(false)
-    }
   }
-
-  // Realtime: atualizar check-ins do frete selecionado quando houver novos ou alterações
-  useEffect(() => {
-    const channel = supabase
-      .channel('rotas-checkins-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'checkins' },
-        () => {
-          const route = selectedRouteRef.current
-          if (route) {
-            fetchCheckInsForRoute(route)
-          }
-        }
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [fetchCheckInsForRoute])
 
   const handleOpenEdit = (route: RouteDisplayData) => {
     setEditingRoute(route)
@@ -254,11 +269,25 @@ export default function RotasPage() {
       destination: route.destination,
       destinationState: route.destination_state,
       destinationAddress: route.destination_address || '',
+      companyPhone: route.company_phone || client?.whatsapp || '',
+      companyEmail: route.company_email || client?.email || '',
       weight: route.weight,
+      freightValue: route.freight_value != null ? String(route.freight_value).replace('.', ',') : '',
+      driverValue: route.driver_value != null ? String(route.driver_value).replace('.', ',') : '',
+      taxesValue: route.taxes_value != null ? String(route.taxes_value).replace('.', ',') : '',
+      netFreightValue: route.net_freight_value != null ? String(route.net_freight_value).replace('.', ',') : '',
+      commissionValue: route.commission_value != null ? String(route.commission_value).replace('.', ',') : '',
+      paymentStatus: route.payment_status || '',
+      paymentType: route.payment_type || '',
+      driverName: route.driver_name || route.driver?.name || '',
+      driverPhone: route.driver_phone || route.driver?.phone || '',
+      driverPaymentStatus: route.driver_payment_status || '',
+      driverPaymentType: route.driver_payment_type || '',
       nfValue: route.nf_value != null ? String(route.nf_value).replace('.', ',') : '',
       observation: route.observation || '',
       estimatedDelivery: route.estimated_delivery,
-      pickupDate: route.pickup_date
+      pickupDate: route.pickup_date,
+      taxesPercent: String(getRouteTaxesPercent(route)),
     })
     setShowEditModal(true)
   }
@@ -275,7 +304,6 @@ export default function RotasPage() {
 
   const handleCloseModal = () => {
     setSelectedRoute(null)
-    setCheckIns([])
     setSelectedPhoto(null)
     setDocumentUrls(EMPTY_DOCUMENT_URLS)
     setUploadingDocument(null)
@@ -389,6 +417,49 @@ export default function RotasPage() {
     }
   }
 
+  const formatCurrencyBR = (value?: number | null) => {
+    if (value == null) return '—'
+    return value.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    })
+  }
+
+  const parseCurrencyInput = (value: string) => {
+    const normalized = value.trim().replace(/\./g, '').replace(',', '.')
+    if (!normalized) return null
+    const parsed = Number(normalized)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  const calculateTaxesValue = (freightValue?: number | null, taxesPercent?: number | null) => {
+    if (freightValue == null) return null
+    const p = normalizeTaxesPercent(taxesPercent) / 100
+    return Math.round(freightValue * p * 100) / 100
+  }
+
+  const calculateCommissionValue = (netFreightValue?: number | null) => {
+    if (netFreightValue == null) return null
+    return Math.round(netFreightValue * 0.3 * 100) / 100
+  }
+
+  const calculateNetFreightValue = (
+    freightValue?: number | null,
+    driverValue?: number | null,
+    taxesPercent?: number | null,
+  ) => {
+    if (freightValue == null) return null
+    const taxesValue = calculateTaxesValue(freightValue, taxesPercent) ?? 0
+    return Math.round((freightValue - taxesValue - (driverValue ?? 0)) * 100) / 100
+  }
+
+  const getWhatsAppWebUrl = (phone?: string | null) => {
+    const digits = phone?.replace(/\D/g, '') || ''
+    if (!digits) return null
+    const normalized = digits.startsWith('55') ? digits : `55${digits}`
+    return `https://web.whatsapp.com/send?phone=${normalized}`
+  }
+
   const handleCreateRoute = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -423,8 +494,13 @@ export default function RotasPage() {
     setIsSubmitting(true)
 
     try {
+      const freightValue = parseCurrencyInput(formData.freightValue)
+      const driverValue = parseCurrencyInput(formData.driverValue)
+      const taxesPercent = isAdminUser
+        ? normalizeTaxesPercent(Number(formData.taxesPercent))
+        : 18
+      const netFreightValue = calculateNetFreightValue(freightValue, driverValue, taxesPercent)
       const routeData: CreateRouteData = {
-        freight_id: generateFreightCode(),
         driver_id: null,
       origin: formData.origin,
         origin_state: formData.originState,
@@ -435,15 +511,27 @@ export default function RotasPage() {
       vehicle: ROUTE_NO_DRIVER_VEHICLE,
       plate: ROUTE_NO_DRIVER_PLATE,
       weight: formData.weight,
-      nf_value: formData.nfValue.trim() ? parseFloat(formData.nfValue.replace(',', '.')) : null,
+      freight_value: freightValue,
+      driver_value: driverValue,
+      taxes_value: calculateTaxesValue(freightValue, taxesPercent),
+      taxes_percent: taxesPercent,
+      net_freight_value: netFreightValue,
+      commission_value: calculateCommissionValue(netFreightValue),
+      payment_status: formData.paymentStatus.trim() || null,
+      payment_type: formData.paymentType.trim() || null,
+      driver_name: formData.driverName.trim() || null,
+      driver_phone: formData.driverPhone.trim() || null,
+      driver_payment_status: formData.driverPaymentStatus.trim() || null,
+      driver_payment_type: formData.driverPaymentType.trim() || null,
+      nf_value: parseCurrencyInput(formData.nfValue),
       observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
         status: 'pending',
         company_name: companyResolved.company_name,
         company_responsible: companyResolved.company_responsible,
-        company_phone: companyResolved.company_phone,
-        company_email: companyResolved.company_email,
+        company_phone: formData.companyPhone.trim() || companyResolved.company_phone,
+        company_email: formData.companyEmail.trim() || companyResolved.company_email,
         company_address: companyResolved.company_address,
         company_city: companyResolved.company_city,
         company_state: companyResolved.company_state,
@@ -454,6 +542,17 @@ export default function RotasPage() {
       }
 
       await createRoute(routeData)
+
+      await ensureClientFromRoute({
+        companyName: companyResolved.company_name,
+        responsible: companyResolved.company_responsible,
+        phone: routeData.company_phone ?? null,
+        email: routeData.company_email ?? null,
+        city: companyResolved.company_city,
+        state: companyResolved.company_state,
+        address: companyResolved.company_address,
+      })
+
       handleCloseCreateModal()
     } catch (err: any) {
       alert(`Erro ao criar rota: ${err.message}`)
@@ -500,6 +599,12 @@ export default function RotasPage() {
     setIsSubmitting(true)
 
     try {
+      const freightValue = parseCurrencyInput(formData.freightValue)
+      const driverValue = parseCurrencyInput(formData.driverValue)
+      const taxesPercent = isAdminUser
+        ? normalizeTaxesPercent(Number(formData.taxesPercent))
+        : getRouteTaxesPercent(editingRoute)
+      const netFreightValue = calculateNetFreightValue(freightValue, driverValue, taxesPercent)
       await updateRoute(editingRoute.id, {
         driver_id: null,
         origin: formData.origin,
@@ -511,15 +616,27 @@ export default function RotasPage() {
         vehicle: editingRoute.vehicle ?? ROUTE_NO_DRIVER_VEHICLE,
         plate: editingRoute.plate ?? ROUTE_NO_DRIVER_PLATE,
         weight: formData.weight,
-        nf_value: formData.nfValue.trim() ? parseFloat(formData.nfValue.replace(',', '.')) : null,
+        freight_value: freightValue,
+        driver_value: driverValue,
+        taxes_value: calculateTaxesValue(freightValue, taxesPercent),
+        taxes_percent: taxesPercent,
+        net_freight_value: netFreightValue,
+        commission_value: calculateCommissionValue(netFreightValue),
+        payment_status: formData.paymentStatus.trim() || null,
+        payment_type: formData.paymentType.trim() || null,
+        driver_name: formData.driverName.trim() || null,
+        driver_phone: formData.driverPhone.trim() || null,
+        driver_payment_status: formData.driverPaymentStatus.trim() || null,
+        driver_payment_type: formData.driverPaymentType.trim() || null,
+        nf_value: parseCurrencyInput(formData.nfValue),
         observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
         status: editingRoute.status,
         company_name: companyResolved.company_name,
         company_responsible: companyResolved.company_responsible,
-        company_phone: companyResolved.company_phone,
-        company_email: companyResolved.company_email,
+        company_phone: formData.companyPhone.trim() || companyResolved.company_phone,
+        company_email: formData.companyEmail.trim() || companyResolved.company_email,
         company_address: companyResolved.company_address,
         company_city: companyResolved.company_city,
         company_state: companyResolved.company_state,
@@ -527,6 +644,16 @@ export default function RotasPage() {
           routeDistance.distanciaKm ??
           editingRoute.distance_km ??
           null,
+      })
+
+      await ensureClientFromRoute({
+        companyName: companyResolved.company_name,
+        responsible: companyResolved.company_responsible,
+        phone: formData.companyPhone.trim() || companyResolved.company_phone,
+        email: formData.companyEmail.trim() || companyResolved.company_email,
+        city: companyResolved.company_city,
+        state: companyResolved.company_state,
+        address: companyResolved.company_address,
       })
 
       handleCloseEditModal()
@@ -549,11 +676,25 @@ export default function RotasPage() {
       destination: '',
       destinationState: '',
       destinationAddress: '',
+      companyPhone: '',
+      companyEmail: '',
       weight: '',
+      freightValue: '',
+      driverValue: '',
+      taxesValue: '',
+      netFreightValue: '',
+      commissionValue: '',
+      paymentStatus: '',
+      paymentType: '',
+      driverName: '',
+      driverPhone: '',
+      driverPaymentStatus: '',
+      driverPaymentType: '',
       nfValue: '',
       observation: '',
       estimatedDelivery: '',
-      pickupDate: ''
+      pickupDate: '',
+      taxesPercent: '18',
     })
   }
 
@@ -570,16 +711,30 @@ export default function RotasPage() {
       destination: '',
       destinationState: '',
       destinationAddress: '',
+      companyPhone: '',
+      companyEmail: '',
       weight: '',
+      freightValue: '',
+      driverValue: '',
+      taxesValue: '',
+      netFreightValue: '',
+      commissionValue: '',
+      paymentStatus: '',
+      paymentType: '',
+      driverName: '',
+      driverPhone: '',
+      driverPaymentStatus: '',
+      driverPaymentType: '',
       nfValue: '',
       observation: '',
       estimatedDelivery: '',
-      pickupDate: ''
+      pickupDate: '',
+      taxesPercent: '18',
     })
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0">
       {/* Header - Estilo Referência */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -612,6 +767,16 @@ export default function RotasPage() {
           Pendentes {statusCounts.pending}
         </button>
         <button
+          onClick={() => setFilterStatus('pickedUp')}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+            filterStatus === 'pickedUp'
+              ? 'bg-gray-800 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Pendente {statusCounts.pickedUp}
+        </button>
+        <button
           onClick={() => setFilterStatus('inTransit')}
           className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
             filterStatus === 'inTransit'
@@ -620,16 +785,6 @@ export default function RotasPage() {
           }`}
         >
           Em Trânsito {statusCounts.inTransit}
-        </button>
-        <button
-          onClick={() => setFilterStatus('pickedUp')}
-          className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-            filterStatus === 'pickedUp'
-              ? 'bg-gray-800 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          Coletados {statusCounts.pickedUp}
         </button>
         <button
           onClick={() => setFilterStatus('delivered')}
@@ -643,51 +798,57 @@ export default function RotasPage() {
         </button>
       </div>
 
-      {/* Tabela - Estilo Referência Limpo */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      {/* Tabela — scroll horizontal + coluna de ações fixa à direita em telas estreitas */}
+      <div className="bg-white rounded-xl border border-gray-200 min-w-0 overflow-hidden">
+        <div className="overflow-x-auto overflow-y-visible overscroll-x-contain touch-pan-x">
+          <table className="w-full min-w-[640px] table-auto border-separate border-spacing-0">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  ID do Frete
+                <th className="px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Frete
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="hidden sm:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Cliente
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Rota
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  Km
+                <th className="hidden md:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Valor do Frete
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  Veículo
+                <th className="hidden lg:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Valor do Motorista
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  Previsão de Entrega
+                <th className="hidden xl:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Tribultos*
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="hidden xl:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Frete Líquido
+                </th>
+                <th className="hidden 2xl:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Comissão
+                </th>
+                <th className="px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="sticky right-0 z-20 w-px px-2 sm:px-3 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-l border-gray-200">
+                  Ações
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredRoutes.map((route) => {
-                const statusDisplay = getStatusDisplay(route.status)
                 return (
                   <tr
                     key={route.id}
-                    className="hover:bg-gray-50 transition-colors"
+                    className="group hover:bg-gray-50 transition-colors"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-900">
                         #{route.freight_id}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden sm:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col">
                         <span className="text-sm text-gray-900">
                           {route.client?.company_name || route.company_name || '—'}
@@ -697,18 +858,18 @@ export default function RotasPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-4 lg:px-6 py-4">
                       <div className="flex items-center gap-2">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 text-gray-600" />
+                            <MapPin className="w-4 h-4 text-gray-600 shrink-0" />
                             <span className="text-sm text-gray-900">
                               {route.origin}, {route.origin_state}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <ArrowRight className="w-4 h-4 text-gray-400" />
-                            <MapPin className="w-4 h-4 text-gray-600" />
+                            <ArrowRight className="w-4 h-4 text-gray-400 shrink-0" />
+                            <MapPin className="w-4 h-4 text-gray-600 shrink-0" />
                             <span className="text-sm text-gray-900">
                               {route.destination}, {route.destination_state}
                             </span>
@@ -716,53 +877,90 @@ export default function RotasPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden md:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-900 tabular-nums">
-                        {route.distance_km != null && route.distance_km > 0
-                          ? `${route.distance_km} km`
-                          : '—'}
+                        {formatCurrencyBR(route.freight_value ?? route.nf_value)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex flex-col">
-                        <span className="text-sm text-gray-900">{route.vehicle}</span>
-                        <span className="text-xs text-gray-500 mt-1">{route.plate} • {route.weight}</span>
-                      </div>
+                    <td className="hidden lg:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-medium text-gray-900 tabular-nums">
+                        {formatCurrencyBR(route.driver_value)}
+                      </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex flex-col">
-                        <span className="text-sm text-gray-900">{formatDateBR(route.estimated_delivery)}</span>
-                        <span className="text-xs text-gray-500 mt-1">Coletado: {formatDateBR(route.pickup_date)}</span>
-                      </div>
+                    <td className="hidden xl:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-medium text-gray-900 tabular-nums">
+                        {formatCurrencyBR(
+                          route.taxes_value ??
+                            calculateTaxesValue(route.freight_value ?? route.nf_value, getRouteTaxesPercent(route)),
+                        )}
+                      </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${statusDisplay.dotColor}`}></div>
-                        <span className="text-sm text-gray-900">
-                          {statusDisplay.label}
-                        </span>
-                      </div>
+                    <td className="hidden xl:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-medium text-gray-900 tabular-nums">
+                        {formatCurrencyBR(
+                          route.net_freight_value ??
+                            calculateNetFreightValue(
+                              route.freight_value ?? route.nf_value,
+                              route.driver_value,
+                              getRouteTaxesPercent(route),
+                            ),
+                        )}
+                      </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
+                    <td className="hidden 2xl:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-medium text-gray-900 tabular-nums">
+                        {formatCurrencyBR(
+                          route.commission_value ??
+                            calculateCommissionValue(
+                              calculateNetFreightValue(
+                                route.freight_value ?? route.nf_value,
+                                route.driver_value,
+                                getRouteTaxesPercent(route),
+                              ),
+                            ),
+                        )}
+                      </span>
+                    </td>
+                    <td className="px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <select
+                        aria-label="Status do frete"
+                        value={route.status}
+                        onChange={(e) =>
+                          handleUpdateRouteStatus(route, e.target.value as RouteStatus)
+                        }
+                        disabled={updatingStatusRouteId === route.id}
+                        className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-800 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {ROUTE_STATUS_OPTIONS.map((status) => {
+                          const display = getStatusDisplay(status)
+                          return (
+                            <option key={status} value={status}>
+                              {display.emoji}  {display.label}
+                            </option>
+                          )
+                        })}
+                      </select>
+                    </td>
+                    <td className="sticky right-0 z-10 w-px whitespace-nowrap border-l border-gray-200 bg-white px-2 sm:px-3 py-4 group-hover:bg-gray-50">
+                      <div className="flex items-center justify-end gap-0.5 sm:gap-1">
                       <motion.button
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => handleViewMore(route)}
-                          className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                          className="shrink-0 px-2 py-1.5 sm:px-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap"
                       >
                         Ver mais
                       </motion.button>
                         <button
                           onClick={() => handleOpenEdit(route)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="shrink-0 p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                           title="Editar"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDeleteRoute(route.id)}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="shrink-0 p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           title="Excluir"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -777,8 +975,9 @@ export default function RotasPage() {
         </div>
       </div>
 
+
       {/* Loading */}
-      {(routesLoading || clientsLoading) && (
+      {(routesLoading || clientsLoading || driversLoading) && (
         <div className="text-center py-12">
           <Loader2 className="w-8 h-8 animate-spin mx-auto text-gray-400" />
           <p className="text-gray-500 mt-2">Carregando rotas...</p>
@@ -864,13 +1063,16 @@ export default function RotasPage() {
                     </p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.email || selectedRoute.company_email || 'N/A'}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4 md:col-span-2">
-                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-                      <MapPin className="w-3 h-3" />
-                      Endereço
-                    </p>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Status de Pagamento</p>
                     <p className="text-sm font-medium text-gray-900">
-                      {selectedRoute.client?.address || selectedRoute.company_address || 'N/A'}, {selectedRoute.client?.city || selectedRoute.company_city || ''} - {selectedRoute.client?.state || selectedRoute.company_state || ''}
+                      {selectedRoute.payment_status || '—'}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Tipo de Pagamento</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {selectedRoute.payment_type || '—'}
                     </p>
                   </div>
                 </div>
@@ -940,6 +1142,33 @@ export default function RotasPage() {
                     <p className="text-xs text-gray-500 mb-1">Peso</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.weight}</p>
                   </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Nome do Motorista</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {selectedRoute.driver_name || selectedRoute.driver?.name || '—'}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Celular do Motorista</p>
+                    {getWhatsAppWebUrl(selectedRoute.driver_phone || selectedRoute.driver?.phone) ? (
+                      <a
+                        href={getWhatsAppWebUrl(selectedRoute.driver_phone || selectedRoute.driver?.phone) || undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-green-700 hover:text-green-800"
+                      >
+                        {selectedRoute.driver_phone || selectedRoute.driver?.phone}
+                      </a>
+                    ) : (
+                      <p className="text-sm font-medium text-gray-900">—</p>
+                    )}
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Status Motorista</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {selectedRoute.driver_payment_type || '—'}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -959,16 +1188,69 @@ export default function RotasPage() {
                     <p className="text-sm font-medium text-gray-900">{formatDateBR(selectedRoute.estimated_delivery)}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                   <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-1">Valor da NF</p>
+                    <p className="text-xs text-gray-500 mb-1">Valor do Frete</p>
                     <p className="text-sm font-medium text-gray-900">
-                      {selectedRoute.nf_value != null
-                        ? `R$ ${selectedRoute.nf_value.toFixed(2).replace('.', ',')}`
-                        : '—'}
+                      {formatCurrencyBR(selectedRoute.freight_value ?? selectedRoute.nf_value)}
                     </p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Valor do Motorista</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrencyBR(selectedRoute.driver_value)}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Tribultos*</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrencyBR(
+                        selectedRoute.taxes_value ??
+                          calculateTaxesValue(
+                            selectedRoute.freight_value ?? selectedRoute.nf_value,
+                            getRouteTaxesPercent(selectedRoute),
+                          ),
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Alíquota: {getRouteTaxesPercent(selectedRoute)}% sobre o frete
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Frete Líquido</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrencyBR(
+                        selectedRoute.net_freight_value ??
+                          calculateNetFreightValue(
+                            selectedRoute.freight_value ?? selectedRoute.nf_value,
+                            selectedRoute.driver_value,
+                            getRouteTaxesPercent(selectedRoute),
+                          ),
+                      )}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Comissão</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrencyBR(
+                        selectedRoute.commission_value ??
+                          calculateCommissionValue(
+                            calculateNetFreightValue(
+                              selectedRoute.freight_value ?? selectedRoute.nf_value,
+                              selectedRoute.driver_value,
+                              getRouteTaxesPercent(selectedRoute),
+                            ),
+                          ),
+                      )}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Valor da NF</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrencyBR(selectedRoute.nf_value)}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4 md:col-span-3">
                     <p className="text-xs text-gray-500 mb-1">Observação</p>
                     <p className="text-sm font-medium text-gray-900 whitespace-pre-wrap">
                       {selectedRoute.observation || '—'}
@@ -985,26 +1267,10 @@ export default function RotasPage() {
                       <Truck className="w-5 h-5" />
                       Informações do Frete
                     </h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">Frete #{selectedRoute.freight_id}</span>
-                      <motion.button
-                        type="button"
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => {
-                          setLoadingCheckIns(true)
-                          fetchCheckInsForRoute(selectedRoute).finally(() => setLoadingCheckIns(false))
-                        }}
-                        disabled={loadingCheckIns}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
-                      >
-                        <RefreshCw className={`w-4 h-4 ${loadingCheckIns ? 'animate-spin' : ''}`} />
-                        Atualizar comprovantes
-                      </motion.button>
-                    </div>
+                    <span className="text-xs text-gray-500">Frete #{selectedRoute.freight_id}</span>
                   </div>
 
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-4">
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                     <p className="text-xs text-gray-700 font-semibold uppercase tracking-wide mb-1">
                       Adicione fotos / documentos
                     </p>
@@ -1038,90 +1304,6 @@ export default function RotasPage() {
                       )}
                     </div>
                   </div>
-
-                  {loadingCheckIns ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-                      <span className="ml-2 text-sm text-gray-500">Carregando comprovantes...</span>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Botões de acesso rápido às fotos de comprovante operacional */}
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        {(['pickup', 'delivery'] as const).map((type) => {
-                          const ci = checkIns.find((c) => c.type === type)
-                          const label = type === 'pickup' ? 'Comprovante de Coleta' : 'Comprovante de Entrega'
-                          const colorClass = type === 'pickup'
-                            ? 'bg-blue-600 hover:bg-blue-700'
-                            : 'bg-green-600 hover:bg-green-700'
-                          return ci?.photo_url ? (
-                            <motion.button
-                              key={type}
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.98 }}
-                              onClick={() => setSelectedPhoto(ci.photo_url)}
-                              className={`flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-white font-medium text-sm transition-colors ${colorClass}`}
-                            >
-                              <Camera className="w-4 h-4" />
-                              {label}
-                            </motion.button>
-                          ) : null
-                        })}
-                      </div>
-
-                      {/* Cards detalhados com miniatura */}
-                      {checkIns.length > 0 && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {checkIns.map((checkIn) => {
-                            const { date, time } = formatDate(checkIn.timestamp)
-                            return (
-                              <motion.div
-                                key={checkIn.id}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-gray-300 transition-colors cursor-pointer"
-                                onClick={() => setSelectedPhoto(checkIn.photo_url)}
-                              >
-                                <div className="flex items-start gap-3">
-                                  <div className="flex-shrink-0">
-                                    <img
-                                      src={checkIn.photo_url}
-                                      alt={checkIn.type === 'pickup' ? 'Comprovante de coleta' : 'Comprovante de entrega'}
-                                      className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                                      onError={(e) => {
-                                        const target = e.target as HTMLImageElement
-                                        target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ESem imagem%3C/text%3E%3C/svg%3E'
-                                      }}
-                                    />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                        checkIn.type === 'pickup'
-                                          ? 'bg-blue-100 text-blue-700'
-                                          : 'bg-green-100 text-green-700'
-                                      }`}>
-                                        {checkIn.type === 'pickup' ? 'Coleta' : 'Entrega'}
-                                      </span>
-                                      <CheckCircle2 className="w-4 h-4 text-gray-400" />
-                                    </div>
-                                    <p className="text-xs text-gray-500 mb-1">{date} às {time}</p>
-                                    {checkIn.address && (
-                                      <p className="text-xs text-gray-600 truncate flex items-start gap-1">
-                                        <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                                        {checkIn.address}
-                                      </p>
-                                    )}
-                                    <p className="text-xs text-gray-400 mt-1">Clique para ampliar</p>
-                                  </div>
-                                </div>
-                              </motion.div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </>
-                  )}
                 </div>
               </div>
             </div>
@@ -1214,6 +1396,118 @@ export default function RotasPage() {
                       ? `Será usado o nome digitado: "${companyInput.trim()}"`
                       : 'Escolha um cliente da lista ou digite o nome da empresa'}
                 </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Telefone
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.companyPhone}
+                    onChange={(e) => setFormData({ ...formData, companyPhone: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: (11) 99999-9999"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    E-mail
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.companyEmail}
+                    onChange={(e) => setFormData({ ...formData, companyEmail: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="empresa@email.com"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Status de Pagamento
+                  </label>
+                  <select
+                    value={formData.paymentStatus}
+                    onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  >
+                    <option value="">Selecione</option>
+                    {PAYMENT_STATUS_OPTIONS.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Tipo de Pagamento
+                  </label>
+                  <select
+                    value={formData.paymentType}
+                    onChange={(e) => setFormData({ ...formData, paymentType: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  >
+                    <option value="">Selecione</option>
+                    {PAYMENT_TYPE_OPTIONS.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Nome do Motorista
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.driverName}
+                    onChange={(e) => setFormData({ ...formData, driverName: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Digite o nome do motorista"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Celular do Motorista
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.driverPhone}
+                    onChange={(e) => setFormData({ ...formData, driverPhone: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: (11) 99999-9999"
+                  />
+                  {getWhatsAppWebUrl(formData.driverPhone) && (
+                    <a
+                      href={getWhatsAppWebUrl(formData.driverPhone) || undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-block text-xs font-medium text-green-700 hover:text-green-800"
+                    >
+                      Abrir {formData.driverPhone} no WhatsApp Web
+                    </a>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Status Motorista
+                  </label>
+                  <select
+                    value={formData.driverPaymentType}
+                    onChange={(e) => setFormData({ ...formData, driverPaymentType: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  >
+                    <option value="">Selecione</option>
+                    {DRIVER_PAYMENT_TYPE_OPTIONS.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Origem - Começando pelo CEP */}
@@ -1385,7 +1679,114 @@ export default function RotasPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Valor do Frete
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.freightValue}
+                    onChange={(e) => setFormData({ ...formData, freightValue: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: 12500,00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Valor do Motorista
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.driverValue}
+                    onChange={(e) => setFormData({ ...formData, driverValue: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: 8500,00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Tribultos*
+                  </label>
+                  {isAdminUser ? (
+                    <select
+                      value={formData.taxesPercent}
+                      onChange={(e) => setFormData({ ...formData, taxesPercent: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
+                      aria-label="Percentual de tributos sobre o frete"
+                    >
+                      {TAXES_PERCENT_OPTIONS.map((p) => (
+                        <option key={p} value={String(p)}>
+                          {p}% sobre o frete
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="mb-2 text-xs text-gray-600">
+                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0%, 10%, 12% ou 18%).
+                    </p>
+                  )}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    readOnly
+                    value={formatCurrencyBR(
+                      calculateTaxesValue(
+                        parseCurrencyInput(formData.freightValue),
+                        normalizeTaxesPercent(Number(formData.taxesPercent)),
+                      ),
+                    )}
+                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
+                    placeholder="Valor calculado"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Calculado automaticamente: {normalizeTaxesPercent(Number(formData.taxesPercent))}% do valor do frete.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Frete Líquido
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    readOnly
+                    value={formatCurrencyBR(
+                      calculateNetFreightValue(
+                        parseCurrencyInput(formData.freightValue),
+                        parseCurrencyInput(formData.driverValue),
+                        normalizeTaxesPercent(Number(formData.taxesPercent)),
+                      ),
+                    )}
+                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
+                    placeholder="Valor do frete - tribultos - motorista"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Calculado automaticamente: frete - tribultos - motorista.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Comissão
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    readOnly
+                    value={formatCurrencyBR(
+                      calculateCommissionValue(
+                        calculateNetFreightValue(
+                          parseCurrencyInput(formData.freightValue),
+                          parseCurrencyInput(formData.driverValue),
+                          normalizeTaxesPercent(Number(formData.taxesPercent)),
+                        ),
+                      ),
+                    )}
+                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
+                    placeholder="30% do frete líquido"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Calculado automaticamente: 30% do frete líquido.</p>
+                </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
                     Valor da NF
@@ -1399,18 +1800,19 @@ export default function RotasPage() {
                     placeholder="Ex: 12500,00"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Observação
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={formData.observation}
-                    onChange={(e) => setFormData({ ...formData, observation: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 resize-y"
-                    placeholder="Informações adicionais do frete"
-                  />
-                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Observação
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.observation}
+                  onChange={(e) => setFormData({ ...formData, observation: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 resize-y"
+                  placeholder="Informações adicionais do frete"
+                />
               </div>
 
               {/* Botões */}
@@ -1495,6 +1897,118 @@ export default function RotasPage() {
                       ? `Será usado o nome digitado: "${companyInput.trim()}"`
                       : 'Escolha um cliente da lista ou digite o nome da empresa'}
                 </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Telefone
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.companyPhone}
+                    onChange={(e) => setFormData({ ...formData, companyPhone: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: (11) 99999-9999"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    E-mail
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.companyEmail}
+                    onChange={(e) => setFormData({ ...formData, companyEmail: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="empresa@email.com"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Status de Pagamento
+                  </label>
+                  <select
+                    value={formData.paymentStatus}
+                    onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  >
+                    <option value="">Selecione</option>
+                    {PAYMENT_STATUS_OPTIONS.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Tipo de Pagamento
+                  </label>
+                  <select
+                    value={formData.paymentType}
+                    onChange={(e) => setFormData({ ...formData, paymentType: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  >
+                    <option value="">Selecione</option>
+                    {PAYMENT_TYPE_OPTIONS.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Nome do Motorista
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.driverName}
+                    onChange={(e) => setFormData({ ...formData, driverName: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Digite o nome do motorista"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Celular do Motorista
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.driverPhone}
+                    onChange={(e) => setFormData({ ...formData, driverPhone: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: (11) 99999-9999"
+                  />
+                  {getWhatsAppWebUrl(formData.driverPhone) && (
+                    <a
+                      href={getWhatsAppWebUrl(formData.driverPhone) || undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-block text-xs font-medium text-green-700 hover:text-green-800"
+                    >
+                      Abrir {formData.driverPhone} no WhatsApp Web
+                    </a>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Status Motorista
+                  </label>
+                  <select
+                    value={formData.driverPaymentType}
+                    onChange={(e) => setFormData({ ...formData, driverPaymentType: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  >
+                    <option value="">Selecione</option>
+                    {DRIVER_PAYMENT_TYPE_OPTIONS.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Origem - Começando pelo CEP */}
@@ -1666,7 +2180,114 @@ export default function RotasPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Valor do Frete
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.freightValue}
+                    onChange={(e) => setFormData({ ...formData, freightValue: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: 12500,00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Valor do Motorista
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.driverValue}
+                    onChange={(e) => setFormData({ ...formData, driverValue: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder="Ex: 8500,00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Tribultos*
+                  </label>
+                  {isAdminUser ? (
+                    <select
+                      value={formData.taxesPercent}
+                      onChange={(e) => setFormData({ ...formData, taxesPercent: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
+                      aria-label="Percentual de tributos sobre o frete"
+                    >
+                      {TAXES_PERCENT_OPTIONS.map((p) => (
+                        <option key={p} value={String(p)}>
+                          {p}% sobre o frete
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="mb-2 text-xs text-gray-600">
+                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0%, 10%, 12% ou 18%).
+                    </p>
+                  )}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    readOnly
+                    value={formatCurrencyBR(
+                      calculateTaxesValue(
+                        parseCurrencyInput(formData.freightValue),
+                        normalizeTaxesPercent(Number(formData.taxesPercent)),
+                      ),
+                    )}
+                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
+                    placeholder="Valor calculado"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Calculado automaticamente: {normalizeTaxesPercent(Number(formData.taxesPercent))}% do valor do frete.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Frete Líquido
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    readOnly
+                    value={formatCurrencyBR(
+                      calculateNetFreightValue(
+                        parseCurrencyInput(formData.freightValue),
+                        parseCurrencyInput(formData.driverValue),
+                        normalizeTaxesPercent(Number(formData.taxesPercent)),
+                      ),
+                    )}
+                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
+                    placeholder="Valor do frete - tribultos - motorista"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Calculado automaticamente: frete - tribultos - motorista.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Comissão
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    readOnly
+                    value={formatCurrencyBR(
+                      calculateCommissionValue(
+                        calculateNetFreightValue(
+                          parseCurrencyInput(formData.freightValue),
+                          parseCurrencyInput(formData.driverValue),
+                          normalizeTaxesPercent(Number(formData.taxesPercent)),
+                        ),
+                      ),
+                    )}
+                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
+                    placeholder="30% do frete líquido"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Calculado automaticamente: 30% do frete líquido.</p>
+                </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
                     Valor da NF
@@ -1680,37 +2301,19 @@ export default function RotasPage() {
                     placeholder="Ex: 12500,00"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Observação
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={formData.observation}
-                    onChange={(e) => setFormData({ ...formData, observation: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 resize-y"
-                    placeholder="Informações adicionais do frete"
-                  />
-                </div>
               </div>
 
-              {/* Status */}
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">
-                  Status <span className="text-red-500">*</span>
+                  Observação
                 </label>
-                <select
-                  required
-                  value={editingRoute.status}
-                  onChange={(e) => setEditingRoute({ ...editingRoute, status: e.target.value as any })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                >
-                  <option value="pending">Pendente</option>
-                  <option value="inTransit">Em Trânsito</option>
-                  <option value="pickedUp">Coletado</option>
-                  <option value="delivered">Entregue</option>
-                  <option value="cancelled">Cancelado</option>
-                </select>
+                <textarea
+                  rows={3}
+                  value={formData.observation}
+                  onChange={(e) => setFormData({ ...formData, observation: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 resize-y"
+                  placeholder="Informações adicionais do frete"
+                />
               </div>
 
               {/* Botões */}

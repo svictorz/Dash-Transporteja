@@ -1,13 +1,11 @@
 -- ============================================
--- CONFIGURAÇÃO DO STORAGE - TRANSPORTEJÁ
+-- BUCKET checkin-photos (idempotente)
 -- ============================================
--- Este script cria (se necessário) o bucket `checkin-photos`
--- e configura as policies de upload, leitura, update e delete.
--- Pode ser executado várias vezes (idempotente) no SQL Editor do Supabase.
+-- Cria o bucket usado pelo app para fotos de check-in (pasta `checkins/`)
+-- e para anexos de comprovantes de frete (pasta `documents/`).
+-- Ajusta também as policies para aceitar ambas as pastas.
 
--- ============================================
--- 1) BUCKET
--- ============================================
+-- Cria o bucket se ainda não existir (público, com limite de 10MB).
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'checkin-photos',
@@ -22,15 +20,12 @@ SET
   file_size_limit = EXCLUDED.file_size_limit,
   allowed_mime_types = EXCLUDED.allowed_mime_types;
 
--- ============================================
--- 2) POLICIES
--- ============================================
+-- Remove policies antigas (incluindo as do storage-setup.sql) para
+-- recriarmos com suporte às duas pastas (`checkins` e `documents`).
 DROP POLICY IF EXISTS "Authenticated users can upload photos" ON storage.objects;
 DROP POLICY IF EXISTS "Authenticated users can read photos" ON storage.objects;
 DROP POLICY IF EXISTS "Authenticated users can update own photos" ON storage.objects;
-DROP POLICY IF EXISTS "Authenticated users can update photos" ON storage.objects;
 DROP POLICY IF EXISTS "Authenticated users can delete own photos" ON storage.objects;
-DROP POLICY IF EXISTS "Authenticated users can delete photos" ON storage.objects;
 DROP POLICY IF EXISTS "Admins and operators can manage all photos" ON storage.objects;
 
 -- Upload: usuários autenticados podem enviar para `checkins/` ou `documents/`.
@@ -48,7 +43,7 @@ ON storage.objects FOR SELECT
 TO authenticated
 USING (bucket_id = 'checkin-photos');
 
--- Update: usuários autenticados podem atualizar arquivos das pastas suportadas.
+-- Update: usuários autenticados podem atualizar arquivos nas pastas suportadas.
 CREATE POLICY "Authenticated users can update photos"
 ON storage.objects FOR UPDATE
 TO authenticated
@@ -88,7 +83,3 @@ WITH CHECK (
     WHERE id = auth.uid() AND role IN ('admin', 'operator', 'comercial')
   )
 );
-
--- ============================================
--- FIM DA CONFIGURAÇÃO DO STORAGE
--- ============================================

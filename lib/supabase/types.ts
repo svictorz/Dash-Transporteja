@@ -119,8 +119,20 @@ export interface Database {
           company_address: string | null
           company_city: string | null
           company_state: string | null
+          driver_name?: string | null
+          driver_phone?: string | null
           created_by_user_id?: string | null
           distance_km?: number | null
+          freight_value?: number | null
+          driver_value?: number | null
+          taxes_value?: number | null
+          taxes_percent?: number | null
+          net_freight_value?: number | null
+          commission_value?: number | null
+          payment_status?: string | null
+          payment_type?: string | null
+          driver_payment_status?: string | null
+          driver_payment_type?: string | null
           nf_value?: number | null
           observation?: string | null
           created_at: string
@@ -149,8 +161,20 @@ export interface Database {
           company_address?: string | null
           company_city?: string | null
           company_state?: string | null
+          driver_name?: string | null
+          driver_phone?: string | null
           created_by_user_id?: string | null
           distance_km?: number | null
+          freight_value?: number | null
+          driver_value?: number | null
+          taxes_value?: number | null
+          taxes_percent?: number | null
+          net_freight_value?: number | null
+          commission_value?: number | null
+          payment_status?: string | null
+          payment_type?: string | null
+          driver_payment_status?: string | null
+          driver_payment_type?: string | null
           nf_value?: number | null
           observation?: string | null
           created_at?: string
@@ -179,8 +203,20 @@ export interface Database {
           company_address?: string | null
           company_city?: string | null
           company_state?: string | null
+          driver_name?: string | null
+          driver_phone?: string | null
           created_by_user_id?: string | null
           distance_km?: number | null
+          freight_value?: number | null
+          driver_value?: number | null
+          taxes_value?: number | null
+          taxes_percent?: number | null
+          net_freight_value?: number | null
+          commission_value?: number | null
+          payment_status?: string | null
+          payment_type?: string | null
+          driver_payment_status?: string | null
+          driver_payment_type?: string | null
           nf_value?: number | null
           observation?: string | null
           created_at?: string

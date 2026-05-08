@@ -16,10 +16,12 @@ import {
   X,
   Shield,
   BarChart3,
-  CalendarDays
+  CalendarDays,
+  UserCog
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Logo from './Logo'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 
 interface MenuItem {
   icon: LucideIcon
@@ -37,6 +39,8 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   const pathname = usePathname()
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(true)
+  const { user: currentUser } = useCurrentUser()
+  const isAdmin = currentUser?.role === 'admin'
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -66,6 +70,9 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
     { icon: FileText, label: 'Propostas', path: '/dashboard/propostas' },
     { icon: CalendarDays, label: 'Calendário', path: '/dashboard/calendario' },
     { icon: BarChart3, label: 'Performance', path: '/dashboard/performance' },
+    ...(isAdmin
+      ? [{ icon: UserCog, label: 'Permissões', path: '/dashboard/usuarios' } as MenuItem]
+      : []),
   ]
 
   const handleLogout = async () => {

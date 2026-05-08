@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import FadeIn from '@/components/animations/FadeIn'
 import {
@@ -16,7 +16,6 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useRoutes } from '@/lib/hooks/useRoutes'
-import { supabase } from '@/lib/supabase/client'
 
 
 interface Alert {
@@ -49,94 +48,6 @@ export default function DashboardPage() {
   const { routes } = useRoutes()
   
   const [mounted, setMounted] = useState(false)
-  const [checkIns, setCheckIns] = useState<any[]>([])
-  
-  const [checkInStats, setCheckInStats] = useState({
-    today: 0,
-    week: 0,
-    month: 0,
-    total: 0,
-    pickup: 0,
-    delivery: 0
-  })
-
-  const isLoadingCheckInsRef = useRef(false)
-
-  // Carregar check-ins do Supabase (reutilizado no Realtime)
-  const loadCheckIns = useCallback(async () => {
-    if (isLoadingCheckInsRef.current) return
-    isLoadingCheckInsRef.current = true
-    try {
-      const { data, error } = await supabase
-        .from('checkins')
-        .select('*')
-        .order('timestamp', { ascending: false })
-      if (error) throw error
-      setCheckIns(data || [])
-    } catch (err) {
-      console.error('Erro ao carregar check-ins:', err)
-      setCheckIns([])
-    } finally {
-      isLoadingCheckInsRef.current = false
-    }
-  }, [])
-
-  // Carregar check-ins na montagem
-  useEffect(() => {
-    loadCheckIns()
-  }, [loadCheckIns])
-
-  // Realtime: atualizar check-ins quando o app ou outro cliente inserir/alterar
-  useEffect(() => {
-    const channel = supabase
-      .channel('checkins-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'checkins' },
-        () => {
-          loadCheckIns()
-        }
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [loadCheckIns])
-
-  // Calcular estatísticas de check-ins
-  useEffect(() => {
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
-    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
-
-    const todayCount = checkIns.filter(item => {
-      const itemDate = new Date(item.timestamp)
-      return itemDate >= today
-    }).length
-
-    const weekCount = checkIns.filter(item => {
-      const itemDate = new Date(item.timestamp)
-      return itemDate >= weekAgo
-    }).length
-
-    const monthCount = checkIns.filter(item => {
-      const itemDate = new Date(item.timestamp)
-      return itemDate >= monthAgo
-    }).length
-
-    const pickupCount = checkIns.filter(item => item.type === 'pickup').length
-    const deliveryCount = checkIns.filter(item => item.type === 'delivery').length
-
-    setCheckInStats({
-      today: todayCount,
-      week: weekCount,
-      month: monthCount,
-      total: checkIns.length,
-      pickup: pickupCount,
-      delivery: deliveryCount
-    })
-  }, [checkIns])
 
   // Calcular estatísticas de rotas
   const routeStats = useMemo(() => {
@@ -351,14 +262,10 @@ export default function DashboardPage() {
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                 <CheckCircle2 className="w-6 h-6 text-green-600" />
               </div>
-              <div className="flex items-center gap-1 text-green-600">
-                <ArrowUpRight className="w-4 h-4" />
-                <span className="text-xs font-semibold">+5.2%</span>
-              </div>
             </div>
-            <div className="text-2xl font-bold text-gray-900 mb-1">{checkInStats.today}</div>
-            <div className="text-sm text-gray-600">Check-ins Hoje</div>
-            <div className="text-xs text-gray-500 mt-2">{checkInStats.pickup} coletas • {checkInStats.delivery} entregas</div>
+            <div className="text-2xl font-bold text-gray-900 mb-1">{routeStats.completed}</div>
+            <div className="text-sm text-gray-600">Fretes Entregues</div>
+            <div className="text-xs text-gray-500 mt-2">acumulado total</div>
           </motion.div>
         </FadeIn>
 

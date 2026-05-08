@@ -55,11 +55,11 @@ export default function DashboardLayout({
           onMobileClose={() => setIsMobileMenuOpen(false)}
         />
       </div>
-      <div className="flex-1 flex flex-col overflow-hidden w-full md:w-auto">
+      <div className="flex-1 flex min-w-0 flex-col overflow-hidden w-full md:w-auto">
         <div className="print:hidden">
           <TopBarTransporteja onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
         </div>
-        <main className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 p-4 md:p-6 print:overflow-visible print:bg-white print:p-0">
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 p-4 md:p-6 print:overflow-visible print:bg-white print:p-0">
           {children}
         </main>
       </div>

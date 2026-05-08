@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
-import { generateFreightCode } from '@/lib/utils/freight-code'
 
-/** Quando não há motorista: valores aceitos pelo trigger validate_plate no Supabase */
+/** Quando não há motorista: placeholders aceitos pelo banco para veículo/placa */
 export const ROUTE_NO_DRIVER_VEHICLE = 'A definir'
 export const ROUTE_NO_DRIVER_PLATE = 'ABC1D23'
 
@@ -28,7 +27,20 @@ export interface Route {
   company_address?: string | null
   company_city?: string | null
   company_state?: string | null
+  driver_name?: string | null
+  driver_phone?: string | null
   distance_km?: number | null
+  freight_value?: number | null
+  driver_value?: number | null
+  taxes_value?: number | null
+  /** 0, 10, 12 ou 18 — percentual sobre o valor do frete para tributos. */
+  taxes_percent?: number | null
+  net_freight_value?: number | null
+  commission_value?: number | null
+  payment_status?: string | null
+  payment_type?: string | null
+  driver_payment_status?: string | null
+  driver_payment_type?: string | null
   nf_value?: number | null
   observation?: string | null
   created_by_user_id?: string | null
@@ -59,7 +71,19 @@ export interface CreateRouteData {
   company_address?: string
   company_city?: string
   company_state?: string
+  driver_name?: string | null
+  driver_phone?: string | null
   distance_km?: number | null
+  freight_value?: number | null
+  driver_value?: number | null
+  taxes_value?: number | null
+  taxes_percent?: number | null
+  net_freight_value?: number | null
+  commission_value?: number | null
+  payment_status?: string | null
+  payment_type?: string | null
+  driver_payment_status?: string | null
+  driver_payment_type?: string | null
   nf_value?: number | null
   observation?: string | null
   created_by_user_id?: string
@@ -87,7 +111,19 @@ export interface UpdateRouteData {
   company_address?: string | null
   company_city?: string | null
   company_state?: string | null
+  driver_name?: string | null
+  driver_phone?: string | null
   distance_km?: number | null
+  freight_value?: number | null
+  driver_value?: number | null
+  taxes_value?: number | null
+  taxes_percent?: number | null
+  net_freight_value?: number | null
+  commission_value?: number | null
+  payment_status?: string | null
+  payment_type?: string | null
+  driver_payment_status?: string | null
+  driver_payment_type?: string | null
   nf_value?: number | null
   observation?: string | null
 }
@@ -150,12 +186,11 @@ export async function getRouteByFreightId(freightId: number): Promise<Route | nu
 
 /**
  * Criar nova rota
+ *
+ * Importante: `freight_id` é gerado pelo banco (sequence) quando não vier
+ * explicitamente. Por isso, removemos o campo do payload se vier null/0.
  */
 export async function createRoute(routeData: CreateRouteData): Promise<Route> {
-  if (routeData.freight_id == null || routeData.freight_id === 0) {
-    routeData.freight_id = generateFreightCode()
-  }
-
   const pickup_date = routeData.pickup_date ?? ''
   const estimated_delivery = routeData.estimated_delivery ?? ''
 
@@ -171,20 +206,29 @@ export async function createRoute(routeData: CreateRouteData): Promise<Route> {
     vehicle: _ignoreVeh,
     plate: _ignorePlate,
     status: _st,
+    freight_id: _fid,
     ...rest
   } = routeData
 
+  const insertPayload: Record<string, unknown> = {
+    ...rest,
+    driver_id,
+    vehicle,
+    plate,
+    pickup_date,
+    estimated_delivery,
+    status: routeData.status || 'pending',
+  }
+
+  // Só passa freight_id se vier um valor explícito (>0); caso contrário,
+  // o banco usa o DEFAULT nextval(routes_freight_id_seq).
+  if (routeData.freight_id != null && routeData.freight_id > 0) {
+    insertPayload.freight_id = routeData.freight_id
+  }
+
   const { data, error } = await supabase
     .from('routes')
-    .insert({
-      ...rest,
-      driver_id,
-      vehicle,
-      plate,
-      pickup_date,
-      estimated_delivery,
-      status: routeData.status || 'pending',
-    })
+    .insert(insertPayload)
     .select()
     .single()
 

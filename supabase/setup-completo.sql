@@ -82,6 +82,17 @@ CREATE TABLE IF NOT EXISTS public.routes (
   company_city TEXT,
   company_state TEXT,
   distance_km DOUBLE PRECISION,
+  freight_value NUMERIC(14,2),
+  driver_value NUMERIC(14,2),
+  taxes_value NUMERIC(14,2),
+  net_freight_value NUMERIC(14,2),
+  commission_value NUMERIC(14,2),
+  payment_status TEXT,
+  payment_type TEXT,
+  driver_name TEXT,
+  driver_phone TEXT,
+  driver_payment_status TEXT,
+  driver_payment_type TEXT,
   nf_value NUMERIC(14,2),
   observation TEXT,
   created_by_user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
@@ -125,6 +136,17 @@ ALTER TABLE public.users
 ALTER TABLE public.users ALTER COLUMN role SET DEFAULT 'comercial';
 
 ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS distance_km DOUBLE PRECISION;
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS freight_value NUMERIC(14,2);
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS driver_value NUMERIC(14,2);
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS taxes_value NUMERIC(14,2);
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS net_freight_value NUMERIC(14,2);
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS commission_value NUMERIC(14,2);
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS payment_status TEXT;
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS payment_type TEXT;
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS driver_name TEXT;
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS driver_phone TEXT;
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS driver_payment_status TEXT;
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS driver_payment_type TEXT;
 ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS nf_value NUMERIC(14,2);
 ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS observation TEXT;
 ALTER TABLE public.routes
@@ -602,26 +624,24 @@ CREATE POLICY "Authenticated users can read routes" ON public.routes
 
 CREATE POLICY "Admins and operators can insert routes" ON public.routes
   FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.users
-      WHERE id = auth.uid() AND role IN ('admin', 'operator')
+    public.current_user_has_any_role(ARRAY['admin', 'comercial']::text[])
+    AND (
+      created_by_user_id IS NULL
+      OR created_by_user_id = auth.uid()
     )
   );
 
 CREATE POLICY "Admins and operators can update routes" ON public.routes
   FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM public.users
-      WHERE id = auth.uid() AND role IN ('admin', 'operator')
-    )
+    public.current_user_has_any_role(ARRAY['admin', 'comercial']::text[])
+  )
+  WITH CHECK (
+    public.current_user_has_any_role(ARRAY['admin', 'comercial']::text[])
   );
 
 CREATE POLICY "Admins and operators can delete routes" ON public.routes
   FOR DELETE USING (
-    EXISTS (
-      SELECT 1 FROM public.users
-      WHERE id = auth.uid() AND role IN ('admin', 'operator')
-    )
+    public.current_user_has_any_role(ARRAY['admin', 'comercial']::text[])
   );
 
 -- Políticas para CHECKINS
