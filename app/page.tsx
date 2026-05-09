@@ -19,7 +19,7 @@ export default function HomePage() {
         if (!isMounted) return
         
         if (session) {
-          router.replace('/dashboard')
+          router.replace('/inicio')
         } else {
           router.replace('/login')
         }

@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { isPainelPath } from '@/lib/constants/painel-routes'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -31,12 +32,12 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const pathname = request.nextUrl.pathname
-  const isDashboard = pathname.startsWith('/dashboard')
+  const isPainel = isPainelPath(pathname)
   const isDev = process.env.NODE_ENV === 'development'
 
-  // Em desenvolvimento: deixar o layout do dashboard fazer o redirect se não houver sessão,
+  // Em desenvolvimento: deixar o layout do painel fazer o redirect se não houver sessão,
   // para evitar bloqueio quando os cookies não forem lidos corretamente no middleware (ex.: localhost).
-  if ((!user || userError) && isDashboard && !isDev) {
+  if ((!user || userError) && isPainel && !isDev) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
@@ -44,7 +45,7 @@ export async function updateSession(request: NextRequest) {
 
   if (user && !userError && pathname === '/login') {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = '/inicio'
     return NextResponse.redirect(url)
   }
 

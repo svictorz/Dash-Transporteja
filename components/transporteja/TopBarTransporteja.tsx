@@ -151,7 +151,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
   }
 
   const handleSettings = () => {
-    router.push('/dashboard/configuracoes')
+    router.push('/configuracoes')
   }
 
   const handleLogout = async () => {

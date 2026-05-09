@@ -4,7 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
-  const next = requestUrl.searchParams.get('next') ?? '/dashboard/bem-vindo'
+  const next = requestUrl.searchParams.get('next') ?? '/bem-vindo'
 
   if (code) {
     const supabase = createServerClient()

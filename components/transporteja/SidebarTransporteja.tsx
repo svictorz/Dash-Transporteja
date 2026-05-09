@@ -64,14 +64,14 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   }
 
   const menuItems: MenuItem[] = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
-    { icon: Route, label: 'Rotas', path: '/dashboard/rotas' },
-    { icon: FileText, label: 'Propostas', path: '/dashboard/propostas' },
-    { icon: CalendarDays, label: 'Calendário', path: '/dashboard/calendario' },
-    { icon: BarChart3, label: 'Performance', path: '/dashboard/performance' },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/inicio' },
+    { icon: Users, label: 'Clientes', path: '/clientes' },
+    { icon: Route, label: 'Rotas', path: '/rotas' },
+    { icon: FileText, label: 'Propostas', path: '/propostas' },
+    { icon: CalendarDays, label: 'Calendário', path: '/calendario' },
+    { icon: BarChart3, label: 'Performance', path: '/performance' },
     ...(isAdmin
-      ? [{ icon: UserCog, label: 'Permissões', path: '/dashboard/usuarios' } as MenuItem]
+      ? [{ icon: UserCog, label: 'Permissões', path: '/usuarios' } as MenuItem]
       : []),
   ]
 
@@ -155,12 +155,12 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
           const Icon = item.icon
           // Melhor detecção de rota ativa
           let isActive = false
-          if (item.path === '/dashboard') {
-            // Para dashboard, só ativo se for exatamente /dashboard
-            isActive = pathname === '/dashboard'
+          if (item.path === '/inicio') {
+            // Para a home do painel, só ativo se for exatamente /inicio
+            isActive = pathname === '/inicio'
           } else {
             // Para outras rotas, verifica se começa com o path
-            isActive = pathname === item.path || (pathname?.startsWith(item.path + '/') && pathname !== '/dashboard')
+            isActive = pathname === item.path || (pathname?.startsWith(item.path + '/') && pathname !== '/inicio')
           }
           
           return (
@@ -191,7 +191,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
         <FadeIn delay={0.3}>
           <div className="p-4 border-t border-white/20 space-y-3">
           <Link
-            href="/dashboard/configuracoes"
+            href="/configuracoes"
             onClick={handleNavClick}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition-all"
           >
@@ -199,7 +199,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
             {isOpen && <span>Configurações</span>}
           </Link>
           <Link
-            href="/dashboard/dados-pessoais"
+            href="/dados-pessoais"
             onClick={handleNavClick}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition-all"
           >

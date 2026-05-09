@@ -32,12 +32,69 @@ export default function LoginPage() {
     if (authLoading || !session) return
     if (redirectAttemptedRef.current) return
     redirectAttemptedRef.current = true
-    router.replace('/dashboard')
+    router.replace('/inicio')
   }, [authLoading, session, router])
+
+  /**
+   * Mensagem genérica para qualquer falha de credencial.
+   * Não revelar a mensagem exata do Supabase ao usuário (evita enumeração
+   * de e-mails / leak de detalhes internos do Auth). O motivo real fica só
+   * no console do desenvolvedor.
+   */
+  const GENERIC_AUTH_ERROR = 'E-mail ou senha incorretos. Verifique e tente novamente.'
+
+  const RATE_KEY = 'login:attempts'
+  const RATE_LIMIT = 8
+  const RATE_WINDOW_MS = 15 * 60 * 1000 // 15 minutos
+  const RATE_BLOCK_MS = 5 * 60 * 1000 // bloqueio de 5 min após exceder
+
+  type RateState = { count: number; firstAt: number; blockedUntil?: number }
+
+  const readRate = (): RateState => {
+    if (typeof window === 'undefined') return { count: 0, firstAt: Date.now() }
+    try {
+      const raw = window.localStorage.getItem(RATE_KEY)
+      if (!raw) return { count: 0, firstAt: Date.now() }
+      const parsed = JSON.parse(raw) as RateState
+      if (Date.now() - parsed.firstAt > RATE_WINDOW_MS) {
+        return { count: 0, firstAt: Date.now() }
+      }
+      return parsed
+    } catch {
+      return { count: 0, firstAt: Date.now() }
+    }
+  }
+
+  const writeRate = (next: RateState) => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(RATE_KEY, JSON.stringify(next))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const clearRate = () => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.removeItem(RATE_KEY)
+    } catch {
+      /* ignore */
+    }
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+
+    // Rate limit local (anti brute-force casual). Para força total, use
+    // Vercel Firewall + rate limit nativo do Supabase.
+    const rate = readRate()
+    if (rate.blockedUntil && Date.now() < rate.blockedUntil) {
+      const secs = Math.ceil((rate.blockedUntil - Date.now()) / 1000)
+      setError(`Muitas tentativas. Tente novamente em ${Math.ceil(secs / 60)} min.`)
+      return
+    }
 
     if (!email || !password) {
       setError('Por favor, preencha todos os campos')
@@ -54,51 +111,40 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      // Autenticação com Supabase
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
-        password
+        password,
       })
 
       if (authError) {
-        setError(authError.message || 'Erro ao fazer login. Verifique suas credenciais.')
+        // Log apenas o código/metadados, NÃO o objeto inteiro
+        console.error('login_failed', { code: authError.code ?? authError.status })
+        const next: RateState = {
+          count: rate.count + 1,
+          firstAt: rate.firstAt || Date.now(),
+        }
+        if (next.count >= RATE_LIMIT) {
+          next.blockedUntil = Date.now() + RATE_BLOCK_MS
+        }
+        writeRate(next)
+        setError(GENERIC_AUTH_ERROR)
         setIsLoading(false)
         return
       }
 
       if (data.user) {
-        // Buscar dados do usuário na tabela users
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', data.user.id)
-          .single()
+        // Sucesso: zera o contador local
+        clearRate()
 
-        if (userError && userError.code !== 'PGRST116') {
-          // PGRST116 = no rows returned, vamos criar o registro
-          const { error: insertError } = await supabase
-            .from('users')
-            .insert({
-              id: data.user.id,
-              email: data.user.email!,
-              name: data.user.email?.split('@')[0] || null,
-              role: 'comercial'
-            })
-
-          if (insertError) {
-            console.error('Erro ao criar perfil:', insertError)
-          }
-        }
-
-        // Aguardar um pouco para garantir que a sessão foi estabelecida
-        await new Promise(resolve => setTimeout(resolve, 100))
-        
-        // Redirecionar usando replace para evitar histórico de navegação
-        // Não usar window.location.href para evitar refresh completo
-        router.replace('/dashboard')
+        // Importante: NÃO criamos automaticamente um registro em
+        // public.users com role='comercial'. Acesso ao CRM só com
+        // permissão liberada manualmente pelo admin em /usuarios.
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        router.replace('/inicio')
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Erro ao fazer login. Tente novamente.')
+      console.error('login_unexpected_error', err instanceof Error ? err.name : 'unknown')
+      setError(GENERIC_AUTH_ERROR)
       setIsLoading(false)
     }
   }

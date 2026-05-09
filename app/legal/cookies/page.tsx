@@ -89,7 +89,7 @@ export default function PoliticaCookiesPage() {
                 <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                   <p className="text-gray-700">
                     <strong>Gerenciar preferências:</strong>{' '}
-                    <Link href="/dashboard/configuracoes" className="text-blue-600 hover:underline">
+                    <Link href="/configuracoes" className="text-blue-600 hover:underline">
                       Ir para Configurações
                     </Link>
                   </p>

@@ -48,7 +48,7 @@ export default function BemVindoPage() {
       }
 
       if (userRow?.onboarding_completed) {
-        router.replace('/dashboard')
+        router.replace('/inicio')
         return
       }
 
@@ -137,7 +137,7 @@ export default function BemVindoPage() {
         setSubmitting(false)
         return
       }
-      router.replace('/dashboard')
+      router.replace('/inicio')
     } catch {
       setSubmitError('Erro ao salvar. Tente novamente.')
       setSubmitting(false)
@@ -156,7 +156,7 @@ export default function BemVindoPage() {
         setSubmitting(false)
         return
       }
-      router.replace('/dashboard')
+      router.replace('/inicio')
     } catch {
       setSubmitError('Erro inesperado. Tente novamente.')
       setSubmitting(false)

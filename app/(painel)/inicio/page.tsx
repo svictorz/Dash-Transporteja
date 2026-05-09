@@ -558,7 +558,7 @@ export default function DashboardPage() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => router.push('/dashboard/rotas')}
+              onClick={() => router.push('/rotas')}
               className="text-sm text-gray-600 hover:text-gray-900 font-medium"
             >
               Ver todos →
@@ -571,7 +571,7 @@ export default function DashboardPage() {
                 <RouteIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p>Nenhum frete no período selecionado</p>
                 <button
-                  onClick={() => router.push('/dashboard/rotas')}
+                  onClick={() => router.push('/rotas')}
                   className="mt-4 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium"
                 >
                   Abrir Fretes
@@ -666,7 +666,7 @@ export default function DashboardPage() {
                             <motion.button
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
-                              onClick={() => router.push('/dashboard/rotas')}
+                              onClick={() => router.push('/rotas')}
                               className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
                             >
                               Ver mais

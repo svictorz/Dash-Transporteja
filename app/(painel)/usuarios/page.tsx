@@ -75,7 +75,7 @@ export default function UsuariosPage() {
   useEffect(() => {
     if (meLoading) return
     if (!isAuthorized) {
-      router.replace('/dashboard')
+      router.replace('/inicio')
     }
   }, [meLoading, isAuthorized, router])
 

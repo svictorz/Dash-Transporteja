@@ -164,7 +164,7 @@ export default function PoliticaPrivacidadePage() {
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                   <p className="text-gray-700">
                     <strong>E-mail:</strong> privacidade@transporteja.com<br />
-                    <strong>Página de Dados Pessoais:</strong> <Link href="/dashboard/dados-pessoais" className="text-blue-600 hover:underline">/dashboard/dados-pessoais</Link>
+                    <strong>Página de Dados Pessoais:</strong> <Link href="/dados-pessoais" className="text-blue-600 hover:underline">/dados-pessoais</Link>
                   </p>
                 </div>
               </section>

@@ -145,7 +145,7 @@ export default function ConsentBanner() {
                   </p>
                   <div className="flex items-center gap-4 mt-2">
                     <Link 
-                      href="/dashboard/configuracoes"
+                      href="/configuracoes"
                       className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1"
                     >
                       <Settings className="w-4 h-4" />
