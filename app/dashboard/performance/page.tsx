@@ -16,6 +16,12 @@ interface ComercialUser {
 
 interface RoutePerformanceRow {
   id: string
+  freight_id: number | null
+  company_name: string | null
+  origin: string | null
+  origin_state: string | null
+  destination: string | null
+  destination_state: string | null
   status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
   nf_value: number | null
   freight_value: number | null
@@ -232,16 +238,21 @@ export default function PerformancePage() {
         const isAdmin = userRole === 'admin' || userRole === 'financeiro'
         const routesQuery = supabase
           .from('routes')
-          .select('id, status, nf_value, freight_value, driver_value, taxes_value, net_freight_value, commission_value, distance_km, created_at, created_by_user_id')
+          .select(
+            'id, freight_id, company_name, origin, origin_state, destination, destination_state, status, nf_value, freight_value, driver_value, taxes_value, net_freight_value, commission_value, distance_km, created_at, created_by_user_id',
+          )
           .gte('created_at', fromIso)
           .lte('created_at', toIso)
           .order('created_at', { ascending: false })
 
+        // Para admins/financeiro carregamos TODOS os usuários (não só comerciais),
+        // para conseguir resolver o nome do vendedor mesmo quando o frete foi criado
+        // por outro perfil (admin, etc.). O dropdown de filtro continua focado em
+        // vendedores (comercial/operator) porque é o caso de uso principal.
         const usersQuery = isAdmin
           ? supabase
               .from('users')
               .select('id, name, email, role')
-              .in('role', ['comercial', 'operator'])
               .order('name', { ascending: true })
           : Promise.resolve({ data: [], error: null } as { data: ComercialUser[]; error: null })
 
@@ -254,6 +265,12 @@ export default function PerformancePage() {
 
         const normalizedRows: RoutePerformanceRow[] = rawRows.map((r) => ({
           id: String(r.id ?? ''),
+          freight_id: typeof r.freight_id === 'number' ? r.freight_id : toNumberOrNull(r.freight_id),
+          company_name: typeof r.company_name === 'string' ? r.company_name : null,
+          origin: typeof r.origin === 'string' ? r.origin : null,
+          origin_state: typeof r.origin_state === 'string' ? r.origin_state : null,
+          destination: typeof r.destination === 'string' ? r.destination : null,
+          destination_state: typeof r.destination_state === 'string' ? r.destination_state : null,
           status: (r.status as RoutePerformanceRow['status']) ?? 'pending',
           nf_value: toNumberOrNull(r.nf_value),
           freight_value: toNumberOrNull(r.freight_value),
@@ -370,6 +387,30 @@ export default function PerformancePage() {
     return u?.name || u?.email || 'Vendedor'
   }, [selectedComercial, comerciais])
 
+  // Map id -> nome/email para resolver o vendedor de cada frete na tabela detalhada.
+  const userById = useMemo(() => {
+    const map = new Map<string, { name: string; email: string; role: string }>()
+    comerciais.forEach((u) => {
+      map.set(u.id, {
+        name: u.name?.trim() || u.email,
+        email: u.email,
+        role: u.role,
+      })
+    })
+    return map
+  }, [comerciais])
+
+  const detailedRows = useMemo(() => {
+    return filteredRows.map((r) => {
+      const owner = r.created_by_user_id ? userById.get(r.created_by_user_id) : null
+      const isMine = r.created_by_user_id && r.created_by_user_id === currentUserId
+      const sellerName = owner?.name || (isMine ? currentUserName : null) || 'Sem responsável'
+      const sellerEmail = owner?.email || (isMine ? '' : '')
+      const sellerRole = owner?.role || (isMine ? role || '' : '')
+      return { route: r, sellerName, sellerEmail, sellerRole }
+    })
+  }, [filteredRows, userById, currentUserId, currentUserName, role])
+
   const hasSemResponsavel = useMemo(
     () => rows.some((r) => !r.created_by_user_id),
     [rows],
@@ -409,15 +450,17 @@ export default function PerformancePage() {
                 aria-label="Filtrar por vendedor"
               >
                 <option value="all">Todos os vendedores ({rows.length})</option>
-                {comerciais.map((u) => {
-                  const count = rows.filter((r) => r.created_by_user_id === u.id).length
-                  const label = u.name || u.email
-                  return (
-                    <option key={u.id} value={u.id}>
-                      {label} ({count})
-                    </option>
-                  )
-                })}
+                {comerciais
+                  .filter((u) => u.role === 'comercial' || u.role === 'operator' || u.role === 'admin')
+                  .map((u) => {
+                    const count = rows.filter((r) => r.created_by_user_id === u.id).length
+                    const label = u.name || u.email
+                    return (
+                      <option key={u.id} value={u.id}>
+                        {label} ({count})
+                      </option>
+                    )
+                  })}
                 {hasSemResponsavel && (
                   <option value="__sem_responsavel__">
                     Sem responsável ({rows.filter((r) => !r.created_by_user_id).length})
@@ -627,6 +670,117 @@ export default function PerformancePage() {
           </div>
         </div>
       ) : null}
+
+      {/* Lista detalhada de fretes com o vendedor responsável */}
+      {!loading && detailedRows.length > 0 && (
+        <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div className="px-4 md:px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Truck className="w-4 h-4 text-gray-600" aria-hidden />
+              <h2 className="text-sm font-semibold text-gray-800">
+                Lista de fretes — {detailedRows.length}{' '}
+                {detailedRows.length === 1 ? 'frete' : 'fretes'}
+              </h2>
+            </div>
+            <span className="text-xs text-gray-500">
+              {selectedComercial === 'all'
+                ? 'Todos os vendedores'
+                : `Filtrado por: ${selectedComercialLabel}`}
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">#</th>
+                  <th className="text-left px-4 py-3 font-semibold">Cliente</th>
+                  <th className="text-left px-4 py-3 font-semibold">Rota</th>
+                  <th className="text-left px-4 py-3 font-semibold">Vendedor</th>
+                  <th className="text-left px-4 py-3 font-semibold">Status</th>
+                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">Frete</th>
+                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">Comissão</th>
+                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">Data</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detailedRows.map(({ route: r, sellerName, sellerEmail, sellerRole }) => {
+                  const statusLabel =
+                    r.status === 'delivered'
+                      ? 'Entregue'
+                      : r.status === 'inTransit'
+                      ? 'Em trânsito'
+                      : r.status === 'pickedUp'
+                      ? 'Coletado'
+                      : r.status === 'pending'
+                      ? 'Pendente'
+                      : 'Cancelado'
+                  const statusClass =
+                    r.status === 'delivered'
+                      ? 'bg-green-50 text-green-700 border-green-200'
+                      : r.status === 'cancelled'
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : r.status === 'inTransit' || r.status === 'pickedUp'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-gray-50 text-gray-700 border-gray-200'
+                  const created = r.created_at
+                    ? new Date(r.created_at).toLocaleDateString('pt-BR')
+                    : '—'
+                  return (
+                    <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50/60">
+                      <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+                        {r.freight_id ? `#${r.freight_id}` : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-gray-900">{r.company_name?.trim() || '—'}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-gray-900 text-xs">
+                          {(r.origin || '—')}
+                          {r.origin_state ? `/${r.origin_state}` : ''}
+                          <span className="mx-1 text-gray-400">→</span>
+                          {(r.destination || '—')}
+                          {r.destination_state ? `/${r.destination_state}` : ''}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">{sellerName}</p>
+                        {sellerEmail ? (
+                          <p className="text-xs text-gray-500">{sellerEmail}</p>
+                        ) : null}
+                        {sellerRole ? (
+                          <span className="inline-block mt-0.5 text-[10px] uppercase tracking-wide text-gray-500">
+                            {sellerRole}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-medium ${statusClass}`}
+                        >
+                          {statusLabel}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {visibleMoney.freight
+                          ? formatBRL(r.freight_value ?? r.nf_value ?? 0)
+                          : 'R$ ••••••'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {visibleMoney.commission
+                          ? formatBRL(r.commission_value ?? 0)
+                          : 'R$ ••••••'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                        {created}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-600 flex items-center gap-2">
