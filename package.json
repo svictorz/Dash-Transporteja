@@ -18,7 +18,6 @@
     "@types/react-dom": "^18.2.0",
     "autoprefixer": "^10.4.16",
     "framer-motion": "^12.23.26",
-    "jspdf": "^3.0.4",
     "lucide-react": "^0.294.0",
     "next": "^14.0.0",
     "postcss": "^8.4.31",

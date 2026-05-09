@@ -1,7 +1,4 @@
-'use client'
-
-import { motion } from 'framer-motion'
-import { ReactNode, useEffect, useState, useMemo } from 'react'
+import { ReactNode, CSSProperties } from 'react'
 
 interface FadeInProps {
   children: ReactNode
@@ -11,53 +8,41 @@ interface FadeInProps {
   className?: string
 }
 
+/**
+ * Fade-in com CSS puro (não usa framer-motion).
+ *
+ * Por quê: este componente é instanciado dezenas de vezes por página, e
+ * cada motion.div da API do framer-motion executa lógica em JS no main
+ * thread por toda a duração da animação. Em 3G/celular básico isso
+ * compete com hidratação, fetch e renderização → engasga visível.
+ *
+ * Usando @keyframes nativo o navegador anima na thread de composição
+ * (GPU). Mantém a mesma API e respeita `prefers-reduced-motion` via CSS.
+ */
+const directionMap: Record<NonNullable<FadeInProps['direction']>, string> = {
+  up: 'translate3d(0, 16px, 0)',
+  down: 'translate3d(0, -16px, 0)',
+  left: 'translate3d(16px, 0, 0)',
+  right: 'translate3d(-16px, 0, 0)',
+  none: 'translate3d(0, 0, 0)',
+}
+
 export default function FadeIn({
   children,
   delay = 0,
-  duration = 0.6,
+  duration = 0.45,
   direction = 'up',
   className = '',
 }: FadeInProps) {
-  const [reducedMotion, setReducedMotion] = useState(false)
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    setReducedMotion(mq.matches)
-    const handler = () => setReducedMotion(mq.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-
-  const variants = useMemo(
-    () => ({
-      hidden: {
-        opacity: reducedMotion ? 1 : 0,
-        y: reducedMotion ? 0 : direction === 'up' ? 20 : direction === 'down' ? -20 : 0,
-        x: reducedMotion ? 0 : direction === 'left' ? 20 : direction === 'right' ? -20 : 0,
-      },
-      visible: {
-        opacity: 1,
-        y: 0,
-        x: 0,
-        transition: {
-          duration: reducedMotion ? 0 : duration,
-          delay: reducedMotion ? 0 : delay,
-          ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
-        },
-      },
-    }),
-    [direction, duration, delay, reducedMotion]
-  )
+  const style = {
+    '--fade-from': directionMap[direction],
+    '--fade-duration': `${duration}s`,
+    '--fade-delay': `${delay}s`,
+  } as CSSProperties
 
   return (
-    <motion.div
-      initial="hidden"
-      animate="visible"
-      variants={variants}
-      className={className}
-    >
+    <div className={`fade-in-css ${className}`} style={style}>
       {children}
-    </motion.div>
+    </div>
   )
 }
-

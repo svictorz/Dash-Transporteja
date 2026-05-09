@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
-import FadeIn from '@/components/animations/FadeIn'
 import {
   LayoutDashboard,
   Users,
@@ -78,14 +78,12 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   const handleLogout = async () => {
     try {
       const { supabase } = await import('@/lib/supabase/client')
-      // Limpar sessão do Supabase
       const { error } = await supabase.auth.signOut()
-      
-      // Limpar localStorage se houver
+      void error
+
       localStorage.removeItem('transporteja-user')
       localStorage.removeItem('transporteja-notifications')
-      
-      // Redirecionar para login e forçar recarregamento
+
       router.replace('/login')
       window.location.href = '/login'
     } catch {
@@ -94,44 +92,46 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
     }
   }
 
+  // Conteúdo da sidebar — sem stagger / FadeIn / backdrop-blur internos.
+  // Tudo o que precisa de feedback de toque usa CSS (`active:scale-*`),
+  // que é processado pela thread de composição em vez do main thread —
+  // crucial em mobile com 3G e celular básico.
   const sidebarContent = (
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-white/20 flex-shrink-0">
         <div className="flex items-center justify-between">
           {isOpen && (
             <div className="flex flex-col min-w-0 flex-1 pr-2">
-              <motion.div whileHover={{ scale: 1.02 }} className="flex-shrink-0 w-fit">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+              <div className="flex-shrink-0 w-fit">
+                <Image
                   src="/logo-header.png"
                   alt=""
+                  width={240}
+                  height={32}
+                  sizes="240px"
+                  priority
                   className="h-8 w-auto max-w-[min(100%,240px)] object-contain opacity-90"
                   aria-hidden
                 />
-              </motion.div>
+              </div>
             </div>
           )}
           {!isOpen && (
-            <motion.div
-              whileHover={{ scale: 1.1, rotate: 5 }}
-              className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center mx-auto p-1"
-            >
+            <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center mx-auto p-1">
               <Logo size={20} />
-            </motion.div>
+            </div>
           )}
           <div className="flex items-center gap-2">
-            {/* Botão fechar mobile */}
             {onMobileClose && (
               <button
                 type="button"
                 onClick={onMobileClose}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600 md:hidden"
+                className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors text-gray-600 md:hidden"
                 aria-label="Fechar menu"
               >
                 <X className="w-5 h-5" />
               </button>
             )}
-            {/* Botão toggle desktop */}
             <button
               type="button"
               onClick={toggleSidebar}
@@ -151,49 +151,44 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
       </div>
 
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto min-h-0">
-        {menuItems.map((item, index) => {
+        {menuItems.map((item) => {
           const Icon = item.icon
-          // Melhor detecção de rota ativa
           let isActive = false
           if (item.path === '/inicio') {
-            // Para a home do painel, só ativo se for exatamente /inicio
             isActive = pathname === '/inicio'
           } else {
-            // Para outras rotas, verifica se começa com o path
             isActive = pathname === item.path || (pathname?.startsWith(item.path + '/') && pathname !== '/inicio')
           }
-          
+
           return (
-            <FadeIn key={item.path} delay={0.1 + index * 0.05} direction="right">
-              <Link
-                href={item.path}
-                onClick={handleNavClick}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                  isActive
-                    ? 'bg-slate-800/90 text-white shadow-lg backdrop-blur-sm'
-                    : 'text-gray-700 hover:bg-white/50 backdrop-blur-sm'
-                }`}
-              >
-                <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-500'}`} />
-                {isOpen && <span className="font-medium">{item.label}</span>}
-                {isOpen && item.badge != null && (
-                  <span className="ml-auto bg-green-500 text-white text-xs px-2 py-1 rounded-full font-semibold">
-                    {item.badge}
-                  </span>
-                )}
-              </Link>
-            </FadeIn>
+            <Link
+              key={item.path}
+              href={item.path}
+              onClick={handleNavClick}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors active:scale-[0.98] ${
+                isActive
+                  ? 'bg-slate-800/90 text-white shadow-sm'
+                  : 'text-gray-700 hover:bg-white/60'
+              }`}
+            >
+              <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-500'}`} />
+              {isOpen && <span className="font-medium">{item.label}</span>}
+              {isOpen && item.badge != null && (
+                <span className="ml-auto bg-green-500 text-white text-xs px-2 py-1 rounded-full font-semibold">
+                  {item.badge}
+                </span>
+              )}
+            </Link>
           )
         })}
       </nav>
 
       <div className="mt-auto flex-shrink-0">
-        <FadeIn delay={0.3}>
-          <div className="p-4 border-t border-white/20 space-y-3">
+        <div className="p-4 border-t border-white/20 space-y-3">
           <Link
             href="/configuracoes"
             onClick={handleNavClick}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition-all"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 active:bg-gray-200 transition-colors"
           >
             <Settings className="w-5 h-5 text-gray-500" />
             {isOpen && <span>Configurações</span>}
@@ -201,55 +196,55 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
           <Link
             href="/dados-pessoais"
             onClick={handleNavClick}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition-all"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 active:bg-gray-200 transition-colors"
           >
             <Shield className="w-5 h-5 text-gray-500" />
             {isOpen && <span>Dados Pessoais</span>}
           </Link>
-          <motion.button
+          <button
             type="button"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-700 hover:bg-white/50 backdrop-blur-sm transition-all"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-700 hover:bg-white/60 active:scale-[0.98] transition-colors"
           >
             <LogOut className="w-5 h-5 text-gray-500" />
             {isOpen && <span>Sair</span>}
-          </motion.button>
+          </button>
         </div>
-        </FadeIn>
       </div>
     </div>
   )
 
   return (
     <>
-      {/* Desktop Sidebar */}
-      <aside className={`${isOpen ? 'w-72' : 'w-20'} h-screen glass border-r border-white/20 flex flex-col transition-all duration-300 shadow-lg hidden md:flex backdrop-blur-xl`}>
-        <FadeIn delay={0.1}>
-          {sidebarContent}
-        </FadeIn>
+      {/* Desktop sidebar — mantém glass/backdrop-blur (GPU desktop dá conta). */}
+      <aside
+        className={`${
+          isOpen ? 'w-72' : 'w-20'
+        } h-screen glass border-r border-white/20 flex flex-col transition-[width] duration-300 shadow-lg hidden md:flex backdrop-blur-xl`}
+      >
+        {sidebarContent}
       </aside>
 
-      {/* Mobile Sidebar Drawer */}
+      {/* Mobile drawer — fundo sólido (sem backdrop-blur) e tween curto.
+          backdrop-blur em GPU mobile gasta MUITO frame budget;
+          spring causa cálculos extras vs tween linear. */}
       <AnimatePresence>
         {isMobileOpen && (
           <>
-            {/* Overlay */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.15, ease: 'linear' }}
               onClick={onMobileClose}
-              className="fixed inset-0 bg-black/50 z-40 md:hidden"
+              className="fixed inset-0 bg-black/40 z-40 md:hidden"
             />
-            {/* Drawer */}
             <motion.aside
-              initial={{ x: -280 }}
+              initial={{ x: '-100%' }}
               animate={{ x: 0 }}
-              exit={{ x: -280 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed left-0 top-0 h-screen w-72 glass border-r border-white/20 flex flex-col shadow-2xl z-50 md:hidden backdrop-blur-xl"
+              exit={{ x: '-100%' }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+              className="fixed left-0 top-0 h-screen w-72 bg-white border-r border-gray-200 flex flex-col shadow-xl z-50 md:hidden will-change-transform"
             >
               {sidebarContent}
             </motion.aside>
@@ -259,4 +254,3 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
     </>
   )
 }
-

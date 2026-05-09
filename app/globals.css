@@ -14,7 +14,33 @@
 }
 
 @layer utilities {
-  /* Glassmorphism Effect */
+  /* FadeIn nativo — substitui framer-motion no componente <FadeIn>.
+     Roda 100% na thread de composição (GPU), zero JS por animação. */
+  .fade-in-css {
+    opacity: 0;
+    transform: var(--fade-from, translate3d(0, 16px, 0));
+    animation: fade-in-css var(--fade-duration, 0.45s)
+      cubic-bezier(0.22, 1, 0.36, 1) var(--fade-delay, 0s) forwards;
+    will-change: opacity, transform;
+  }
+
+  @keyframes fade-in-css {
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in-css {
+      opacity: 1;
+      transform: none;
+      animation: none;
+    }
+  }
+
+  /* Glassmorphism Effect — usar com parcimônia em mobile (custoso na GPU).
+     Em mobile preferimos fundo sólido (ver SidebarTransporteja drawer). */
   .glass {
     background: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(10px);

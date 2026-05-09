@@ -1,111 +1,190 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Cookie, X, Settings, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 
 const CONSENT_KEY = 'lgpd-consent-cookies'
+const CONSENT_VERSION = 1
 
-function getStoredConsent(): boolean | null {
+type StoredConsent = {
+  v: number
+  granted: boolean
+  /** decisão "fechei sem decidir" — não pergunta de novo nesse navegador. */
+  dismissed?: boolean
+  timestamp: string
+}
+
+function readStoredConsent(): StoredConsent | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem(CONSENT_KEY)
     if (!raw) return null
-    const data = JSON.parse(raw) as { granted?: boolean }
-    if (data && typeof data.granted === 'boolean') return data.granted
+    const data = JSON.parse(raw) as Partial<StoredConsent>
+    if (
+      data &&
+      typeof data.granted === 'boolean' &&
+      (data.v === undefined || data.v === CONSENT_VERSION)
+    ) {
+      return {
+        v: CONSENT_VERSION,
+        granted: data.granted,
+        dismissed: data.dismissed === true,
+        timestamp: data.timestamp ?? new Date().toISOString(),
+      }
+    }
   } catch {
-    // ignore invalid JSON
+    // ignore JSON inválido
   }
   return null
+}
+
+function writeStoredConsent(payload: Omit<StoredConsent, 'v' | 'timestamp'>) {
+  if (typeof window === 'undefined') return
+  const full: StoredConsent = {
+    v: CONSENT_VERSION,
+    timestamp: new Date().toISOString(),
+    ...payload,
+  }
+  try {
+    localStorage.setItem(CONSENT_KEY, JSON.stringify(full))
+  } catch {
+    // localStorage cheio ou bloqueado — tudo bem, próxima visita pergunta
+  }
 }
 
 export default function ConsentBanner() {
   const [showBanner, setShowBanner] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    checkConsent()
-  }, [])
+  /**
+   * Verifica o consentimento.
+   * Ordem de prioridade:
+   * 1. localStorage (decisão local — true, false ou dismissed) → nunca pergunta
+   *    de novo no mesmo navegador.
+   * 2. Se logado e localStorage vazio: lê do banco. Qualquer registro
+   *    encontrado (granted true OU false) é considerado decisão final;
+   *    sincroniza pro localStorage.
+   * 3. Sem registro nem local nem remoto → mostra o banner.
+   *
+   * Erros de rede/RLS NÃO reabrem o banner se já houver decisão local.
+   */
+  const checkConsent = useCallback(async () => {
+    setIsLoading(true)
 
-  const checkConsent = async () => {
-    // 1) Sempre verificar localStorage primeiro — é a fonte de verdade no navegador
-    const stored = getStoredConsent()
+    const stored = readStoredConsent()
     if (stored !== null) {
-      // Usuário já aceitou ou recusou; não mostrar o banner de novo
       setShowBanner(false)
       setIsLoading(false)
       return
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-      if (session) {
-        // 2) Logado: se não tiver no localStorage, conferir no banco
-        const { data: consent } = await supabase
-          .from('user_consents')
-          .select('granted')
-          .eq('user_id', session.user.id)
-          .eq('consent_type', 'cookies')
-          .maybeSingle()
+      if (!session) {
+        setShowBanner(true)
+        setIsLoading(false)
+        return
+      }
 
-        if (consent?.granted === true) {
-          // Sincronizar para o localStorage para não depender do banco na próxima visita
-          localStorage.setItem(CONSENT_KEY, JSON.stringify({
-            granted: true,
-            timestamp: new Date().toISOString(),
-          }))
-          setShowBanner(false)
-        } else {
-          setShowBanner(true)
-        }
+      const { data: consent, error } = await supabase
+        .from('user_consents')
+        .select('granted')
+        .eq('user_id', session.user.id)
+        .eq('consent_type', 'cookies')
+        .maybeSingle()
+
+      if (error) {
+        // Falha silenciosa (RLS, tabela ausente, etc.). Não mostramos o
+        // banner se o usuário já decidiu localmente; aqui sabemos que não
+        // decidiu, então mostramos como último recurso.
+        setShowBanner(true)
+        setIsLoading(false)
+        return
+      }
+
+      if (consent && typeof consent.granted === 'boolean') {
+        writeStoredConsent({ granted: consent.granted })
+        setShowBanner(false)
       } else {
         setShowBanner(true)
       }
     } catch {
-      // Em erro (ex.: tabela não existe), mostrar banner
       setShowBanner(true)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    checkConsent()
+
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN') {
+        // Após login, há chance de o consentimento estar no banco em outro
+        // dispositivo. Se já decidiu local, readStoredConsent corta cedo.
+        checkConsent()
+      }
+      if (event === 'SIGNED_OUT') {
+        // Não removemos a decisão local — a preferência é por navegador,
+        // não por usuário. Mantém UX consistente entre logins.
+      }
+    })
+
+    return () => {
+      data.subscription.unsubscribe()
+    }
+  }, [checkConsent])
+
+  const persistRemote = useCallback(async (granted: boolean) => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session) return
+      await supabase.from('user_consents').upsert(
+        {
+          user_id: session.user.id,
+          consent_type: 'cookies',
+          granted,
+          user_agent:
+            typeof window !== 'undefined' ? navigator.userAgent : null,
+        },
+        { onConflict: 'user_id,consent_type' },
+      )
+    } catch (error) {
+      console.error(
+        'consent_remote_save_failed',
+        error instanceof Error ? error.name : 'unknown',
+      )
+    }
+  }, [])
 
   const handleAccept = async () => {
-    await saveConsent(true)
+    writeStoredConsent({ granted: true })
     setShowBanner(false)
+    await persistRemote(true)
   }
 
   const handleReject = async () => {
-    await saveConsent(false)
+    writeStoredConsent({ granted: false })
     setShowBanner(false)
+    await persistRemote(false)
   }
 
-  const saveConsent = async (granted: boolean) => {
-    const payload = { granted, timestamp: new Date().toISOString() }
-    // Sempre salvar no localStorage primeiro para persistir na hora
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(CONSENT_KEY, JSON.stringify(payload))
-    }
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        await supabase.from('user_consents').upsert(
-          {
-            user_id: session.user.id,
-            consent_type: 'cookies',
-            granted,
-            user_agent: typeof window !== 'undefined' ? navigator.userAgent : null,
-          },
-          { onConflict: 'user_id,consent_type' }
-        )
-      }
-    } catch (error) {
-      console.error('Erro ao salvar consentimento no banco:', error)
-      // Consentimento já foi salvo no localStorage
-    }
+  /**
+   * Botão X: tratamos como "fechar sem decidir, mas não me pergunte mais
+   * neste navegador". Persistimos `dismissed: true` (granted: false por
+   * default). Não envia ao banco — é uma escolha local de UX.
+   */
+  const handleDismiss = () => {
+    writeStoredConsent({ granted: false, dismissed: true })
+    setShowBanner(false)
   }
 
   if (isLoading) {
@@ -173,7 +252,7 @@ export default function ConsentBanner() {
                   Aceitar
                 </motion.button>
                 <button
-                  onClick={() => setShowBanner(false)}
+                  onClick={handleDismiss}
                   className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
                   aria-label="Fechar"
                 >
@@ -187,4 +266,3 @@ export default function ConsentBanner() {
     </AnimatePresence>
   )
 }
-
