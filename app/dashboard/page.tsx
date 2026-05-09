@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   Route as RouteIcon,
   ArrowRight,
-  Loader2,
   DollarSign,
   Wallet,
   Users as UsersIcon,
@@ -23,6 +22,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { useRoutes } from '@/lib/hooks/useRoutes'
 import type { Route as RouteRecord } from '@/lib/services/routes'
+import BrandLoading from '@/components/transporteja/BrandLoading'
 
 interface Alert {
   id: string
@@ -348,14 +348,7 @@ export default function DashboardPage() {
   }
 
   if (!mounted) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4 text-slate-800" />
-          <p className="text-gray-600">Carregando dashboard...</p>
-        </div>
-      </div>
-    )
+    return <BrandLoading message="Carregando dashboard…" fullScreen={false} />
   }
 
   const periodLabel = PERIOD_OPTIONS.find((o) => o.value === period)?.label ?? ''

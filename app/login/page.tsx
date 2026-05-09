@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase/client'
 import { validateEmail } from '@/lib/utils/validation'
 import { useAuthState } from '@/lib/hooks/useAuthState'
 import { BRAND_NAME } from '@/lib/constants/brand'
+import BrandLoading from '@/components/transporteja/BrandLoading'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -104,14 +105,7 @@ export default function LoginPage() {
 
   // Mostrar formulário após 1,5s ou quando a sessão terminar de carregar (evita travar em "Verificando sessão...")
   if (authLoading && !showForm) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Verificando sessão...</p>
-        </div>
-      </div>
-    )
+    return <BrandLoading message="Verificando sessão…" />
   }
 
   return (

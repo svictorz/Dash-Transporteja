@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import ConsentBanner from '@/components/ConsentBanner'
-import { BRAND_NAME } from '@/lib/constants/brand'
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -11,7 +10,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: `${BRAND_NAME} — Painel`,
+  title: 'Gestão Operacional | Jcn | Ágape',
   description: 'Gestão logística, cotações e acompanhamento de operações',
   icons: {
     icon: '/favicon.png',

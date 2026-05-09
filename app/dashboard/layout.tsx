@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ShieldAlert, LogOut } from 'lucide-react'
 import SidebarTransporteja from '@/components/transporteja/SidebarTransporteja'
 import TopBarTransporteja from '@/components/transporteja/TopBarTransporteja'
+import BrandLoading from '@/components/transporteja/BrandLoading'
 import { useAuthState } from '@/lib/hooks/useAuthState'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { supabase } from '@/lib/supabase/client'
@@ -54,12 +55,9 @@ export default function DashboardLayout({
 
   if (!mounted || authLoading || !session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-slate-800 border-t-transparent rounded-full animate-spin mx-auto mb-4" aria-hidden />
-          <p className="text-gray-600">{authLoading ? 'Verificando autenticação…' : 'Redirecionando para login…'}</p>
-        </div>
-      </div>
+      <BrandLoading
+        message={authLoading ? 'Verificando autenticação…' : 'Redirecionando para login…'}
+      />
     )
   }
 
