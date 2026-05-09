@@ -12,6 +12,7 @@ import {
   Check,
   AlertCircle,
   Mail,
+  UserMinus,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
@@ -162,6 +163,47 @@ export default function UsuariosPage() {
       setTimeout(() => setSavedId((curr) => (curr === target.id ? null : curr)), 2000)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao salvar permissão')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const handleRevokeAccess = async (target: ManagedUser) => {
+    if (target.email && isSuperAdminEmail(target.email)) {
+      alert('O proprietário do sistema não pode ter o acesso revogado.')
+      return
+    }
+    if (me?.id === target.id) {
+      alert('Você não pode revogar o próprio acesso. Peça a outro administrador.')
+      return
+    }
+    if (target.role === null) return
+
+    const confirmation = confirm(
+      `Remover o acesso de ${target.name || target.email}?\n\n` +
+        'O usuário continuará logado, mas perderá o acesso ao CRM até receber uma permissão novamente.',
+    )
+    if (!confirmation) return
+
+    try {
+      setSavingId(target.id)
+      setSavedId(null)
+      setError(null)
+
+      const { error: err } = await supabase
+        .from('users')
+        .update({ role: null })
+        .eq('id', target.id)
+
+      if (err) throw new Error(err.message)
+
+      setUsers((prev) =>
+        prev.map((u) => (u.id === target.id ? { ...u, role: null } : u)),
+      )
+      setSavedId(target.id)
+      setTimeout(() => setSavedId((curr) => (curr === target.id ? null : curr)), 2000)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao remover acesso')
     } finally {
       setSavingId(null)
     }
@@ -338,7 +380,7 @@ export default function UsuariosPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <div className="inline-flex rounded-xl border border-gray-200 bg-white overflow-hidden">
                               {(['admin', 'financeiro', 'comercial'] as AssignableRole[]).map(
                                 (roleKey) => {
@@ -371,6 +413,29 @@ export default function UsuariosPage() {
                                 },
                               )}
                             </div>
+                            <button
+                              type="button"
+                              disabled={
+                                savingId === u.id ||
+                                isOwner ||
+                                me?.id === u.id ||
+                                u.role === null
+                              }
+                              onClick={() => handleRevokeAccess(u)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-200 bg-white text-red-600 text-xs font-medium hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              title={
+                                isOwner
+                                  ? 'O proprietário não pode ser revogado'
+                                  : me?.id === u.id
+                                  ? 'Você não pode revogar o próprio acesso'
+                                  : u.role === null
+                                  ? 'Este usuário já está sem acesso'
+                                  : 'Remover acesso ao CRM'
+                              }
+                            >
+                              <UserMinus className="w-3.5 h-3.5" />
+                              Remover acesso
+                            </button>
                             {savingId === u.id && (
                               <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                             )}

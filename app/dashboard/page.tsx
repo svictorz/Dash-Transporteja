@@ -170,66 +170,6 @@ function variation(current: number, previous: number): { delta: number; pct: num
   return { delta, pct: (delta / Math.abs(previous)) * 100 }
 }
 
-/** Sparkline SVG: gera N buckets diários ao longo do range. */
-function buildSparkline(routes: RouteRecord[], field: keyof RouteRecord, start: Date | null, end: Date | null, buckets = 14): number[] {
-  const effectiveEnd = end ?? new Date()
-  const effectiveStart =
-    start ?? (() => {
-      const dates = routes.map(getRouteDate).filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime())
-      return dates[0] ?? new Date(effectiveEnd.getTime() - 13 * 86400000)
-    })()
-
-  const totalMs = Math.max(effectiveEnd.getTime() - effectiveStart.getTime(), buckets * 86400000)
-  const step = totalMs / buckets
-  const result = new Array<number>(buckets).fill(0)
-
-  for (const r of routes) {
-    const d = getRouteDate(r)
-    if (!d) continue
-    if (d < effectiveStart || d > effectiveEnd) continue
-    const idx = Math.min(buckets - 1, Math.max(0, Math.floor((d.getTime() - effectiveStart.getTime()) / step)))
-    const v = r[field]
-    const num = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) || 0 : 0
-    result[idx] += num
-  }
-  return result
-}
-
-interface SparklineProps {
-  data: number[]
-  color: string
-  className?: string
-}
-
-function Sparkline({ data, color, className = '' }: SparklineProps) {
-  if (!data.length) return null
-  const max = Math.max(...data, 1)
-  const min = Math.min(...data, 0)
-  const range = max - min || 1
-  const w = 100
-  const h = 32
-  const stepX = w / (data.length - 1 || 1)
-  const points = data.map((v, i) => {
-    const x = i * stepX
-    const y = h - ((v - min) / range) * h
-    return `${x.toFixed(1)},${y.toFixed(1)}`
-  })
-  const path = `M ${points.join(' L ')}`
-  const areaPath = `${path} L ${w},${h} L 0,${h} Z`
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={`w-full h-8 ${className}`} aria-hidden>
-      <defs>
-        <linearGradient id={`spark-${color}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity={0.25} />
-          <stop offset="100%" stopColor={color} stopOpacity={0} />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill={`url(#spark-${color})`} />
-      <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
 interface KpiCardProps {
   label: string
   value: string
@@ -238,11 +178,10 @@ interface KpiCardProps {
   iconBg: string
   iconColor: string
   delta?: { pct: number | null; positiveIsGood: boolean } | null
-  spark?: { data: number[]; color: string }
   delay?: number
 }
 
-function KpiCard({ label, value, hint, icon: Icon, iconBg, iconColor, delta, spark, delay = 0 }: KpiCardProps) {
+function KpiCard({ label, value, hint, icon: Icon, iconBg, iconColor, delta, delay = 0 }: KpiCardProps) {
   const showDelta = delta && delta.pct !== null && Number.isFinite(delta.pct)
   const isUp = (delta?.pct ?? 0) >= 0
   const good = delta ? (delta.positiveIsGood ? isUp : !isUp) : false
@@ -253,13 +192,18 @@ function KpiCard({ label, value, hint, icon: Icon, iconBg, iconColor, delta, spa
         transition={{ type: 'spring', stiffness: 260, damping: 22 }}
         className="relative bg-white rounded-2xl p-5 border border-gray-200/80 shadow-sm hover:shadow-md transition-shadow overflow-hidden"
       >
-        <div className="flex items-start justify-between mb-3">
-          <div className={`w-10 h-10 ${iconBg} rounded-xl flex items-center justify-center`}>
-            <Icon className={`w-5 h-5 ${iconColor}`} />
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={`w-10 h-10 ${iconBg} rounded-xl flex items-center justify-center shrink-0`}>
+              <Icon className={`w-5 h-5 ${iconColor}`} />
+            </div>
+            <div className="text-[11px] uppercase tracking-wider text-gray-500 font-medium truncate">
+              {label}
+            </div>
           </div>
           {showDelta ? (
             <div
-              className={`flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full ${
+              className={`flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
                 good ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
               }`}
               title="Variação vs período anterior"
@@ -269,14 +213,8 @@ function KpiCard({ label, value, hint, icon: Icon, iconBg, iconColor, delta, spa
             </div>
           ) : null}
         </div>
-        <div className="text-[11px] uppercase tracking-wider text-gray-500 font-medium">{label}</div>
         <div className="text-2xl font-bold text-gray-900 mt-1 tabular-nums">{value}</div>
         {hint ? <div className="text-xs text-gray-500 mt-1">{hint}</div> : null}
-        {spark ? (
-          <div className="mt-3 -mx-1">
-            <Sparkline data={spark.data} color={spark.color} />
-          </div>
-        ) : null}
       </motion.div>
     </FadeIn>
   )
@@ -346,11 +284,6 @@ export default function DashboardPage() {
       count: currentRoutes.length,
     }
   }, [currentRoutes, previousRoutes])
-
-  const sparkFat = useMemo(() => buildSparkline(currentRoutes, 'freight_value', start, end), [currentRoutes, start, end])
-  const sparkLiquido = useMemo(() => buildSparkline(currentRoutes, 'net_freight_value', start, end), [currentRoutes, start, end])
-  const sparkComissao = useMemo(() => buildSparkline(currentRoutes, 'commission_value', start, end), [currentRoutes, start, end])
-  const sparkTributos = useMemo(() => buildSparkline(currentRoutes, 'taxes_value', start, end), [currentRoutes, start, end])
 
   // ---------- Status counts (mantém compatibilidade com o resto do dashboard) ----------
   const routeStats = useMemo(() => {
@@ -557,7 +490,6 @@ export default function DashboardPage() {
           iconBg="bg-emerald-50"
           iconColor="text-emerald-600"
           delta={{ pct: variation(kpis.fat.value, kpis.fat.prev).pct, positiveIsGood: true }}
-          spark={{ data: sparkFat, color: '#10b981' }}
           delay={0.2}
         />
         <KpiCard
@@ -572,7 +504,6 @@ export default function DashboardPage() {
           iconBg="bg-sky-50"
           iconColor="text-sky-600"
           delta={{ pct: variation(kpis.liquido.value, kpis.liquido.prev).pct, positiveIsGood: true }}
-          spark={{ data: sparkLiquido, color: '#0ea5e9' }}
           delay={0.25}
         />
         <KpiCard
@@ -583,7 +514,6 @@ export default function DashboardPage() {
           iconBg="bg-violet-50"
           iconColor="text-violet-600"
           delta={{ pct: variation(kpis.comissoes.value, kpis.comissoes.prev).pct, positiveIsGood: true }}
-          spark={{ data: sparkComissao, color: '#8b5cf6' }}
           delay={0.3}
         />
         <KpiCard
@@ -599,16 +529,11 @@ export default function DashboardPage() {
         <KpiCard
           label="Tributos"
           value={formatBRLShort(kpis.tributos.value)}
-          hint={
-            kpis.fat.value > 0
-              ? `${((kpis.tributos.value / kpis.fat.value) * 100).toFixed(1)}% sobre faturamento`
-              : 'Sem faturamento no período'
-          }
+          hint={kpis.fat.value > 0 ? undefined : 'Sem faturamento no período'}
           icon={Receipt}
           iconBg="bg-rose-50"
           iconColor="text-rose-600"
           delta={{ pct: variation(kpis.tributos.value, kpis.tributos.prev).pct, positiveIsGood: false }}
-          spark={{ data: sparkTributos, color: '#f43f5e' }}
           delay={0.4}
         />
         <KpiCard

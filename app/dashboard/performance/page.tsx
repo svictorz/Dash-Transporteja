@@ -129,6 +129,13 @@ function toNumberOrNull(v: unknown): number | null {
   return null
 }
 
+/** Ex.: SP > RJ (só UF, para coluna compacta na performance). */
+function routeStatesShort(originState: string | null, destState: string | null): string {
+  const o = originState?.trim().toUpperCase() || '—'
+  const d = destState?.trim().toUpperCase() || '—'
+  return `${o} > ${d}`
+}
+
 function endOfTodayIso(): string {
   const now = new Date()
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
@@ -733,13 +740,16 @@ export default function PerformancePage() {
                       <td className="px-4 py-3">
                         <p className="text-gray-900">{r.company_name?.trim() || '—'}</p>
                       </td>
-                      <td className="px-4 py-3">
-                        <p className="text-gray-900 text-xs">
-                          {(r.origin || '—')}
-                          {r.origin_state ? `/${r.origin_state}` : ''}
-                          <span className="mx-1 text-gray-400">→</span>
-                          {(r.destination || '—')}
-                          {r.destination_state ? `/${r.destination_state}` : ''}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <p
+                          className="text-gray-900 text-sm font-semibold tabular-nums tracking-tight"
+                          title={
+                            [r.origin, r.origin_state].filter(Boolean).join(', ') +
+                            ' → ' +
+                            [r.destination, r.destination_state].filter(Boolean).join(', ')
+                          }
+                        >
+                          {routeStatesShort(r.origin_state, r.destination_state)}
                         </p>
                       </td>
                       <td className="px-4 py-3">

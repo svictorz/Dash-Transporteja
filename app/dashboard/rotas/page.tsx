@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Route, MapPin, ArrowRight, X, Truck, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Upload, Eye, ChevronDown } from 'lucide-react'
+import { Route, MapPin, ArrowRight, X, Truck, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Upload, Eye, ChevronDown, FileText } from 'lucide-react'
 import { useRoutes } from '@/lib/hooks/useRoutes'
 import { useClients } from '@/lib/hooks/useClients'
 import { useDrivers } from '@/lib/hooks/useDrivers'
@@ -56,8 +56,63 @@ interface RouteDisplayData extends RouteType {
 
 type DocumentKey = 'freteDocs'
 type RouteStatus = RouteType['status']
-const EMPTY_DOCUMENT_URLS: Record<DocumentKey, string | null> = {
-  freteDocs: null,
+type RouteDocumentKind = 'image' | 'pdf'
+type RouteDocument = { path: string; url: string; name: string; kind: RouteDocumentKind }
+const EMPTY_DOCUMENTS: Record<DocumentKey, RouteDocument[]> = {
+  freteDocs: [],
+}
+
+const SAFE_IMAGE_DIMENSION = 4000
+const IMAGE_COMPRESSION_QUALITY = 0.9
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const ALLOWED_DOCUMENT_TYPES = [...ALLOWED_IMAGE_TYPES, 'image/heic', 'image/heif', 'application/pdf']
+const MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024
+
+function getDocumentKind(name: string): RouteDocumentKind {
+  return name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image'
+}
+
+async function compressImage(file: File): Promise<File> {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return file
+
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+
+  const image: HTMLImageElement = await new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('Não foi possível carregar a imagem.'))
+    img.src = dataUrl
+  })
+
+  // Preserva a resolução original (sem cortar e sem reduzir o tamanho).
+  // Só faz "downscale" se a imagem for absurdamente grande (> 4000px) para evitar travar
+  // o navegador ao renderizar / fazer upload.
+  const ratio = Math.min(1, SAFE_IMAGE_DIMENSION / Math.max(image.width, image.height))
+  const targetW = Math.round(image.width * ratio)
+  const targetH = Math.round(image.height * ratio)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return file
+  ctx.drawImage(image, 0, 0, targetW, targetH)
+
+  const blob: Blob | null = await new Promise((resolve) => {
+    canvas.toBlob((b) => resolve(b), 'image/jpeg', IMAGE_COMPRESSION_QUALITY)
+  })
+  if (!blob) return file
+
+  const compressed = new File([blob], file.name.replace(/\.(png|webp|heic|heif)$/i, '.jpg'), {
+    type: 'image/jpeg',
+    lastModified: Date.now(),
+  })
+  return compressed.size < file.size ? compressed : file
 }
 
 const ROUTE_STATUS_OPTIONS: RouteStatus[] = ['pending', 'pickedUp', 'inTransit', 'delivered', 'cancelled']
@@ -80,8 +135,9 @@ export default function RotasPage() {
   const [editingRoute, setEditingRoute] = useState<RouteType | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
-  const [documentUrls, setDocumentUrls] = useState<Record<DocumentKey, string | null>>(EMPTY_DOCUMENT_URLS)
+  const [documents, setDocuments] = useState<Record<DocumentKey, RouteDocument[]>>(EMPTY_DOCUMENTS)
   const [uploadingDocument, setUploadingDocument] = useState<DocumentKey | null>(null)
+  const [removingDocumentPath, setRemovingDocumentPath] = useState<string | null>(null)
   const [updatingStatusRouteId, setUpdatingStatusRouteId] = useState<string | null>(null)
   
   const [companyInput, setCompanyInput] = useState('')
@@ -249,10 +305,34 @@ export default function RotasPage() {
     }
   }, [updateRoute])
 
+  const loadRouteDocuments = useCallback(async (routeId: string) => {
+    try {
+      const folder = `documents/${routeId}`
+      const { data, error } = await supabase.storage
+        .from('checkin-photos')
+        .list(folder, { limit: 100, sortBy: { column: 'created_at', order: 'asc' } })
+
+      if (error) throw error
+      const items = (data || []).filter((entry) => entry.name && entry.name.startsWith('freteDocs-'))
+
+      const docs: RouteDocument[] = items.map((entry) => {
+        const path = `${folder}/${entry.name}`
+        const { data: pub } = supabase.storage.from('checkin-photos').getPublicUrl(path)
+        return { path, url: pub.publicUrl, name: entry.name, kind: getDocumentKind(entry.name) }
+      })
+
+      setDocuments({ freteDocs: docs })
+    } catch (err) {
+      console.warn('Erro ao listar documentos do frete:', err)
+      setDocuments(EMPTY_DOCUMENTS)
+    }
+  }, [])
+
   const handleViewMore = (route: RouteDisplayData) => {
     setSelectedRoute(route)
-    setDocumentUrls(EMPTY_DOCUMENT_URLS)
+    setDocuments(EMPTY_DOCUMENTS)
     setUploadingDocument(null)
+    void loadRouteDocuments(route.id)
   }
 
   const handleOpenEdit = (route: RouteDisplayData) => {
@@ -305,38 +385,88 @@ export default function RotasPage() {
   const handleCloseModal = () => {
     setSelectedRoute(null)
     setSelectedPhoto(null)
-    setDocumentUrls(EMPTY_DOCUMENT_URLS)
+    setDocuments(EMPTY_DOCUMENTS)
     setUploadingDocument(null)
+    setRemovingDocumentPath(null)
   }
 
-  const handleUploadDocument = async (documentKey: DocumentKey, file: File | null) => {
-    if (!file || !selectedRoute) return
+  const handleUploadDocuments = async (documentKey: DocumentKey, files: FileList | null) => {
+    if (!files || files.length === 0 || !selectedRoute) return
 
-    const isImage = file.type.startsWith('image/')
-    if (!isImage) {
-      alert('Envie apenas imagem (JPG, PNG, WEBP).')
+    const list = Array.from(files)
+    const invalid = list.find(
+      (f) =>
+        !ALLOWED_DOCUMENT_TYPES.includes(f.type) &&
+        !f.type.startsWith('image/'),
+    )
+    if (invalid) {
+      alert('Envie apenas imagens (JPG, PNG, WEBP) ou PDF.')
+      return
+    }
+    const tooLargePdf = list.find(
+      (f) => f.type === 'application/pdf' && f.size > MAX_PDF_SIZE_BYTES,
+    )
+    if (tooLargePdf) {
+      alert('Cada PDF pode ter no máximo 20 MB.')
       return
     }
 
     try {
       setUploadingDocument(documentKey)
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const filePath = `documents/${selectedRoute.id}/${documentKey}-${Date.now()}-${safeName}`
-      const { data, error } = await supabase.storage
-        .from('checkin-photos')
-        .upload(filePath, file, { cacheControl: '3600', upsert: true })
+      const uploaded: RouteDocument[] = []
 
-      if (error) throw error
+      for (const original of list) {
+        const isPdf = original.type === 'application/pdf'
+        const file = isPdf ? original : await compressImage(original)
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const filePath = `documents/${selectedRoute.id}/${documentKey}-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}-${safeName}`
 
-      const { data: publicData } = supabase.storage
-        .from('checkin-photos')
-        .getPublicUrl(data.path)
+        const { data, error } = await supabase.storage
+          .from('checkin-photos')
+          .upload(filePath, file, { cacheControl: '3600', upsert: false, contentType: file.type })
 
-      setDocumentUrls((prev) => ({ ...prev, [documentKey]: publicData.publicUrl }))
+        if (error) throw error
+
+        const { data: pub } = supabase.storage.from('checkin-photos').getPublicUrl(data.path)
+        const finalName = data.path.split('/').pop() ?? data.path
+        uploaded.push({
+          path: data.path,
+          url: pub.publicUrl,
+          name: finalName,
+          kind: getDocumentKind(finalName),
+        })
+      }
+
+      setDocuments((prev) => ({
+        ...prev,
+        [documentKey]: [...prev[documentKey], ...uploaded],
+      }))
     } catch (err: any) {
-      alert(`Erro ao anexar imagem: ${err?.message || 'tente novamente.'}`)
+      alert(`Erro ao anexar arquivo: ${err?.message || 'tente novamente.'}`)
     } finally {
       setUploadingDocument(null)
+    }
+  }
+
+  const handleRemoveDocument = async (documentKey: DocumentKey, doc: RouteDocument) => {
+    if (!selectedRoute) return
+    if (!confirm('Remover esta imagem?')) return
+
+    try {
+      setRemovingDocumentPath(doc.path)
+      const { error } = await supabase.storage.from('checkin-photos').remove([doc.path])
+      if (error) throw error
+
+      setDocuments((prev) => ({
+        ...prev,
+        [documentKey]: prev[documentKey].filter((d) => d.path !== doc.path),
+      }))
+    } catch (err: any) {
+      alert(`Erro ao remover imagem: ${err?.message || 'tente novamente.'}`)
+    } finally {
+      setRemovingDocumentPath(null)
     }
   }
 
@@ -858,24 +988,19 @@ export default function RotasPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="px-3 sm:px-4 lg:px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 text-gray-600 shrink-0" />
-                            <span className="text-sm text-gray-900">
-                              {route.origin}, {route.origin_state}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <ArrowRight className="w-4 h-4 text-gray-400 shrink-0" />
-                            <MapPin className="w-4 h-4 text-gray-600 shrink-0" />
-                            <span className="text-sm text-gray-900">
-                              {route.destination}, {route.destination_state}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                    <td className="px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <span
+                        className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight text-gray-900"
+                        title={`${[route.origin, route.origin_state].filter(Boolean).join(', ')} → ${[route.destination, route.destination_state].filter(Boolean).join(', ')}`}
+                      >
+                        <span className="tabular-nums">
+                          {(route.origin_state || '—').toUpperCase()}
+                        </span>
+                        <ArrowRight className="w-3.5 h-3.5 text-gray-400 shrink-0" aria-hidden />
+                        <span className="tabular-nums">
+                          {(route.destination_state || '—').toUpperCase()}
+                        </span>
+                      </span>
                     </td>
                     <td className="hidden md:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-900 tabular-nums">
@@ -1271,38 +1396,107 @@ export default function RotasPage() {
                   </div>
 
                   <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <p className="text-xs text-gray-700 font-semibold uppercase tracking-wide mb-1">
-                      Adicione fotos / documentos
-                    </p>
+                    <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+                      <p className="text-xs text-gray-700 font-semibold uppercase tracking-wide">
+                        Adicione fotos / documentos
+                      </p>
+                      <span className="text-[11px] text-gray-500">
+                        {documents.freteDocs.length} {documents.freteDocs.length === 1 ? 'imagem' : 'imagens'}
+                      </span>
+                    </div>
                     <p className="text-sm text-gray-600 mb-3">
-                      Nota fiscal, CT-e, comprovantes de pagamento e demais anexos do frete.
+                      Nota fiscal, CT-e, comprovantes de pagamento (PDF) e demais anexos do frete. As imagens são comprimidas (sem cortar) antes do envio. PDF até 20 MB.
                     </p>
                     <input
                       id="upload-frete-docs"
                       type="file"
-                      accept="image/*"
+                      accept="image/*,application/pdf"
+                      multiple
                       className="hidden"
-                      onChange={(e) => handleUploadDocument('freteDocs', e.target.files?.[0] ?? null)}
+                      disabled={uploadingDocument === 'freteDocs'}
+                      onChange={(e) => {
+                        const files = e.target.files
+                        void handleUploadDocuments('freteDocs', files)
+                        e.target.value = ''
+                      }}
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <label
                         htmlFor="upload-frete-docs"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer"
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg text-gray-700 ${
+                          uploadingDocument === 'freteDocs'
+                            ? 'cursor-wait opacity-60'
+                            : 'hover:bg-gray-100 cursor-pointer'
+                        }`}
                       >
-                        {uploadingDocument === 'freteDocs' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                        Adicionar
+                        {uploadingDocument === 'freteDocs' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Upload className="w-3.5 h-3.5" />
+                        )}
+                        {uploadingDocument === 'freteDocs' ? 'Enviando...' : 'Adicionar arquivos'}
                       </label>
-                      {documentUrls.freteDocs && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPhoto(documentUrls.freteDocs)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          Ver
-                        </button>
-                      )}
                     </div>
+
+                    {documents.freteDocs.length > 0 && (
+                      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {documents.freteDocs.map((doc) => {
+                          const isRemoving = removingDocumentPath === doc.path
+                          return (
+                            <div
+                              key={doc.path}
+                              className="group relative aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center"
+                            >
+                              {doc.kind === 'pdf' ? (
+                                <a
+                                  href={doc.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex flex-col items-center justify-center w-full h-full p-2 text-center text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-800"
+                                  title={doc.name}
+                                >
+                                  <FileText className="w-10 h-10 text-red-600 mb-1" />
+                                  <span className="text-[11px] font-semibold uppercase tracking-wide text-red-700">
+                                    PDF
+                                  </span>
+                                  <span className="text-[10px] text-gray-500 mt-1 line-clamp-2 break-all">
+                                    {doc.name.replace(/^freteDocs-\d+-[a-z0-9]+-/, '')}
+                                  </span>
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedPhoto(doc.url)}
+                                  className="block w-full h-full focus:outline-none focus:ring-2 focus:ring-slate-800"
+                                  aria-label="Visualizar imagem"
+                                >
+                                  <img
+                                    src={doc.url}
+                                    alt="Documento do frete"
+                                    className="w-full h-full object-contain transition-transform group-hover:scale-[1.03]"
+                                    loading="lazy"
+                                  />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveDocument('freteDocs', doc)}
+                                disabled={isRemoving}
+                                className="absolute top-1.5 right-1.5 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/90 text-red-600 shadow border border-gray-200 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                                title="Remover imagem"
+                                aria-label="Remover imagem"
+                              >
+                                {isRemoving ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
