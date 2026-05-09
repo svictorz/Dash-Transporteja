@@ -23,8 +23,12 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  const { data: { session } } = await supabase.auth.getSession()
-  const user = session?.user
+  // getUser() revalida o JWT com o servidor Auth (mais seguro que getSession(), que pode
+  // confiar só no cookie). Mantém refresh de sessão via setAll nos cookies.
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
 
   const pathname = request.nextUrl.pathname
   const isDashboard = pathname.startsWith('/dashboard')
@@ -32,13 +36,13 @@ export async function updateSession(request: NextRequest) {
 
   // Em desenvolvimento: deixar o layout do dashboard fazer o redirect se não houver sessão,
   // para evitar bloqueio quando os cookies não forem lidos corretamente no middleware (ex.: localhost).
-  if (!user && isDashboard && !isDev) {
+  if ((!user || userError) && isDashboard && !isDev) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  if (user && pathname === '/login') {
+  if (user && !userError && pathname === '/login') {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
