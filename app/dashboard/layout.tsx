@@ -2,9 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ShieldAlert, LogOut } from 'lucide-react'
 import SidebarTransporteja from '@/components/transporteja/SidebarTransporteja'
 import TopBarTransporteja from '@/components/transporteja/TopBarTransporteja'
 import { useAuthState } from '@/lib/hooks/useAuthState'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
+import { supabase } from '@/lib/supabase/client'
+import { PANEL_ROLES } from '@/lib/utils/roles'
 
 export default function DashboardLayout({
   children,
@@ -13,8 +17,10 @@ export default function DashboardLayout({
 }) {
   const router = useRouter()
   const { session, loading: authLoading } = useAuthState()
+  const { user: currentUser, loading: userLoading } = useCurrentUser()
   const [mounted, setMounted] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -36,12 +42,55 @@ export default function DashboardLayout({
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  const handleSignOut = async () => {
+    try {
+      setSigningOut(true)
+      await supabase.auth.signOut()
+      router.replace('/login')
+    } finally {
+      setSigningOut(false)
+    }
+  }
+
   if (!mounted || authLoading || !session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-slate-800 border-t-transparent rounded-full animate-spin mx-auto mb-4" aria-hidden />
           <p className="text-gray-600">{authLoading ? 'Verificando autenticação…' : 'Redirecionando para login…'}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Só bloqueamos o painel quando temos CERTEZA que o role do usuário é inválido.
+  // Enquanto o useCurrentUser ainda está carregando, deixamos o painel renderizar
+  // (RLS protege os dados se o usuário ainda não tiver permissão).
+  const userRole = currentUser?.role ?? null
+  const hasPanelAccess =
+    userRole !== null && (PANEL_ROLES as readonly string[]).includes(userRole)
+
+  if (!userLoading && !hasPanelAccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 p-6">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-200 p-6 sm:p-8 text-center">
+          <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto mb-4">
+            <ShieldAlert className="w-7 h-7" aria-hidden />
+          </div>
+          <h1 className="text-xl font-bold text-gray-900">Acesso ao CRM pendente</h1>
+          <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+            Sua conta {currentUser?.email ? <strong>{currentUser.email}</strong> : null} ainda não tem permissão para
+            acessar o CRM. Solicite ao administrador que libere seu acesso.
+          </p>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 text-white text-sm font-medium hover:bg-slate-900 transition-colors disabled:opacity-60"
+          >
+            <LogOut className="w-4 h-4" aria-hidden />
+            {signingOut ? 'Saindo…' : 'Sair'}
+          </button>
         </div>
       </div>
     )
