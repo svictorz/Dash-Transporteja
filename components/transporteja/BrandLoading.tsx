@@ -29,20 +29,20 @@ export default function BrandLoading({
     <div
       className={`${
         fullScreen ? 'min-h-screen' : 'min-h-[40vh]'
-      } flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 ${className}`}
+      } flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 ${className}`}
     >
       <div className="flex flex-col items-center gap-5 px-6 text-center">
         <div className="relative w-28 h-28 sm:w-32 sm:h-32 flex items-center justify-center">
           {/* Anel girando atrás do logo */}
-          <div className="absolute inset-0 rounded-full border-2 border-slate-200" aria-hidden />
+          <div className="absolute inset-0 rounded-full border-2 border-slate-200 dark:border-slate-600" aria-hidden />
           <div
-            className="absolute inset-0 rounded-full border-2 border-transparent border-t-slate-800 animate-spin"
+            className="absolute inset-0 rounded-full border-2 border-transparent border-t-slate-800 dark:border-t-slate-200 animate-spin"
             style={{ animationDuration: '1.4s' }}
             aria-hidden
           />
           {/* Halo suave pulsante */}
           <div
-            className="absolute inset-2 rounded-full bg-slate-900/5 animate-pulse"
+            className="absolute inset-2 rounded-full bg-slate-900/5 dark:bg-white/5 animate-pulse"
             style={{ animationDuration: '2.2s' }}
             aria-hidden
           />
@@ -50,7 +50,7 @@ export default function BrandLoading({
           <div className="relative w-20 h-20 sm:w-24 sm:h-24 brand-logo-float">
             <Image
               src="/logo-header.png"
-              alt="JCN x Ágape"
+              alt="OP TRANSPORTES"
               fill
               priority
               sizes="96px"

@@ -70,7 +70,8 @@ export default function UsuariosPage() {
   const [savedId, setSavedId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | AssignableRole>('all')
 
-  const isAuthorized = me?.role === 'admin'
+  const isAuthorized =
+    me?.role === 'admin' || isSuperAdminEmail(me?.email)
 
   useEffect(() => {
     if (meLoading) return

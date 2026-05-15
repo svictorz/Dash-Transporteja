@@ -21,7 +21,9 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useRoutes } from '@/lib/hooks/useRoutes'
+import { useAuthState } from '@/lib/hooks/useAuthState'
 import type { Route as RouteRecord } from '@/lib/services/routes'
+import { formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import BrandLoading from '@/components/transporteja/BrandLoading'
 
 interface Alert {
@@ -81,12 +83,24 @@ function startOfDay(d: Date) {
   return x
 }
 
+/**
+ * Data de referência usada pelos filtros do dashboard.
+ *
+ * Para um painel financeiro/operacional de transportes a data que importa é
+ * a **data da coleta** (quando o frete ocorreu). Caímos para a previsão de
+ * entrega ou, em último caso, para `created_at` apenas para registros que
+ * ainda não tenham coleta marcada — assim, fretes recém-cadastrados
+ * referentes a períodos anteriores continuam aparecendo nas métricas do
+ * período em que efetivamente aconteceram.
+ */
 function getRouteDate(r: RouteRecord): Date | null {
-  const raw = r.created_at || r.pickup_date || r.estimated_delivery
-  if (!raw) return null
-  const d = new Date(raw)
-  if (isNaN(d.getTime())) return null
-  return d
+  const candidates = [r.pickup_date, r.estimated_delivery, r.created_at]
+  for (const raw of candidates) {
+    if (!raw) continue
+    const d = new Date(raw)
+    if (!isNaN(d.getTime())) return d
+  }
+  return null
 }
 
 function periodRange(period: PeriodKey, now = new Date()): { start: Date | null; end: Date; prevStart: Date | null; prevEnd: Date | null } {
@@ -223,6 +237,8 @@ function KpiCard({ label, value, hint, icon: Icon, iconBg, iconColor, delta, del
 export default function DashboardPage() {
   const router = useRouter()
   const { routes, loadRoutes } = useRoutes()
+  const { session, loading: authLoading } = useAuthState()
+  const currentUserId = session?.user?.id ?? null
   const [mounted, setMounted] = useState(false)
   const [period, setPeriod] = useState<PeriodKey>('30d')
 
@@ -245,8 +261,18 @@ export default function DashboardPage() {
 
   const { start, end, prevStart, prevEnd } = useMemo(() => periodRange(period), [period])
 
-  const currentRoutes = useMemo(() => filterByRange(routes, start, end), [routes, start, end])
-  const previousRoutes = useMemo(() => filterByRange(routes, prevStart, prevEnd), [routes, prevStart, prevEnd])
+  /**
+   * Dashboard é "minha visão": qualquer usuário (inclusive admin/financeiro)
+   * só enxerga aqui os fretes que ele mesmo lançou. A página /rotas continua
+   * respeitando as policies do banco (admin/financeiro veem tudo lá).
+   */
+  const ownedRoutes = useMemo(() => {
+    if (!currentUserId) return [] as RouteRecord[]
+    return routes.filter((r) => r.created_by_user_id === currentUserId)
+  }, [routes, currentUserId])
+
+  const currentRoutes = useMemo(() => filterByRange(ownedRoutes, start, end), [ownedRoutes, start, end])
+  const previousRoutes = useMemo(() => filterByRange(ownedRoutes, prevStart, prevEnd), [ownedRoutes, prevStart, prevEnd])
 
   // ---------- KPIs ----------
   const isPaidFull = (r: RouteRecord) => (r.payment_status ?? '').trim() === '100%'
@@ -295,37 +321,30 @@ export default function DashboardPage() {
   }, [currentRoutes])
 
   // ---------- Recentes ----------
-  const formatDateBR = (dateString: string) => {
-    if (!dateString) return ''
-    try {
-      const date = new Date(dateString)
-      const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-      const day = date.getDate().toString().padStart(2, '0')
-      const month = months[date.getMonth()]
-      const year = date.getFullYear()
-      return `${day} ${month}, ${year}`
-    } catch {
-      return dateString
-    }
-  }
-
   const recentRoutes = useMemo<RoutePreview[]>(() => {
-    return currentRoutes.slice(0, 5).map((route) => ({
-      id: route.id,
-      freightId: route.freight_id,
-      companyName: route.company_name?.trim() || '—',
-      companyResponsible: route.company_responsible?.trim() || '—',
-      origin: route.origin,
-      originState: route.origin_state,
-      destination: route.destination,
-      destinationState: route.destination_state,
-      vehicle: route.vehicle,
-      plate: route.plate,
-      weight: route.weight,
-      estimatedDelivery: formatDateBR(route.estimated_delivery),
-      pickupDate: formatDateBR(route.pickup_date),
-      status: route.status,
-    }))
+    return [...currentRoutes]
+      .sort((a, b) => {
+        const da = getRouteDate(a)?.getTime() ?? 0
+        const db = getRouteDate(b)?.getTime() ?? 0
+        return db - da
+      })
+      .slice(0, 5)
+      .map((route) => ({
+        id: route.id,
+        freightId: route.freight_id,
+        companyName: route.company_name?.trim() || '—',
+        companyResponsible: route.company_responsible?.trim() || '—',
+        origin: route.origin,
+        originState: route.origin_state,
+        destination: route.destination,
+        destinationState: route.destination_state,
+        vehicle: route.vehicle,
+        plate: route.plate,
+        weight: route.weight,
+        estimatedDelivery: formatDateDdMmYyyy(route.estimated_delivery),
+        pickupDate: formatDateDdMmYyyy(route.pickup_date),
+        status: route.status,
+      }))
   }, [currentRoutes])
 
   const alerts: Alert[] = []
@@ -347,7 +366,7 @@ export default function DashboardPage() {
     }
   }
 
-  if (!mounted) {
+  if (!mounted || authLoading) {
     return <BrandLoading message="Carregando dashboard…" fullScreen={false} />
   }
 
@@ -359,22 +378,23 @@ export default function DashboardPage() {
       <FadeIn delay={0.05}>
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
+              <motion.button
+                whileHover={{ rotate: 90 }}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => loadRoutes()}
+                className="p-2 bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                title="Atualizar dados"
+              >
+                <RefreshCw className="w-4 h-4 text-gray-600" />
+              </motion.button>
+            </div>
             <p className="text-xs sm:text-sm text-gray-500 mt-1">
-              Resumo financeiro e operacional · <span className="font-medium text-gray-700">{periodLabel}</span>
+              Seus lançamentos · <span className="font-medium text-gray-700">{periodLabel}</span>
+              <span className="text-gray-400"> · por data de coleta</span>
               {kpis.count > 0 ? <span className="text-gray-400"> · {kpis.count} fretes no período</span> : null}
             </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <motion.button
-              whileHover={{ rotate: 90 }}
-              whileTap={{ scale: 0.92 }}
-              onClick={() => loadRoutes()}
-              className="p-2 bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
-              title="Atualizar dados"
-            >
-              <RefreshCw className="w-4 h-4 text-gray-600" />
-            </motion.button>
           </div>
         </div>
       </FadeIn>

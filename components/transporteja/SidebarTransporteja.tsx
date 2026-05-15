@@ -22,6 +22,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import Logo from './Logo'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
+import { isSuperAdminEmail } from '@/lib/utils/roles'
 
 interface MenuItem {
   icon: LucideIcon
@@ -40,7 +41,18 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(true)
   const { user: currentUser } = useCurrentUser()
-  const isAdmin = currentUser?.role === 'admin'
+  /**
+   * `isAdmin` controla a visibilidade da aba "Permissões".
+   *
+   * Aceita duas formas:
+   *  - Role explícito 'admin' na tabela public.users (caminho normal); ou
+   *  - E-mail super admin (fallback de segurança) — garante que o dono do
+   *    sistema nunca perca acesso à gestão de permissões caso o role na
+   *    tabela `users` esteja faltando/desincronizado ou o hook tenha caído
+   *    em timeout ao ler o perfil.
+   */
+  const isAdmin =
+    currentUser?.role === 'admin' || isSuperAdminEmail(currentUser?.email)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -126,7 +138,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
               <button
                 type="button"
                 onClick={onMobileClose}
-                className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors text-gray-600 md:hidden"
+                className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors text-gray-600 md:hidden dark:hover:bg-slate-800 dark:text-slate-300"
                 aria-label="Fechar menu"
               >
                 <X className="w-5 h-5" />
@@ -135,8 +147,8 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
             <button
               type="button"
               onClick={toggleSidebar}
-              className={`p-2 rounded-lg hover:bg-gray-100 transition-colors hidden md:block ${
-                isOpen ? 'text-orange-500' : 'text-gray-600'
+              className={`p-2 rounded-lg hover:bg-gray-100 transition-colors hidden md:block dark:hover:bg-slate-800 ${
+                isOpen ? 'text-orange-500' : 'text-gray-600 dark:text-slate-400'
               }`}
               aria-label={isOpen ? 'Recolher menu' : 'Expandir menu'}
             >
@@ -168,10 +180,10 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors active:scale-[0.98] ${
                 isActive
                   ? 'bg-slate-800/90 text-white shadow-sm'
-                  : 'text-gray-700 hover:bg-white/60'
+                  : 'text-gray-700 hover:bg-white/60 dark:text-slate-300 dark:hover:bg-white/10'
               }`}
             >
-              <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-500'}`} />
+              <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-500 dark:text-slate-400'}`} />
               {isOpen && <span className="font-medium">{item.label}</span>}
               {isOpen && item.badge != null && (
                 <span className="ml-auto bg-green-500 text-white text-xs px-2 py-1 rounded-full font-semibold">
@@ -188,25 +200,25 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
           <Link
             href="/configuracoes"
             onClick={handleNavClick}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 active:bg-gray-200 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 active:bg-gray-200 transition-colors dark:text-slate-300 dark:hover:bg-slate-800"
           >
-            <Settings className="w-5 h-5 text-gray-500" />
+            <Settings className="w-5 h-5 text-gray-500 dark:text-slate-400" />
             {isOpen && <span>Configurações</span>}
           </Link>
           <Link
             href="/dados-pessoais"
             onClick={handleNavClick}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 active:bg-gray-200 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 active:bg-gray-200 transition-colors dark:text-slate-300 dark:hover:bg-slate-800"
           >
-            <Shield className="w-5 h-5 text-gray-500" />
+            <Shield className="w-5 h-5 text-gray-500 dark:text-slate-400" />
             {isOpen && <span>Dados Pessoais</span>}
           </Link>
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-700 hover:bg-white/60 active:scale-[0.98] transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-700 hover:bg-white/60 active:scale-[0.98] transition-colors dark:text-slate-300 dark:hover:bg-white/10"
           >
-            <LogOut className="w-5 h-5 text-gray-500" />
+            <LogOut className="w-5 h-5 text-gray-500 dark:text-slate-400" />
             {isOpen && <span>Sair</span>}
           </button>
         </div>
@@ -244,7 +256,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
-              className="fixed left-0 top-0 h-screen w-72 bg-white border-r border-gray-200 flex flex-col shadow-xl z-50 md:hidden will-change-transform"
+              className="fixed left-0 top-0 h-screen w-72 bg-white border-r border-gray-200 flex flex-col shadow-xl z-50 md:hidden will-change-transform dark:border-slate-700"
             >
               {sidebarContent}
             </motion.aside>

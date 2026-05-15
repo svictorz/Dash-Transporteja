@@ -8,7 +8,7 @@ const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving'
 
 const USER_AGENT =
   process.env.COTACAO_NOMINATIM_USER_AGENT ||
-  'JCN-Agape-Gestao/1.0 (cotacao; contato@empresa.com.br)'
+  'OP-Transportes-Gestao/1.0 (cotacao; contato@empresa.com.br)'
 
 export interface GeocodeHit {
   lat: number

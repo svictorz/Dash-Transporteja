@@ -134,6 +134,7 @@ export interface Database {
           driver_payment_status?: string | null
           driver_payment_type?: string | null
           nf_value?: number | null
+          cte_value?: number | null
           observation?: string | null
           created_at: string
           updated_at: string
@@ -176,6 +177,7 @@ export interface Database {
           driver_payment_status?: string | null
           driver_payment_type?: string | null
           nf_value?: number | null
+          cte_value?: number | null
           observation?: string | null
           created_at?: string
           updated_at?: string
@@ -218,6 +220,7 @@ export interface Database {
           driver_payment_status?: string | null
           driver_payment_type?: string | null
           nf_value?: number | null
+          cte_value?: number | null
           observation?: string | null
           created_at?: string
           updated_at?: string

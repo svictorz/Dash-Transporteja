@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import FadeIn from '@/components/animations/FadeIn'
 import { FileText, Calendar, Download, Building2, Plus, X, ChevronDown } from 'lucide-react'
 import { useClients } from '@/lib/hooks/useClients'
+import { DATE_BR_NUMERIC } from '@/lib/utils/date-format'
 
 export default function RelatoriosPage() {
   const { clients } = useClients()
@@ -329,7 +330,7 @@ Taxa de Sucesso: ${reportData.data.successRate}
                   {getPeriodLabel(quickPeriod)}
                 </p>
                 <p className="text-sm font-semibold text-gray-900 mt-1">
-                  {new Date(startDate).toLocaleDateString('pt-BR')} até {new Date(endDate).toLocaleDateString('pt-BR')}
+                  {new Date(startDate).toLocaleDateString('pt-BR', DATE_BR_NUMERIC)} até {new Date(endDate).toLocaleDateString('pt-BR', DATE_BR_NUMERIC)}
                 </p>
               </motion.div>
             )}

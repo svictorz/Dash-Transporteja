@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BarChart3, CalendarDays, ChevronDown, Eye, EyeOff, Filter, Truck, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
+import { DATE_BR_NUMERIC } from '@/lib/utils/date-format'
 
 type Periodo = 'essaSemana' | 'mesAtual' | '30d' | 'mesPassado' | 'custom'
 type UserRole = 'admin' | 'comercial' | 'financeiro' | 'driver' | 'operator' | null
@@ -730,7 +731,7 @@ export default function PerformancePage() {
                       ? 'bg-amber-50 text-amber-700 border-amber-200'
                       : 'bg-gray-50 text-gray-700 border-gray-200'
                   const created = r.created_at
-                    ? new Date(r.created_at).toLocaleDateString('pt-BR')
+                    ? new Date(r.created_at).toLocaleDateString('pt-BR', DATE_BR_NUMERIC)
                     : '—'
                   return (
                     <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50/60">

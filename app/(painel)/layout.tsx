@@ -9,7 +9,7 @@ import BrandLoading from '@/components/transporteja/BrandLoading'
 import { useAuthState } from '@/lib/hooks/useAuthState'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { supabase } from '@/lib/supabase/client'
-import { PANEL_ROLES } from '@/lib/utils/roles'
+import { PANEL_ROLES, isSuperAdminEmail } from '@/lib/utils/roles'
 
 export default function DashboardLayout({
   children,
@@ -65,18 +65,34 @@ export default function DashboardLayout({
   // Enquanto o useCurrentUser ainda está carregando, deixamos o painel renderizar
   // (RLS protege os dados se o usuário ainda não tiver permissão).
   const userRole = currentUser?.role ?? null
+  /**
+   * Super admin (por e-mail) tem passe livre mesmo se o role em
+   * public.users estiver faltando ou desincronizado — evita que o dono do
+   * sistema fique trancado fora do painel por causa de inconsistência no
+   * banco.
+   */
   const hasPanelAccess =
-    userRole !== null && (PANEL_ROLES as readonly string[]).includes(userRole)
+    isSuperAdminEmail(currentUser?.email) ||
+    (userRole !== null && (PANEL_ROLES as readonly string[]).includes(userRole))
 
-  if (!userLoading && !hasPanelAccess) {
+  /**
+   * Só consideramos "sem acesso" quando o useCurrentUser foi capaz de
+   * confirmar a leitura do role (roleResolved=true). Falhas transitórias
+   * (timeout/rede) deixam roleResolved=false — nesse caso seguimos
+   * otimistas e renderizamos o painel (a próxima sincronização do hook
+   * pode resolver, e a RLS continua protegendo os dados).
+   */
+  const roleResolved = currentUser?.roleResolved ?? false
+
+  if (!userLoading && roleResolved && !hasPanelAccess) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 p-6">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-200 p-6 sm:p-8 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 p-6">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-6 sm:p-8 text-center">
           <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto mb-4">
             <ShieldAlert className="w-7 h-7" aria-hidden />
           </div>
-          <h1 className="text-xl font-bold text-gray-900">Acesso ao CRM pendente</h1>
-          <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">Acesso ao CRM pendente</h1>
+          <p className="text-sm text-gray-600 dark:text-slate-400 mt-2 leading-relaxed">
             Sua conta {currentUser?.email ? <strong>{currentUser.email}</strong> : null} ainda não tem permissão para
             acessar o CRM. Solicite ao administrador que libere seu acesso.
           </p>
@@ -95,7 +111,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 print:block print:h-auto print:overflow-visible print:bg-white">
+    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 print:block print:h-auto print:overflow-visible print:bg-white">
       <div className="print:hidden">
         <SidebarTransporteja
           isMobileOpen={isMobileMenuOpen}
@@ -106,7 +122,7 @@ export default function DashboardLayout({
         <div className="print:hidden">
           <TopBarTransporteja onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
         </div>
-        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 p-4 md:p-6 print:overflow-visible print:bg-white print:p-0">
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-gradient-to-br from-gray-50 via-gray-100 to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 p-4 md:p-6 print:overflow-visible print:bg-white print:p-0">
           {children}
         </main>
       </div>

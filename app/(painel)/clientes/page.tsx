@@ -10,6 +10,8 @@ import { validateName, validatePhone, validateEmail, validateCNPJ, validateCompa
 import CEPInput from '@/components/transporteja/CEPInput'
 import { CEPData } from '@/lib/services/cep'
 import { searchCNPJ } from '@/lib/services/cnpj'
+import { findCityMatch, prefetchCityIndex } from '@/lib/services/ibge'
+import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 
 export default function ClientesPage() {
   const { clients, loading, error, createClient, updateClient, deleteClient } = useClients()
@@ -21,6 +23,8 @@ export default function ClientesPage() {
   const [cnpjLoading, setCnpjLoading] = useState(false)
   const [cnpjSearchError, setCnpjSearchError] = useState<string | null>(null)
   const [cep, setCep] = useState('')
+  type CityFeedback = { kind: 'idle' } | { kind: 'loading' } | { kind: 'ok'; name: string; state: string } | { kind: 'notfound' }
+  const [cityFeedback, setCityFeedback] = useState<CityFeedback>({ kind: 'idle' })
   const [formData, setFormData] = useState({
     companyName: '',
     cnpj: '',
@@ -34,35 +38,65 @@ export default function ClientesPage() {
     state: ''
   })
 
+  // Pré-carrega a base de cidades do IBGE quando o modal abre.
+  useEffect(() => {
+    if (showModal) prefetchCityIndex()
+  }, [showModal])
+
+  const resolveCityFromInput = async () => {
+    const cityValue = formData.city
+    if (!cityValue.trim()) {
+      setCityFeedback({ kind: 'idle' })
+      return
+    }
+    setCityFeedback({ kind: 'loading' })
+    const match = await findCityMatch(cityValue, formData.state)
+    if (!match) {
+      setCityFeedback({ kind: 'notfound' })
+      return
+    }
+    setFormData((prev) => {
+      if (prev.city === match.name && prev.state === match.state) return prev
+      return { ...prev, city: match.name, state: match.state }
+    })
+    setCityFeedback({ kind: 'ok', name: match.name, state: match.state })
+  }
+
   // Filtrar clientes baseado na busca
   const filteredClients = useMemo(() => {
     if (!searchTerm) return clients
 
     const searchLower = searchTerm.toLowerCase()
+    // Clientes "leves" (criados via ensureClientFromRoute) podem ter
+    // responsible/email/whatsapp/city/state nulos.
+    const lower = (s?: string | null) => (s ?? '').toLowerCase()
+    const text = (s?: string | null) => s ?? ''
     return clients.filter(client =>
-      client.company_name.toLowerCase().includes(searchLower) ||
-      client.responsible.toLowerCase().includes(searchLower) ||
-      client.email.toLowerCase().includes(searchLower) ||
-      client.whatsapp.includes(searchTerm) ||
-      client.city.toLowerCase().includes(searchLower) ||
-      client.state.toLowerCase().includes(searchLower)
+      lower(client.company_name).includes(searchLower) ||
+      lower(client.responsible).includes(searchLower) ||
+      lower(client.email).includes(searchLower) ||
+      text(client.whatsapp).includes(searchTerm) ||
+      lower(client.city).includes(searchLower) ||
+      lower(client.state).includes(searchLower)
     )
   }, [searchTerm, clients])
 
   const handleOpenModal = (client?: Client) => {
     if (client) {
       setEditingClient(client)
+      // Clientes "leves" podem ter campos nulos; força string vazia
+      // para não quebrar inputs nem operações .trim()/.toLowerCase() no submit.
       setFormData({
-        companyName: client.company_name,
-        cnpj: client.cnpj || '',
-        responsible: client.responsible,
-        whatsapp: client.whatsapp,
-        email: client.email,
-        address: client.address,
-        extension: client.extension || '',
-        city: client.city,
-        neighborhood: client.neighborhood,
-        state: client.state
+        companyName: client.company_name ?? '',
+        cnpj: client.cnpj ?? '',
+        responsible: client.responsible ?? '',
+        whatsapp: client.whatsapp ?? '',
+        email: client.email ?? '',
+        address: client.address ?? '',
+        extension: client.extension ?? '',
+        city: client.city ?? '',
+        neighborhood: client.neighborhood ?? '',
+        state: client.state ?? '',
       })
     } else {
       setEditingClient(null)
@@ -87,6 +121,7 @@ export default function ClientesPage() {
     setEditingClient(null)
     setCep('')
     setValidationErrors({})
+    setCityFeedback({ kind: 'idle' })
     setFormData({
       companyName: '',
       cnpj: '',
@@ -389,7 +424,9 @@ export default function ClientesPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredClients.map((client) => (
+                  {filteredClients.map((client) => {
+                    const clientWhatsAppUrl = getWhatsAppWebUrl(client.whatsapp)
+                    return (
                     <tr
                       key={client.id}
                       className="hover:bg-gray-50 transition-colors"
@@ -415,9 +452,20 @@ export default function ClientesPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            <Phone className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-900">{client.whatsapp}</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Phone className="w-4 h-4 shrink-0 text-gray-400" />
+                            {clientWhatsAppUrl ? (
+                              <a
+                                href={clientWhatsAppUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-green-700 hover:text-green-800 underline-offset-2 hover:underline truncate"
+                              >
+                                {client.whatsapp}
+                              </a>
+                            ) : (
+                              <span className="text-sm text-gray-900 truncate">{client.whatsapp}</span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <Mail className="w-4 h-4 text-gray-400" />
@@ -453,7 +501,8 @@ export default function ClientesPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -531,10 +580,29 @@ export default function ClientesPage() {
                     type="text"
                     required
                     value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, city: e.target.value })
+                      setCityFeedback({ kind: 'idle' })
+                    }}
+                    onBlur={() => { void resolveCityFromInput() }}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 focus:border-transparent"
-                    placeholder="Cidade (preenchida automaticamente)"
+                    placeholder="Cidade (corrigida automaticamente ao sair do campo)"
                   />
+                  {cityFeedback.kind === 'loading' && (
+                    <p className="mt-1 text-xs text-gray-500 flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Verificando cidade...
+                    </p>
+                  )}
+                  {cityFeedback.kind === 'ok' && (
+                    <p className="mt-1 text-xs text-green-700">
+                      Cidade reconhecida: <strong>{cityFeedback.name}</strong> ({cityFeedback.state})
+                    </p>
+                  )}
+                  {cityFeedback.kind === 'notfound' && (
+                    <p className="mt-1 text-xs text-amber-600">
+                      Não encontramos essa cidade na base do IBGE. Confira a grafia.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -547,7 +615,7 @@ export default function ClientesPage() {
                     value={formData.state}
                     onChange={(e) => setFormData({ ...formData, state: e.target.value.toUpperCase() })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 focus:border-transparent"
-                    placeholder="Estado (ex: SP) - preenchido automaticamente"
+                    placeholder="UF (preenchida ao sair do campo Cidade)"
                     maxLength={2}
                   />
                 </div>

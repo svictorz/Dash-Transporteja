@@ -1,15 +1,15 @@
 /**
- * Dados cadastrais fixos da AGAPE TRANSPORTES LTDA (comprovante CNPJ — matriz).
- * Usados na proposta de cotação (PDF) e demais telas que referenciem a empresa emitente.
+ * Dados cadastrais da empresa emitente (proposta de cotação / PDF).
+ * Nome fantasia em destaque: OP TRANSPORTES. Razão e CNPJ conforme registro.
  */
 export const PROPOSTA_DOC_EMPRESA = {
   /** Nome fantasia */
-  nomeFantasia: 'AGAPE TRANSPORTES',
+  nomeFantasia: 'OP TRANSPORTES',
   /** Razão social */
   razaoSocial: 'AGAPE TRANSPORTES LTDA',
   /** Exibição curta (legado / textos) */
-  nomeExibicao: 'AGAPE TRANSPORTES',
-  nomeMaiusculo: 'ÁGAPE TRANSPORTES',
+  nomeExibicao: 'OP TRANSPORTES',
+  nomeMaiusculo: 'OP TRANSPORTES',
 
   cnpjNumeros: '40189703000124',
   cnpj: 'CNPJ: 40.189.703/0001-24',

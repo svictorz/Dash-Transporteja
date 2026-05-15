@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import dynamic from 'next/dynamic'
+import Script from 'next/script'
 import './globals.css'
+import { THEME_STORAGE_KEY } from '@/lib/constants/theme'
 
 // Lazy-load do banner de cookies. Ele importa framer-motion + lucide-react;
 // fora do bundle inicial, todas as páginas (login, register, legais) ficam
@@ -17,7 +19,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'Gestão Operacional | Jcn | Ágape',
+  title: 'Gestão Operacional | OP TRANSPORTES',
   description: 'Gestão logística, cotações e acompanhamento de operações',
   icons: {
     icon: '/favicon.png',
@@ -37,7 +39,7 @@ export const viewport: Viewport = {
     { media: '(prefers-color-scheme: light)', color: '#1f2937' },
     { media: '(prefers-color-scheme: dark)', color: '#0f172a' },
   ],
-  colorScheme: 'light',
+  colorScheme: 'light dark',
 }
 
 export default function RootLayout({
@@ -46,8 +48,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="pt-BR" className={inter.variable}>
-      <body className={inter.className}>
+    <html lang="pt-BR" className={inter.variable} suppressHydrationWarning>
+      <body className={inter.className} suppressHydrationWarning>
+        <Script id="theme-init" strategy="beforeInteractive">
+          {`try{var k=${JSON.stringify(THEME_STORAGE_KEY)};var t=localStorage.getItem(k);document.documentElement.classList.toggle('dark',t==='dark');}catch(e){}`}
+        </Script>
         {children}
         <ConsentBanner />
       </body>

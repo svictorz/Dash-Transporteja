@@ -1,3 +1,39 @@
+/*
+ * Ilha “papel A4”: no tema escuro o html tem .dark e overrides globais
+ * (.dark .bg-white, .dark .text-gray-*, etc.). Esta árvore força o mesmo
+ * aspecto do tema clássico na pré-visualização e no conteúdo impresso.
+ */
+.dark .proposta-a4-light-island {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+.dark .proposta-a4-light-island .text-gray-900 {
+  color: rgb(17 24 39) !important;
+}
+.dark .proposta-a4-light-island .text-gray-800 {
+  color: rgb(31 41 55) !important;
+}
+.dark .proposta-a4-light-island .text-gray-700 {
+  color: rgb(55 65 81) !important;
+}
+.dark .proposta-a4-light-island .text-gray-600 {
+  color: rgb(75 85 99) !important;
+}
+.dark .proposta-a4-light-island .text-gray-500 {
+  color: rgb(107 114 128) !important;
+}
+.dark .proposta-a4-light-island .text-gray-400 {
+  color: rgb(156 163 175) !important;
+}
+
+.dark .proposta-a4-light-island .bg-white {
+  background-color: #ffffff !important;
+}
+.dark .proposta-a4-light-island .bg-gray-100 {
+  background-color: rgb(243 244 246) !important;
+}
+
 @media print {
   @page {
     size: A4 portrait;

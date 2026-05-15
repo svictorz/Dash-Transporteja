@@ -155,16 +155,26 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 relative overflow-hidden">
+    <div className="min-h-screen bg-gray-100 dark:bg-slate-950 relative overflow-hidden">
       {/* Background Pattern - Textura sutil */}
       <div 
-        className="absolute inset-0 opacity-30"
+        className="absolute inset-0 opacity-30 dark:hidden"
         style={{
           backgroundImage: `
             linear-gradient(rgba(255, 255, 255, 0.8) 1px, transparent 1px),
             linear-gradient(90deg, rgba(255, 255, 255, 0.8) 1px, transparent 1px)
           `,
           backgroundSize: '40px 40px'
+        }}
+      />
+      <div
+        className="absolute inset-0 hidden dark:block opacity-25"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(148, 163, 184, 0.15) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(148, 163, 184, 0.15) 1px, transparent 1px)
+          `,
+          backgroundSize: '40px 40px',
         }}
       />
 
@@ -255,15 +265,15 @@ export default function LoginPage() {
 
               {/* Success: senha redefinida */}
               {senhaRedefinida && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-sm text-green-700">Senha redefinida com sucesso. Faça login com sua nova senha.</p>
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg dark:bg-green-950/35 dark:border-green-800">
+                  <p className="text-sm text-green-700 dark:text-green-400">Senha redefinida com sucesso. Faça login com sua nova senha.</p>
                 </div>
               )}
 
               {/* Error Message */}
               {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-600">{error}</p>
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg dark:bg-red-950/35 dark:border-red-900">
+                  <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
                 </div>
               )}
 
@@ -271,7 +281,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-gray-900 text-white py-2.5 px-4 rounded-lg font-medium hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900"
+                className="w-full bg-gray-900 text-white py-2.5 px-4 rounded-lg font-medium hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900 dark:disabled:hover:bg-slate-100"
               >
                 {isLoading ? (
                   <span className="flex items-center justify-center gap-2">

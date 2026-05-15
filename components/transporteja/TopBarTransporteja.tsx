@@ -188,7 +188,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
             {/* Botão Menu Mobile */}
             <button
               onClick={onMenuClick}
-              className="p-2 text-gray-600 hover:bg-white/50 rounded-xl transition-colors backdrop-blur-sm md:hidden"
+              className="p-2 text-gray-600 hover:bg-white/50 rounded-xl transition-colors backdrop-blur-sm md:hidden dark:text-slate-300 dark:hover:bg-white/10"
               aria-label="Abrir menu"
             >
               <Menu className="w-5 h-5" />
@@ -215,7 +215,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
               />
             </div>
             {/* Botão busca mobile */}
-            <button type="button" className="p-2 text-gray-600 hover:bg-white/50 rounded-xl transition-colors backdrop-blur-sm lg:hidden" aria-label="Buscar" title="Buscar">
+            <button type="button" className="p-2 text-gray-600 hover:bg-white/50 rounded-xl transition-colors backdrop-blur-sm lg:hidden dark:text-slate-300 dark:hover:bg-white/10" aria-label="Buscar" title="Buscar">
               <Search className="w-5 h-5" />
             </button>
           </FadeIn>
@@ -228,7 +228,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
               whileTap={{ scale: 0.9 }}
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className="p-2 text-gray-600 hover:bg-white/50 rounded-xl transition-colors backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 text-gray-600 hover:bg-white/50 rounded-xl transition-colors backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed dark:text-slate-300 dark:hover:bg-white/10"
               aria-label="Atualizar página"
               title="Atualizar"
             >
@@ -245,8 +245,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleSettings}
-              className="p-2 text-gray-600 hover:bg-white/50 rounded-xl transition-colors backdrop-blur-sm"
-              aria-label="Configurações"
+              className="p-2 text-gray-600 hover:bg-white/50 rounded-xl transition-colors backdrop-blur-sm dark:text-slate-300 dark:hover:bg-white/10"
               title="Configurações"
             >
               <Settings className="w-5 h-5" />
@@ -261,7 +260,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/50 transition-colors backdrop-blur-sm"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/50 transition-colors backdrop-blur-sm dark:hover:bg-white/10"
                 aria-label="Abrir menu do perfil"
                 aria-expanded={showProfileMenu}
               >
@@ -305,7 +304,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
                 <div className="p-2">
                   <button
                     onClick={handleLogout}
-                    className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
+                    className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors flex items-center gap-2"
                   >
                     <LogOut className="w-4 h-4" />
                     Sair do Sistema

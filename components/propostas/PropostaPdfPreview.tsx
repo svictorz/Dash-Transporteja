@@ -27,7 +27,7 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
 
   return (
     <article
-      className={`proposta-a4 bg-white text-black print:shadow-none ${className ?? ''}`}
+      className={`proposta-a4 proposta-a4-light-island bg-white text-black print:shadow-none ${className ?? ''}`}
       style={{
         width: '210mm',
         minHeight: '297mm',

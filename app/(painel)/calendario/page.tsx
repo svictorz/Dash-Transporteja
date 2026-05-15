@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { CalendarDays, Clock3, Plus, Truck, Users, BellRing } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
+import { DATE_BR_NUMERIC } from '@/lib/utils/date-format'
 
 type TipoCompromisso = 'entrega' | 'recebimento' | 'reuniao' | 'outro'
 
@@ -409,7 +410,7 @@ export default function CalendarioPage() {
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                         <span className="inline-flex items-center gap-1">
                           <CalendarDays className="w-3 h-3" aria-hidden />
-                          {dataEvento.toLocaleDateString('pt-BR')}
+                          {dataEvento.toLocaleDateString('pt-BR', DATE_BR_NUMERIC)}
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <Clock3 className="w-3 h-3" aria-hidden />

@@ -28,8 +28,8 @@ export default function PropostasPage() {
     <div className="max-w-[1600px] mx-auto space-y-6 pb-10 print:max-w-none print:mx-0 print:space-y-0 print:pb-0">
       <div className="print:hidden">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Propostas</h1>
-          <p className="text-sm text-gray-600 mt-1">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">Propostas</h1>
+          <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">
             Preencha à esquerda e acompanhe o layout da proposta em A4 à direita — {BRAND_NAME_SHORT}
           </p>
         </div>
@@ -41,7 +41,7 @@ export default function PropostasPage() {
               <button
                 type="button"
                 onClick={() => setForm(defaultPropostaFormState(gerarCodigoPropostaAGT()))}
-                className="px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
               >
                 Limpar e novo código
               </button>
@@ -59,7 +59,7 @@ export default function PropostasPage() {
               Imprimir proposta (A4)
             </button>
 
-            <div className="rounded-2xl border border-gray-200 bg-slate-100/90 p-4 md:p-5 shadow-inner overflow-auto max-h-[calc(100vh-8rem)]">
+            <div className="rounded-2xl border border-gray-200 bg-[#f1f5f9]/95 dark:border-slate-600 dark:bg-[#f1f5f9]/95 p-4 md:p-5 shadow-inner overflow-auto max-h-[calc(100vh-8rem)]">
               <p className="text-xs text-gray-500 mb-3 text-center xl:text-left">
                 Pré-visualização (escala reduzida no ecrã; impressão em A4 completo)
               </p>

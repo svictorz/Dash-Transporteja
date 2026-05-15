@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Shield, Check, X, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react'
+import { Shield, Check, X, Eye, EyeOff, Loader2, AlertCircle, Sun, Moon, Palette } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useTheme } from '@/lib/hooks/useTheme'
 
 export default function ConfiguracoesPage() {
-  const router = useRouter()
+  const { theme, toggleTheme, ready: themeReady } = useTheme()
   const [security, setSecurity] = useState({
     twoFactor: false
   })
@@ -121,6 +121,59 @@ export default function ConfiguracoesPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Aparência / tema */}
+        <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-violet-100 dark:bg-violet-950/60 rounded-lg flex items-center justify-center">
+              <Palette className="w-5 h-5 text-violet-600 dark:text-violet-300" />
+            </div>
+            <h2 className="text-lg font-bold text-gray-900">Aparência</h2>
+          </div>
+
+          <p className="text-sm text-gray-600 mb-4">
+            Escolha o tema da interface. A preferência fica salva neste navegador.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center gap-3 min-w-0">
+              <Sun className="w-6 h-6 text-amber-500 shrink-0" aria-hidden />
+              <div>
+                <p className="font-medium text-gray-900">Claro</p>
+                <p className="text-xs text-gray-500">Sol — fundo claro</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={theme === 'dark'}
+              aria-label={theme === 'dark' ? 'Alternar para modo claro' : 'Alternar para modo escuro'}
+              disabled={!themeReady}
+              onClick={toggleTheme}
+              className="relative h-8 w-14 shrink-0 rounded-full bg-gray-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 dark:bg-slate-600 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50"
+            >
+              <span
+                className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform duration-200 ease-out ${
+                  theme === 'dark' ? 'translate-x-6' : 'translate-x-0'
+                }`}
+                aria-hidden
+              />
+            </button>
+
+            <div className="flex items-center gap-3 min-w-0">
+              <div>
+                <p className="font-medium text-gray-900">Escuro</p>
+                <p className="text-xs text-gray-500">Lua — fundo escuro</p>
+              </div>
+              <Moon className="w-6 h-6 text-indigo-400 shrink-0" aria-hidden />
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-500 mt-3">
+            {theme === 'dark' ? 'Modo escuro ativo.' : 'Modo claro ativo.'}
+          </p>
+        </div>
+
         {/* Segurança */}
         <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
           <div className="flex items-center gap-3 mb-6">

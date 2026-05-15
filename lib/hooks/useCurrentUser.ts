@@ -9,6 +9,16 @@ export interface CurrentUser {
   email: string
   name: string | null
   role: DashboardUserRole | null
+  /**
+   * Indica se a leitura do role em public.users foi conclusiva.
+   *  - `true`  → resposta válida do banco (mesmo que role venha null por
+   *              registro inexistente). Camada de UI pode confiar e
+   *              bloquear acesso se necessário.
+   *  - `false` → falhas transitórias (timeout/rede) exauriram os retries.
+   *              Render otimista: NÃO bloqueie o painel; a próxima
+   *              tentativa (refresh / re-render) pode resolver.
+   */
+  roleResolved: boolean
 }
 
 interface UseCurrentUserResult {
@@ -19,7 +29,19 @@ interface UseCurrentUserResult {
 }
 
 const SESSION_TIMEOUT_MS = 4000
-const ROLE_TIMEOUT_MS = 5000
+/**
+ * Timeout por tentativa. Mais generoso que antes (5s era curto demais para
+ * 3G / picos de latência da Vercel/Supabase em horário de pico). Combinado
+ * com `ROLE_MAX_ATTEMPTS`, dá no pior caso ~24s antes de desistir, o que é
+ * aceitável para evitar a tela de "Acesso ao CRM pendente" falso-positiva.
+ */
+const ROLE_TIMEOUT_MS = 8000
+/** Número de tentativas para ler o role em public.users (1 inicial + 2 retries). */
+const ROLE_MAX_ATTEMPTS = 3
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise((resolve) => {
@@ -77,24 +99,71 @@ export function useCurrentUser(): UseCurrentUserResult {
       type RoleRow = { id: string; email: string | null; name: string | null; role: string | null }
       type RoleQueryResult = { data: RoleRow | null; error: { message: string } | null }
 
-      const rolePromise: Promise<RoleQueryResult> = Promise.resolve(
-        supabase.from('users').select('id, email, name, role').eq('id', uid).single(),
-      ).then(({ data, error }) => ({
-        data: data as RoleRow | null,
-        error: error ? { message: error.message } : null,
-      }))
+      /**
+       * Tenta ler o role com retries exponenciais. Erros transitórios
+       * (timeout, instabilidade de rede, hiccup do PostgREST) NÃO podem
+       * derrubar o usuário para a tela "Acesso ao CRM pendente" — isso só
+       * deve acontecer quando temos certeza de que o registro em
+       * public.users está faltando/com role inválido.
+       */
+      let lastResult: RoleQueryResult = { data: null, error: { message: 'not_attempted' } }
+      let transientFailure = false
+      for (let attempt = 1; attempt <= ROLE_MAX_ATTEMPTS; attempt++) {
+        const rolePromise: Promise<RoleQueryResult> = Promise.resolve(
+          supabase.from('users').select('id, email, name, role').eq('id', uid).single(),
+        ).then(({ data, error }) => ({
+          data: data as RoleRow | null,
+          error: error ? { message: error.message } : null,
+        }))
 
-      const roleResult = await withTimeout<RoleQueryResult>(rolePromise, ROLE_TIMEOUT_MS, {
-        data: null,
-        error: { message: 'timeout' },
-      })
+        lastResult = await withTimeout<RoleQueryResult>(rolePromise, ROLE_TIMEOUT_MS, {
+          data: null,
+          error: { message: 'timeout' },
+        })
 
-      if (!mountedRef.current) return
+        if (!mountedRef.current) return
 
-      const { data, error: err } = roleResult
+        if (lastResult.data) break
+
+        const errMsg = lastResult.error?.message ?? ''
+        // PGRST116 = single() não encontrou linha — não é transiente, é
+        // "user não existe em public.users". Não vale a pena retry.
+        const isNotFound = errMsg.includes('PGRST116') || errMsg.toLowerCase().includes('no rows')
+        if (isNotFound) break
+
+        // Demais erros (timeout, network, 5xx) são transientes — retry.
+        transientFailure = true
+        if (attempt < ROLE_MAX_ATTEMPTS) {
+          await sleep(600 * attempt) // 600ms, 1200ms
+          if (!mountedRef.current) return
+        }
+      }
+
+      const { data, error: err } = lastResult
 
       if (err || !data) {
-        setUser({ id: uid, email: sessionEmail, name: null, role: null })
+        if (transientFailure) {
+          // Falha transitória após retries — não confirmamos role, mas
+          // também não bloqueamos o painel. Mantemos o usuário com role
+          // null, o `roleResolved=false` sinaliza que a verificação é
+          // inconclusiva (camada acima decide ser otimista).
+          setUser({
+            id: uid,
+            email: sessionEmail,
+            name: null,
+            role: null,
+            roleResolved: false,
+          })
+        } else {
+          // De fato não há registro em public.users — role é nulo confirmado.
+          setUser({
+            id: uid,
+            email: sessionEmail,
+            name: null,
+            role: null,
+            roleResolved: true,
+          })
+        }
         return
       }
 
@@ -103,6 +172,7 @@ export function useCurrentUser(): UseCurrentUserResult {
         email: data.email ?? sessionEmail,
         name: data.name ?? null,
         role: (data.role as DashboardUserRole) ?? null,
+        roleResolved: true,
       })
     } catch (e: unknown) {
       if (!mountedRef.current) return

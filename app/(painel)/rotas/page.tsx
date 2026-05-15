@@ -16,10 +16,14 @@ import { Client, ensureClientFromRoute } from '@/lib/services/clients'
 import { Driver } from '@/lib/services/drivers'
 import CEPInput from '@/components/transporteja/CEPInput'
 import { CEPData } from '@/lib/services/cep'
+import { findCityMatch, prefetchCityIndex } from '@/lib/services/ibge'
 import { supabase } from '@/lib/supabase/client'
 import { useAuthState } from '@/lib/hooks/useAuthState'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { useDebouncedRouteDistance } from '@/lib/hooks/useDebouncedRouteDistance'
+import { equalsFold, foldText } from '@/lib/utils/strings'
+import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
+import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 
 const TAXES_PERCENT_OPTIONS = [0, 10, 12, 18] as const
 
@@ -120,14 +124,102 @@ const PAYMENT_STATUS_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
 const PAYMENT_TYPE_OPTIONS = ['Pix', 'Cartão de crédito', 'Transferencia', 'Boleto'] as const
 const DRIVER_PAYMENT_TYPE_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
 
+function ClientContactSuggestionBlock({
+  matched,
+  onUsePhone,
+  onUseEmail,
+  onUseBoth,
+}: {
+  matched: Client | null
+  onUsePhone: () => void
+  onUseEmail: () => void
+  onUseBoth: () => void
+}) {
+  if (!matched) return null
+  const phone = (matched.whatsapp ?? '').trim()
+  const email = (matched.email ?? '').trim()
+  if (!phone && !email) return null
+  const hasBoth = Boolean(phone && email)
+  return (
+    <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/90 p-4">
+      <p className="text-sm font-semibold text-sky-950">Sugestão do seu cadastro</p>
+      <p className="text-xs text-sky-900/85 mt-1 leading-relaxed">
+        Telefone e e-mail abaixo vêm do cliente <span className="font-medium">{matched.company_name}</span> no seu
+        cadastro. Use os botões só se forem os mesmos dados deste frete.
+      </p>
+      <dl className="mt-3 space-y-2 text-xs text-gray-800">
+        {phone ? (
+          <div>
+            <dt className="font-medium text-gray-600">Telefone cadastrado</dt>
+            <dd className="mt-0.5 break-all tabular-nums">{phone}</dd>
+          </div>
+        ) : null}
+        {email ? (
+          <div>
+            <dt className="font-medium text-gray-600">E-mail cadastrado</dt>
+            <dd className="mt-0.5 break-all">{email}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {phone ? (
+          <button
+            type="button"
+            onClick={onUsePhone}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-sky-300 text-sky-900 hover:bg-sky-100 transition-colors"
+          >
+            <Phone className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            Usar este telefone
+          </button>
+        ) : null}
+        {email ? (
+          <button
+            type="button"
+            onClick={onUseEmail}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-sky-300 text-sky-900 hover:bg-sky-100 transition-colors"
+          >
+            <Mail className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            Usar este e-mail
+          </button>
+        ) : null}
+        {hasBoth ? (
+          <button
+            type="button"
+            onClick={onUseBoth}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-800 text-white hover:bg-sky-900 transition-colors"
+          >
+            Usar telefone e e-mail
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export default function RotasPage() {
   const { session } = useAuthState()
   const { user: currentUser } = useCurrentUser()
   const isAdminUser = currentUser?.role === 'admin'
+  /** Motorista vê a rota mas não envia/remove comprovantes (anexos são do escritório). */
+  const canManageFreightDocuments = currentUser?.role !== 'driver'
   const { routes, loading: routesLoading, error: routesError, createRoute, updateRoute, deleteRoute } = useRoutes()
   const { clients, loading: clientsLoading } = useClients()
   const { drivers, loading: driversLoading } = useDrivers()
-  
+
+  /** Nesta página, só fretes criados pelo próprio usuário (não a visão “geral” do CRM). */
+  const myRoutes = useMemo(() => {
+    const uid = session?.user?.id
+    if (!uid) return []
+    return routes.filter((r) => r.created_by_user_id === uid)
+  }, [routes, session?.user?.id])
+
+  /** Clientes cadastrados pelo próprio usuário (sugestões e datalist na rota). */
+  const myClients = useMemo(() => {
+    const uid = session?.user?.id
+    if (!uid) return []
+    return clients.filter((c) => c.created_by_user_id === uid)
+  }, [clients, session?.user?.id])
+
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'>('all')
   const [selectedRoute, setSelectedRoute] = useState<RouteDisplayData | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -154,6 +246,7 @@ export default function RotasPage() {
     companyEmail: '',
     weight: '',
     freightValue: '',
+    cteValue: '',
     driverValue: '',
     taxesValue: '',
     netFreightValue: '',
@@ -201,10 +294,10 @@ export default function RotasPage() {
 
   // Combinar rotas com dados de clientes e motoristas
   const routesWithDetails = useMemo(() => {
-    return routes.map(route => {
-      const client = clients.find(c => 
-        c.company_name === route.company_name || 
-        (route.company_email && c.email === route.company_email)
+    return myRoutes.map(route => {
+      const client = myClients.find(c =>
+        equalsFold(c.company_name, route.company_name) ||
+        (!!route.company_email && equalsFold(c.email, route.company_email))
       )
       const driver = route.driver_id
         ? drivers.find(d => d.id === route.driver_id)
@@ -216,7 +309,7 @@ export default function RotasPage() {
         driver
       } as RouteDisplayData
     })
-  }, [routes, clients, drivers])
+  }, [myRoutes, myClients, drivers])
 
   const filteredRoutes = useMemo(() => {
     return routesWithDetails.filter(route => {
@@ -225,13 +318,13 @@ export default function RotasPage() {
   }, [routesWithDetails, filterStatus])
 
   const statusCounts = useMemo(() => ({
-    all: routes.length,
-    pending: routes.filter(r => r.status === 'pending').length,
-    inTransit: routes.filter(r => r.status === 'inTransit').length,
-    pickedUp: routes.filter(r => r.status === 'pickedUp').length,
-    delivered: routes.filter(r => r.status === 'delivered').length,
-    cancelled: routes.filter(r => r.status === 'cancelled').length
-  }), [routes])
+    all: myRoutes.length,
+    pending: myRoutes.filter(r => r.status === 'pending').length,
+    inTransit: myRoutes.filter(r => r.status === 'inTransit').length,
+    pickedUp: myRoutes.filter(r => r.status === 'pickedUp').length,
+    delivered: myRoutes.filter(r => r.status === 'delivered').length,
+    cancelled: myRoutes.filter(r => r.status === 'cancelled').length
+  }), [myRoutes])
 
   const getStatusDisplay = (status: string) => {
     switch (status) {
@@ -337,9 +430,9 @@ export default function RotasPage() {
 
   const handleOpenEdit = (route: RouteDisplayData) => {
     setEditingRoute(route)
-    const client = clients.find(c => 
-      c.company_name === route.company_name || 
-      (route.company_email && c.email === route.company_email)
+    const client = myClients.find(c =>
+      equalsFold(c.company_name, route.company_name) ||
+      (!!route.company_email && equalsFold(c.email, route.company_email))
     )
     setCompanyInput(client?.company_name || route.company_name || '')
     setFormData({
@@ -353,6 +446,7 @@ export default function RotasPage() {
       companyEmail: route.company_email || client?.email || '',
       weight: route.weight,
       freightValue: route.freight_value != null ? String(route.freight_value).replace('.', ',') : '',
+      cteValue: route.cte_value != null ? String(route.cte_value).replace('.', ',') : '',
       driverValue: route.driver_value != null ? String(route.driver_value).replace('.', ',') : '',
       taxesValue: route.taxes_value != null ? String(route.taxes_value).replace('.', ',') : '',
       netFreightValue: route.net_freight_value != null ? String(route.net_freight_value).replace('.', ',') : '',
@@ -391,6 +485,7 @@ export default function RotasPage() {
   }
 
   const handleUploadDocuments = async (documentKey: DocumentKey, files: FileList | null) => {
+    if (!canManageFreightDocuments) return
     if (!files || files.length === 0 || !selectedRoute) return
 
     const list = Array.from(files)
@@ -452,7 +547,8 @@ export default function RotasPage() {
 
   const handleRemoveDocument = async (documentKey: DocumentKey, doc: RouteDocument) => {
     if (!selectedRoute) return
-    if (!confirm('Remover esta imagem?')) return
+    if (!canManageFreightDocuments) return
+    if (!confirm('Remover este arquivo?')) return
 
     try {
       setRemovingDocumentPath(doc.path)
@@ -472,27 +568,75 @@ export default function RotasPage() {
 
   const formatDate = (timestamp: string) => {
     const date = new Date(timestamp)
+    if (isNaN(date.getTime())) return { date: '', time: '' }
     return {
-      date: date.toLocaleDateString('pt-BR'),
-      time: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      date: date.toLocaleDateString('pt-BR', DATE_BR_NUMERIC),
+      time: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     }
   }
 
+  /**
+   * Feedback do lookup da cidade no IBGE para cada campo. Mantém UX leve:
+   * mostra o nome oficial + UF quando achou, "não reconhecido" quando errou.
+   */
+  type CityFeedback = { kind: 'idle' } | { kind: 'loading' } | { kind: 'ok'; name: string; state: string } | { kind: 'notfound' }
+  const [originCityFeedback, setOriginCityFeedback] = useState<CityFeedback>({ kind: 'idle' })
+  const [destinationCityFeedback, setDestinationCityFeedback] = useState<CityFeedback>({ kind: 'idle' })
+
+  /** Quando o modal abre, pré-carrega a lista do IBGE em background. */
+  useEffect(() => {
+    if (showCreateModal || showEditModal) {
+      prefetchCityIndex()
+    }
+  }, [showCreateModal, showEditModal])
+
+  const resolveCityField = useCallback(
+    async (field: 'origin' | 'destination') => {
+      const cityValue = field === 'origin' ? formData.origin : formData.destination
+      const stateValue = field === 'origin' ? formData.originState : formData.destinationState
+      const setFeedback = field === 'origin' ? setOriginCityFeedback : setDestinationCityFeedback
+
+      if (!cityValue.trim()) {
+        setFeedback({ kind: 'idle' })
+        return
+      }
+      setFeedback({ kind: 'loading' })
+      const match = await findCityMatch(cityValue, stateValue)
+      if (!match) {
+        setFeedback({ kind: 'notfound' })
+        return
+      }
+      // Atualiza só se houver mudança real (evita re-render desnecessário).
+      setFormData((prev) => {
+        if (field === 'origin') {
+          if (prev.origin === match.name && prev.originState === match.state) return prev
+          return { ...prev, origin: match.name, originState: match.state }
+        }
+        if (prev.destination === match.name && prev.destinationState === match.state) return prev
+        return { ...prev, destination: match.name, destinationState: match.state }
+      })
+      setFeedback({ kind: 'ok', name: match.name, state: match.state })
+    },
+    [formData.origin, formData.destination, formData.originState, formData.destinationState],
+  )
+
   const findCompanyByInput = useCallback((value: string): Client | null => {
-    const q = value.trim().toLowerCase()
+    // Match EXATO apenas (ignorando caixa e acentos).
+    // Anteriormente fazíamos um segundo find por substring (.includes), o
+    // que "casava" qualquer cliente parcial. Ex.: digitar "Padaria" trazia
+    // "Padaria do João", então a rota nova era gravada com esse nome e o
+    // cliente novo "Padaria do Pedro" nunca era criado.
+    const q = foldText(value)
     if (!q) return null
     return (
-      clients.find((c) =>
-        c.company_name.toLowerCase() === q || c.email.toLowerCase() === q || c.responsible.toLowerCase() === q
-      ) ||
-      clients.find((c) =>
-        c.company_name.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        c.responsible.toLowerCase().includes(q)
-      ) ||
-      null
+      myClients.find(
+        (c) =>
+          equalsFold(c.company_name, value) ||
+          equalsFold(c.email, value) ||
+          equalsFold(c.responsible, value),
+      ) ?? null
     )
-  }, [clients])
+  }, [myClients])
 
   /** Cliente do cadastro ou nome digitado (texto livre) para preencher os campos da rota. */
   const resolveCompanyForRoute = useCallback(
@@ -530,22 +674,6 @@ export default function RotasPage() {
     [companyInput, findCompanyByInput]
   )
 
-  const formatDateBR = (dateString: string) => {
-    if (!dateString) return ''
-    // Se já está formatado (ex: "05 Out, 2025"), retornar como está
-    if (dateString.includes(',')) return dateString
-    
-    try {
-    const date = new Date(dateString)
-    const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-    const day = date.getDate().toString().padStart(2, '0')
-    const month = months[date.getMonth()]
-    const year = date.getFullYear()
-    return `${day} ${month}, ${year}`
-    } catch {
-      return dateString
-    }
-  }
 
   const formatCurrencyBR = (value?: number | null) => {
     if (value == null) return '—'
@@ -581,13 +709,6 @@ export default function RotasPage() {
     if (freightValue == null) return null
     const taxesValue = calculateTaxesValue(freightValue, taxesPercent) ?? 0
     return Math.round((freightValue - taxesValue - (driverValue ?? 0)) * 100) / 100
-  }
-
-  const getWhatsAppWebUrl = (phone?: string | null) => {
-    const digits = phone?.replace(/\D/g, '') || ''
-    if (!digits) return null
-    const normalized = digits.startsWith('55') ? digits : `55${digits}`
-    return `https://web.whatsapp.com/send?phone=${normalized}`
   }
 
   const handleCreateRoute = async (e: React.FormEvent) => {
@@ -654,6 +775,7 @@ export default function RotasPage() {
       driver_payment_status: formData.driverPaymentStatus.trim() || null,
       driver_payment_type: formData.driverPaymentType.trim() || null,
       nf_value: parseCurrencyInput(formData.nfValue),
+      cte_value: parseCurrencyInput(formData.cteValue),
       observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
@@ -759,6 +881,7 @@ export default function RotasPage() {
         driver_payment_status: formData.driverPaymentStatus.trim() || null,
         driver_payment_type: formData.driverPaymentType.trim() || null,
         nf_value: parseCurrencyInput(formData.nfValue),
+        cte_value: parseCurrencyInput(formData.cteValue),
         observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
@@ -799,6 +922,8 @@ export default function RotasPage() {
     setCompanyInput('')
     setOriginCEP('')
     setDestinationCEP('')
+    setOriginCityFeedback({ kind: 'idle' })
+    setDestinationCityFeedback({ kind: 'idle' })
     setFormData({
       origin: '',
       originState: '',
@@ -810,6 +935,7 @@ export default function RotasPage() {
       companyEmail: '',
       weight: '',
       freightValue: '',
+      cteValue: '',
       driverValue: '',
       taxesValue: '',
       netFreightValue: '',
@@ -834,6 +960,8 @@ export default function RotasPage() {
     setCompanyInput('')
     setOriginCEP('')
     setDestinationCEP('')
+    setOriginCityFeedback({ kind: 'idle' })
+    setDestinationCityFeedback({ kind: 'idle' })
     setFormData({
       origin: '',
       originState: '',
@@ -845,6 +973,7 @@ export default function RotasPage() {
       companyEmail: '',
       weight: '',
       freightValue: '',
+      cteValue: '',
       driverValue: '',
       taxesValue: '',
       netFreightValue: '',
@@ -887,6 +1016,18 @@ export default function RotasPage() {
       {/* Filtros de Status - Estilo Referência */}
       <div className="flex items-center gap-3 flex-wrap">
         <button
+          type="button"
+          onClick={() => setFilterStatus('all')}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+            filterStatus === 'all'
+              ? 'bg-gray-800 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Todos {statusCounts.all}
+        </button>
+        <button
+          type="button"
           onClick={() => setFilterStatus('pending')}
           className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
             filterStatus === 'pending'
@@ -1177,9 +1318,25 @@ export default function RotasPage() {
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
                       <Phone className="w-3 h-3" />
-                      Telefone
+                      WhatsApp
                     </p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.whatsapp || selectedRoute.company_phone || 'N/A'}</p>
+                    {(() => {
+                      const raw =
+                        selectedRoute.client?.whatsapp || selectedRoute.company_phone || ''
+                      const href = getWhatsAppWebUrl(raw)
+                      return href ? (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-green-700 hover:text-green-800 underline-offset-2 hover:underline"
+                        >
+                          {raw}
+                        </a>
+                      ) : (
+                        <p className="text-sm font-medium text-gray-900">N/A</p>
+                      )
+                    })()}
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
@@ -1306,11 +1463,11 @@ export default function RotasPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Data de Coleta</p>
-                    <p className="text-sm font-medium text-gray-900">{formatDateBR(selectedRoute.pickup_date)}</p>
+                    <p className="text-sm font-medium text-gray-900">{formatDateDdMmYyyy(selectedRoute.pickup_date)}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Previsão de Entrega</p>
-                    <p className="text-sm font-medium text-gray-900">{formatDateBR(selectedRoute.estimated_delivery)}</p>
+                    <p className="text-sm font-medium text-gray-900">{formatDateDdMmYyyy(selectedRoute.estimated_delivery)}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
@@ -1318,6 +1475,12 @@ export default function RotasPage() {
                     <p className="text-xs text-gray-500 mb-1">Valor do Frete</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(selectedRoute.freight_value ?? selectedRoute.nf_value)}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Valor de CTE</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrencyBR(selectedRoute.cte_value)}
                     </p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
@@ -1398,14 +1561,17 @@ export default function RotasPage() {
                   <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                     <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
                       <p className="text-xs text-gray-700 font-semibold uppercase tracking-wide">
-                        Adicione fotos / documentos
+                        {canManageFreightDocuments ? 'Adicione fotos / documentos' : 'Documentos do frete'}
                       </p>
                       <span className="text-[11px] text-gray-500">
-                        {documents.freteDocs.length} {documents.freteDocs.length === 1 ? 'imagem' : 'imagens'}
+                        {documents.freteDocs.length}{' '}
+                        {documents.freteDocs.length === 1 ? 'arquivo' : 'arquivos'}
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 mb-3">
-                      Nota fiscal, CT-e, comprovantes de pagamento (PDF) e demais anexos do frete. As imagens são comprimidas (sem cortar) antes do envio. PDF até 20 MB.
+                      {canManageFreightDocuments
+                        ? 'Nota fiscal, CT-e, comprovantes de pagamento (PDF) e demais anexos do frete. As imagens são comprimidas (sem cortar) antes do envio. PDF até 20 MB.'
+                        : 'Visualização dos anexos. Envio e exclusão ficam a cargo do time comercial ou administrativo.'}
                     </p>
                     <input
                       id="upload-frete-docs"
@@ -1413,30 +1579,32 @@ export default function RotasPage() {
                       accept="image/*,application/pdf"
                       multiple
                       className="hidden"
-                      disabled={uploadingDocument === 'freteDocs'}
+                      disabled={!canManageFreightDocuments || uploadingDocument === 'freteDocs'}
                       onChange={(e) => {
                         const files = e.target.files
                         void handleUploadDocuments('freteDocs', files)
                         e.target.value = ''
                       }}
                     />
-                    <div className="flex flex-wrap gap-2">
-                      <label
-                        htmlFor="upload-frete-docs"
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg text-gray-700 ${
-                          uploadingDocument === 'freteDocs'
-                            ? 'cursor-wait opacity-60'
-                            : 'hover:bg-gray-100 cursor-pointer'
-                        }`}
-                      >
-                        {uploadingDocument === 'freteDocs' ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Upload className="w-3.5 h-3.5" />
-                        )}
-                        {uploadingDocument === 'freteDocs' ? 'Enviando...' : 'Adicionar arquivos'}
-                      </label>
-                    </div>
+                    {canManageFreightDocuments && (
+                      <div className="flex flex-wrap gap-2">
+                        <label
+                          htmlFor="upload-frete-docs"
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg text-gray-700 ${
+                            uploadingDocument === 'freteDocs'
+                              ? 'cursor-wait opacity-60'
+                              : 'hover:bg-gray-100 cursor-pointer'
+                          }`}
+                        >
+                          {uploadingDocument === 'freteDocs' ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Upload className="w-3.5 h-3.5" />
+                          )}
+                          {uploadingDocument === 'freteDocs' ? 'Enviando...' : 'Adicionar arquivos'}
+                        </label>
+                      </div>
+                    )}
 
                     {documents.freteDocs.length > 0 && (
                       <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -1473,25 +1641,27 @@ export default function RotasPage() {
                                   <img
                                     src={doc.url}
                                     alt="Documento do frete"
-                                    className="w-full h-full object-contain transition-transform group-hover:scale-[1.03]"
+                                    className="h-full w-full object-contain transition-opacity group-hover:opacity-95"
                                     loading="lazy"
                                   />
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveDocument('freteDocs', doc)}
-                                disabled={isRemoving}
-                                className="absolute top-1.5 right-1.5 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/90 text-red-600 shadow border border-gray-200 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-wait"
-                                title="Remover imagem"
-                                aria-label="Remover imagem"
-                              >
-                                {isRemoving ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                )}
-                              </button>
+                              {canManageFreightDocuments && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDocument('freteDocs', doc)}
+                                  disabled={isRemoving}
+                                  className="absolute top-1.5 right-1.5 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/90 text-red-600 shadow border border-gray-200 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                                  title="Remover arquivo"
+                                  aria-label="Remover arquivo"
+                                >
+                                  {isRemoving ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              )}
                             </div>
                           )
                         })}
@@ -1507,26 +1677,26 @@ export default function RotasPage() {
 
       {/* Modal de Visualização de Foto */}
       {selectedPhoto && (
-        <div 
-          className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4"
+        <div
+          className="fixed inset-0 z-[60] overflow-y-auto overflow-x-hidden bg-black/90 p-4 flex items-center justify-center min-h-0"
           onClick={() => setSelectedPhoto(null)}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="relative max-w-5xl w-full max-h-[90vh]"
+            className="relative my-auto flex w-full max-w-5xl shrink-0 justify-center"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => setSelectedPhoto(null)}
-              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
+              className="absolute right-2 top-2 z-10 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20 sm:right-0 sm:top-0"
             >
               <X className="w-6 h-6" />
             </button>
             <img
               src={selectedPhoto}
-              alt="Foto do check-in"
-              className="w-full h-full object-contain rounded-lg"
+              alt="Documento do frete ampliado"
+              className="max-h-[min(90vh,calc(100dvh-2rem))] w-auto max-w-full rounded-lg object-contain"
               onError={(e) => {
                 const target = e.target as HTMLImageElement
                 target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="800" height="600"%3E%3Crect fill="%23ddd" width="800" height="600"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImagem não disponível%3C/text%3E%3C/svg%3E'
@@ -1577,7 +1747,7 @@ export default function RotasPage() {
                   placeholder="Digite nome da empresa, responsável ou e-mail"
                 />
                 <datalist id="companies-list-create">
-                  {clients.map((c) => (
+                  {myClients.map((c) => (
                     <option key={c.id} value={c.company_name}>
                       {`${c.responsible} • ${c.city}/${c.state}`}
                     </option>
@@ -1585,11 +1755,36 @@ export default function RotasPage() {
                 </datalist>
                 <p className="text-xs text-gray-500 mt-1">
                   {companyInputMatch
-                    ? `${companyInputMatch.company_name} • ${companyInputMatch.responsible} (cadastro)`
+                    ? `${companyInputMatch.company_name} • ${companyInputMatch.responsible} (seu cadastro)`
                     : companyInput.trim()
                       ? `Será usado o nome digitado: "${companyInput.trim()}"`
                       : 'Escolha um cliente da lista ou digite o nome da empresa'}
                 </p>
+                <ClientContactSuggestionBlock
+                  matched={companyInputMatch}
+                  onUsePhone={() => {
+                    if (!companyInputMatch) return
+                    const v = (companyInputMatch.whatsapp ?? '').trim()
+                    if (!v) return
+                    setFormData((prev) => ({ ...prev, companyPhone: v }))
+                  }}
+                  onUseEmail={() => {
+                    if (!companyInputMatch) return
+                    const v = (companyInputMatch.email ?? '').trim()
+                    if (!v) return
+                    setFormData((prev) => ({ ...prev, companyEmail: v }))
+                  }}
+                  onUseBoth={() => {
+                    if (!companyInputMatch) return
+                    const p = (companyInputMatch.whatsapp ?? '').trim()
+                    const e = (companyInputMatch.email ?? '').trim()
+                    setFormData((prev) => ({
+                      ...prev,
+                      ...(p ? { companyPhone: p } : {}),
+                      ...(e ? { companyEmail: e } : {}),
+                    }))
+                  }}
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1735,10 +1930,29 @@ export default function RotasPage() {
                     type="text"
                     required
                     value={formData.origin}
-                    onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, origin: e.target.value })
+                      setOriginCityFeedback({ kind: 'idle' })
+                    }}
+                    onBlur={() => { void resolveCityField('origin') }}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                       placeholder="Digite a cidade ou use Buscar no CEP acima"
                   />
+                  {originCityFeedback.kind === 'loading' && (
+                    <p className="mt-1 text-xs text-gray-500 flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Verificando cidade...
+                    </p>
+                  )}
+                  {originCityFeedback.kind === 'ok' && (
+                    <p className="mt-1 text-xs text-green-700">
+                      Cidade reconhecida: <strong>{originCityFeedback.name}</strong> ({originCityFeedback.state})
+                    </p>
+                  )}
+                  {originCityFeedback.kind === 'notfound' && (
+                    <p className="mt-1 text-xs text-amber-600">
+                      Não encontramos essa cidade na base do IBGE. Confira se está escrita corretamente.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -1751,7 +1965,7 @@ export default function RotasPage() {
                     value={formData.originState}
                     onChange={(e) => setFormData({ ...formData, originState: e.target.value.toUpperCase() })}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Estado (preenchido automaticamente)"
+                      placeholder="UF (preenchida ao sair do campo Cidade)"
                   />
                 </div>
               </div>
@@ -1800,10 +2014,29 @@ export default function RotasPage() {
                     type="text"
                     required
                     value={formData.destination}
-                    onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, destination: e.target.value })
+                      setDestinationCityFeedback({ kind: 'idle' })
+                    }}
+                    onBlur={() => { void resolveCityField('destination') }}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                       placeholder="Digite a cidade ou use Buscar no CEP acima"
                   />
+                  {destinationCityFeedback.kind === 'loading' && (
+                    <p className="mt-1 text-xs text-gray-500 flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Verificando cidade...
+                    </p>
+                  )}
+                  {destinationCityFeedback.kind === 'ok' && (
+                    <p className="mt-1 text-xs text-green-700">
+                      Cidade reconhecida: <strong>{destinationCityFeedback.name}</strong> ({destinationCityFeedback.state})
+                    </p>
+                  )}
+                  {destinationCityFeedback.kind === 'notfound' && (
+                    <p className="mt-1 text-xs text-amber-600">
+                      Não encontramos essa cidade na base do IBGE. Confira se está escrita corretamente.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -1816,7 +2049,7 @@ export default function RotasPage() {
                     value={formData.destinationState}
                     onChange={(e) => setFormData({ ...formData, destinationState: e.target.value.toUpperCase() })}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Estado (preenchido automaticamente)"
+                      placeholder="UF (preenchida ao sair do campo Cidade)"
                   />
                 </div>
               </div>
@@ -1874,18 +2107,34 @@ export default function RotasPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Valor do Frete
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={formData.freightValue}
-                    onChange={(e) => setFormData({ ...formData, freightValue: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: 12500,00"
-                  />
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Valor do Frete
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={formData.freightValue}
+                      onChange={(e) => setFormData({ ...formData, freightValue: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Ex: 12500,00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Valor de CTE{' '}
+                      <span className="text-gray-500 font-normal">(opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={formData.cteValue}
+                      onChange={(e) => setFormData({ ...formData, cteValue: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Ex: 150,00"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -2078,7 +2327,7 @@ export default function RotasPage() {
                   placeholder="Digite nome da empresa, responsável ou e-mail"
                 />
                 <datalist id="companies-list-edit">
-                  {clients.map((c) => (
+                  {myClients.map((c) => (
                     <option key={c.id} value={c.company_name}>
                       {`${c.responsible} • ${c.city}/${c.state}`}
                     </option>
@@ -2086,11 +2335,36 @@ export default function RotasPage() {
                 </datalist>
                 <p className="text-xs text-gray-500 mt-1">
                   {companyInputMatch
-                    ? `${companyInputMatch.company_name} • ${companyInputMatch.responsible} (cadastro)`
+                    ? `${companyInputMatch.company_name} • ${companyInputMatch.responsible} (seu cadastro)`
                     : companyInput.trim()
                       ? `Será usado o nome digitado: "${companyInput.trim()}"`
                       : 'Escolha um cliente da lista ou digite o nome da empresa'}
                 </p>
+                <ClientContactSuggestionBlock
+                  matched={companyInputMatch}
+                  onUsePhone={() => {
+                    if (!companyInputMatch) return
+                    const v = (companyInputMatch.whatsapp ?? '').trim()
+                    if (!v) return
+                    setFormData((prev) => ({ ...prev, companyPhone: v }))
+                  }}
+                  onUseEmail={() => {
+                    if (!companyInputMatch) return
+                    const v = (companyInputMatch.email ?? '').trim()
+                    if (!v) return
+                    setFormData((prev) => ({ ...prev, companyEmail: v }))
+                  }}
+                  onUseBoth={() => {
+                    if (!companyInputMatch) return
+                    const p = (companyInputMatch.whatsapp ?? '').trim()
+                    const e = (companyInputMatch.email ?? '').trim()
+                    setFormData((prev) => ({
+                      ...prev,
+                      ...(p ? { companyPhone: p } : {}),
+                      ...(e ? { companyEmail: e } : {}),
+                    }))
+                  }}
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2236,10 +2510,29 @@ export default function RotasPage() {
                       type="text"
                       required
                       value={formData.origin}
-                      onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, origin: e.target.value })
+                        setOriginCityFeedback({ kind: 'idle' })
+                      }}
+                      onBlur={() => { void resolveCityField('origin') }}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                       placeholder="Digite a cidade ou use Buscar no CEP acima"
                     />
+                    {originCityFeedback.kind === 'loading' && (
+                      <p className="mt-1 text-xs text-gray-500 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Verificando cidade...
+                      </p>
+                    )}
+                    {originCityFeedback.kind === 'ok' && (
+                      <p className="mt-1 text-xs text-green-700">
+                        Cidade reconhecida: <strong>{originCityFeedback.name}</strong> ({originCityFeedback.state})
+                      </p>
+                    )}
+                    {originCityFeedback.kind === 'notfound' && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        Não encontramos essa cidade na base do IBGE. Confira se está escrita corretamente.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -2252,7 +2545,7 @@ export default function RotasPage() {
                       value={formData.originState}
                       onChange={(e) => setFormData({ ...formData, originState: e.target.value.toUpperCase() })}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Estado (preenchido automaticamente)"
+                      placeholder="UF (preenchida ao sair do campo Cidade)"
                     />
                   </div>
                 </div>
@@ -2301,10 +2594,29 @@ export default function RotasPage() {
                       type="text"
                       required
                       value={formData.destination}
-                      onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, destination: e.target.value })
+                        setDestinationCityFeedback({ kind: 'idle' })
+                      }}
+                      onBlur={() => { void resolveCityField('destination') }}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                       placeholder="Digite a cidade ou use Buscar no CEP acima"
                     />
+                    {destinationCityFeedback.kind === 'loading' && (
+                      <p className="mt-1 text-xs text-gray-500 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Verificando cidade...
+                      </p>
+                    )}
+                    {destinationCityFeedback.kind === 'ok' && (
+                      <p className="mt-1 text-xs text-green-700">
+                        Cidade reconhecida: <strong>{destinationCityFeedback.name}</strong> ({destinationCityFeedback.state})
+                      </p>
+                    )}
+                    {destinationCityFeedback.kind === 'notfound' && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        Não encontramos essa cidade na base do IBGE. Confira se está escrita corretamente.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -2317,7 +2629,7 @@ export default function RotasPage() {
                       value={formData.destinationState}
                       onChange={(e) => setFormData({ ...formData, destinationState: e.target.value.toUpperCase() })}
                       className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Estado (preenchido automaticamente)"
+                      placeholder="UF (preenchida ao sair do campo Cidade)"
                     />
                   </div>
                 </div>
@@ -2375,18 +2687,34 @@ export default function RotasPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Valor do Frete
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={formData.freightValue}
-                    onChange={(e) => setFormData({ ...formData, freightValue: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: 12500,00"
-                  />
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Valor do Frete
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={formData.freightValue}
+                      onChange={(e) => setFormData({ ...formData, freightValue: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Ex: 12500,00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Valor de CTE{' '}
+                      <span className="text-gray-500 font-normal">(opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={formData.cteValue}
+                      onChange={(e) => setFormData({ ...formData, cteValue: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Ex: 150,00"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
