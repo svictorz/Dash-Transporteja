@@ -44,6 +44,8 @@ export interface Route {
   nf_value?: number | null
   /** Valor de CTE (Conhecimento de Transporte Eletrônico), manual. */
   cte_value?: number | null
+  /** Valor de vale pedágio informado manualmente no cadastro do frete. */
+  vale_pedagio?: number | null
   observation?: string | null
   created_by_user_id?: string | null
   created_at?: string
@@ -88,6 +90,7 @@ export interface CreateRouteData {
   driver_payment_type?: string | null
   nf_value?: number | null
   cte_value?: number | null
+  vale_pedagio?: number | null
   observation?: string | null
   created_by_user_id?: string
 }
@@ -129,6 +132,7 @@ export interface UpdateRouteData {
   driver_payment_type?: string | null
   nf_value?: number | null
   cte_value?: number | null
+  vale_pedagio?: number | null
   observation?: string | null
 }
 

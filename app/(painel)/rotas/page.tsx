@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Route, MapPin, ArrowRight, X, Truck, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Upload, Eye, ChevronDown, FileText } from 'lucide-react'
 import { useRoutes } from '@/lib/hooks/useRoutes'
@@ -25,11 +26,11 @@ import { equalsFold, foldText } from '@/lib/utils/strings'
 import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 
-const TAXES_PERCENT_OPTIONS = [0, 10, 12, 18] as const
+const TAXES_PERCENT_OPTIONS = [0, 10, 12, 16, 18] as const
 
 function normalizeTaxesPercent(value: unknown): (typeof TAXES_PERCENT_OPTIONS)[number] {
   const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
-  if (n === 0 || n === 10 || n === 12 || n === 18) return n
+  if (n === 0 || n === 10 || n === 12 || n === 16 || n === 18) return n
   return 18
 }
 
@@ -39,7 +40,7 @@ function inferTaxesPercentFromValues(
   taxes: number | null | undefined,
 ): (typeof TAXES_PERCENT_OPTIONS)[number] {
   if (freight == null || freight <= 0 || taxes == null) return 18
-  for (const pct of [18, 12, 10, 0] as const) {
+  for (const pct of [18, 16, 12, 10, 0] as const) {
     const expected = Math.round(freight * (pct / 100) * 100) / 100
     if (Math.abs(expected - taxes) < 0.02) return pct
   }
@@ -48,7 +49,7 @@ function inferTaxesPercentFromValues(
 
 function getRouteTaxesPercent(route: RouteType): (typeof TAXES_PERCENT_OPTIONS)[number] {
   const raw = route.taxes_percent
-  if (raw === 0 || raw === 10 || raw === 12 || raw === 18) return raw
+  if (raw === 0 || raw === 10 || raw === 12 || raw === 16 || raw === 18) return raw
   return inferTaxesPercentFromValues(route.freight_value ?? route.nf_value ?? undefined, route.taxes_value ?? undefined)
 }
 
@@ -123,82 +124,14 @@ const ROUTE_STATUS_OPTIONS: RouteStatus[] = ['pending', 'pickedUp', 'inTransit',
 const PAYMENT_STATUS_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
 const PAYMENT_TYPE_OPTIONS = ['Pix', 'Cartão de crédito', 'Transferencia', 'Boleto'] as const
 const DRIVER_PAYMENT_TYPE_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
-
-function ClientContactSuggestionBlock({
-  matched,
-  onUsePhone,
-  onUseEmail,
-  onUseBoth,
-}: {
-  matched: Client | null
-  onUsePhone: () => void
-  onUseEmail: () => void
-  onUseBoth: () => void
-}) {
-  if (!matched) return null
-  const phone = (matched.whatsapp ?? '').trim()
-  const email = (matched.email ?? '').trim()
-  if (!phone && !email) return null
-  const hasBoth = Boolean(phone && email)
-  return (
-    <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/90 p-4">
-      <p className="text-sm font-semibold text-sky-950">Sugestão do seu cadastro</p>
-      <p className="text-xs text-sky-900/85 mt-1 leading-relaxed">
-        Telefone e e-mail abaixo vêm do cliente <span className="font-medium">{matched.company_name}</span> no seu
-        cadastro. Use os botões só se forem os mesmos dados deste frete.
-      </p>
-      <dl className="mt-3 space-y-2 text-xs text-gray-800">
-        {phone ? (
-          <div>
-            <dt className="font-medium text-gray-600">Telefone cadastrado</dt>
-            <dd className="mt-0.5 break-all tabular-nums">{phone}</dd>
-          </div>
-        ) : null}
-        {email ? (
-          <div>
-            <dt className="font-medium text-gray-600">E-mail cadastrado</dt>
-            <dd className="mt-0.5 break-all">{email}</dd>
-          </div>
-        ) : null}
-      </dl>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {phone ? (
-          <button
-            type="button"
-            onClick={onUsePhone}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-sky-300 text-sky-900 hover:bg-sky-100 transition-colors"
-          >
-            <Phone className="w-3.5 h-3.5 shrink-0" aria-hidden />
-            Usar este telefone
-          </button>
-        ) : null}
-        {email ? (
-          <button
-            type="button"
-            onClick={onUseEmail}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-sky-300 text-sky-900 hover:bg-sky-100 transition-colors"
-          >
-            <Mail className="w-3.5 h-3.5 shrink-0" aria-hidden />
-            Usar este e-mail
-          </button>
-        ) : null}
-        {hasBoth ? (
-          <button
-            type="button"
-            onClick={onUseBoth}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-800 text-white hover:bg-sky-900 transition-colors"
-          >
-            Usar telefone e e-mail
-          </button>
-        ) : null}
-      </div>
-    </div>
-  )
-}
+const MIN_COMPANY_SUGGEST_CHARS = 3
 
 export default function RotasPage() {
   const { session } = useAuthState()
   const { user: currentUser } = useCurrentUser()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const processedRouteQueryId = useRef<string | null>(null)
   const isAdminUser = currentUser?.role === 'admin'
   /** Motorista vê a rota mas não envia/remove comprovantes (anexos são do escritório). */
   const canManageFreightDocuments = currentUser?.role !== 'driver'
@@ -206,14 +139,17 @@ export default function RotasPage() {
   const { clients, loading: clientsLoading } = useClients()
   const { drivers, loading: driversLoading } = useDrivers()
 
-  /** Nesta página, só fretes criados pelo próprio usuário (não a visão “geral” do CRM). */
+  /**
+   * Visão da aba Rotas: cada usuário enxerga apenas os fretes que ele criou.
+   * (Admin continua com privilégios em outras áreas, mas aqui o escopo é "meus fretes".)
+   */
   const myRoutes = useMemo(() => {
     const uid = session?.user?.id
     if (!uid) return []
     return routes.filter((r) => r.created_by_user_id === uid)
   }, [routes, session?.user?.id])
 
-  /** Clientes cadastrados pelo próprio usuário (sugestões e datalist na rota). */
+  /** Clientes do próprio usuário para manter consistência com o escopo de "meus fretes". */
   const myClients = useMemo(() => {
     const uid = session?.user?.id
     if (!uid) return []
@@ -247,6 +183,7 @@ export default function RotasPage() {
     weight: '',
     freightValue: '',
     cteValue: '',
+    valePedagio: '',
     driverValue: '',
     taxesValue: '',
     netFreightValue: '',
@@ -428,7 +365,7 @@ export default function RotasPage() {
     void loadRouteDocuments(route.id)
   }
 
-  const handleOpenEdit = (route: RouteDisplayData) => {
+  const handleOpenEdit = useCallback((route: RouteDisplayData) => {
     setEditingRoute(route)
     const client = myClients.find(c =>
       equalsFold(c.company_name, route.company_name) ||
@@ -447,6 +384,7 @@ export default function RotasPage() {
       weight: route.weight,
       freightValue: route.freight_value != null ? String(route.freight_value).replace('.', ',') : '',
       cteValue: route.cte_value != null ? String(route.cte_value).replace('.', ',') : '',
+      valePedagio: route.vale_pedagio != null ? String(route.vale_pedagio).replace('.', ',') : '',
       driverValue: route.driver_value != null ? String(route.driver_value).replace('.', ',') : '',
       taxesValue: route.taxes_value != null ? String(route.taxes_value).replace('.', ',') : '',
       netFreightValue: route.net_freight_value != null ? String(route.net_freight_value).replace('.', ',') : '',
@@ -464,7 +402,31 @@ export default function RotasPage() {
       taxesPercent: String(getRouteTaxesPercent(route)),
     })
     setShowEditModal(true)
-  }
+  }, [myClients])
+
+  /** Abre edição quando o painel Performance envia `?route=<uuid>`. */
+  useEffect(() => {
+    const routeId = searchParams.get('route')
+    if (!routeId) {
+      processedRouteQueryId.current = null
+      return
+    }
+    if (processedRouteQueryId.current === routeId) return
+    if (routesLoading || clientsLoading || driversLoading) return
+
+    processedRouteQueryId.current = routeId
+    const match = routesWithDetails.find((r) => r.id === routeId)
+    if (match) handleOpenEdit(match)
+    router.replace('/rotas', { scroll: false })
+  }, [
+    searchParams,
+    routesLoading,
+    clientsLoading,
+    driversLoading,
+    routesWithDetails,
+    handleOpenEdit,
+    router,
+  ])
 
   const handleDeleteRoute = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir esta rota?')) return
@@ -674,6 +636,30 @@ export default function RotasPage() {
     [companyInput, findCompanyByInput]
   )
 
+  const companySuggestions = useMemo(() => {
+    const q = foldText(companyInput.trim())
+    if (q.length < MIN_COMPANY_SUGGEST_CHARS) return [] as Client[]
+
+    const seen = new Set<string>()
+    const filtered = myClients.filter((c) => {
+      const company = foldText(c.company_name)
+      const responsible = foldText(c.responsible)
+      const email = foldText(c.email)
+      return company.includes(q) || responsible.includes(q) || email.includes(q)
+    })
+
+    // Evita duplicar empresas visualmente no datalist.
+    const unique: Client[] = []
+    for (const c of filtered) {
+      const key = foldText(c.company_name)
+      if (seen.has(key)) continue
+      seen.add(key)
+      unique.push(c)
+      if (unique.length >= 20) break
+    }
+    return unique
+  }, [companyInput, myClients])
+
 
   const formatCurrencyBR = (value?: number | null) => {
     if (value == null) return '—'
@@ -776,6 +762,7 @@ export default function RotasPage() {
       driver_payment_type: formData.driverPaymentType.trim() || null,
       nf_value: parseCurrencyInput(formData.nfValue),
       cte_value: parseCurrencyInput(formData.cteValue),
+      vale_pedagio: parseCurrencyInput(formData.valePedagio),
       observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
@@ -882,6 +869,7 @@ export default function RotasPage() {
         driver_payment_type: formData.driverPaymentType.trim() || null,
         nf_value: parseCurrencyInput(formData.nfValue),
         cte_value: parseCurrencyInput(formData.cteValue),
+        vale_pedagio: parseCurrencyInput(formData.valePedagio),
         observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
@@ -936,6 +924,7 @@ export default function RotasPage() {
       weight: '',
       freightValue: '',
       cteValue: '',
+      valePedagio: '',
       driverValue: '',
       taxesValue: '',
       netFreightValue: '',
@@ -974,6 +963,7 @@ export default function RotasPage() {
       weight: '',
       freightValue: '',
       cteValue: '',
+      valePedagio: '',
       driverValue: '',
       taxesValue: '',
       netFreightValue: '',
@@ -1484,6 +1474,12 @@ export default function RotasPage() {
                     </p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Vale pedagio</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrencyBR(selectedRoute.vale_pedagio)}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Valor do Motorista</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(selectedRoute.driver_value)}
@@ -1747,7 +1743,7 @@ export default function RotasPage() {
                   placeholder="Digite nome da empresa, responsável ou e-mail"
                 />
                 <datalist id="companies-list-create">
-                  {myClients.map((c) => (
+                  {companySuggestions.map((c) => (
                     <option key={c.id} value={c.company_name}>
                       {`${c.responsible} • ${c.city}/${c.state}`}
                     </option>
@@ -1760,31 +1756,6 @@ export default function RotasPage() {
                       ? `Será usado o nome digitado: "${companyInput.trim()}"`
                       : 'Escolha um cliente da lista ou digite o nome da empresa'}
                 </p>
-                <ClientContactSuggestionBlock
-                  matched={companyInputMatch}
-                  onUsePhone={() => {
-                    if (!companyInputMatch) return
-                    const v = (companyInputMatch.whatsapp ?? '').trim()
-                    if (!v) return
-                    setFormData((prev) => ({ ...prev, companyPhone: v }))
-                  }}
-                  onUseEmail={() => {
-                    if (!companyInputMatch) return
-                    const v = (companyInputMatch.email ?? '').trim()
-                    if (!v) return
-                    setFormData((prev) => ({ ...prev, companyEmail: v }))
-                  }}
-                  onUseBoth={() => {
-                    if (!companyInputMatch) return
-                    const p = (companyInputMatch.whatsapp ?? '').trim()
-                    const e = (companyInputMatch.email ?? '').trim()
-                    setFormData((prev) => ({
-                      ...prev,
-                      ...(p ? { companyPhone: p } : {}),
-                      ...(e ? { companyEmail: e } : {}),
-                    }))
-                  }}
-                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1900,7 +1871,7 @@ export default function RotasPage() {
               </div>
 
               {/* Origem - Começando pelo CEP */}
-              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-blue-600" />
                   Origem / Coleta
@@ -1984,7 +1955,7 @@ export default function RotasPage() {
               </div>
 
               {/* Destino - Começando pelo CEP */}
-              <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200">
+              <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-green-600" />
                   Destino / Entrega
@@ -2135,6 +2106,19 @@ export default function RotasPage() {
                       placeholder="Ex: 150,00"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Vale pedagio <span className="text-gray-500 font-normal">(opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={formData.valePedagio}
+                      onChange={(e) => setFormData({ ...formData, valePedagio: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Ex: 300,00"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -2168,7 +2152,7 @@ export default function RotasPage() {
                     </select>
                   ) : (
                     <p className="mb-2 text-xs text-gray-600">
-                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0%, 10%, 12% ou 18%).
+                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0%, 10%, 12%, 16% ou 18%).
                     </p>
                   )}
                   <input
@@ -2327,7 +2311,7 @@ export default function RotasPage() {
                   placeholder="Digite nome da empresa, responsável ou e-mail"
                 />
                 <datalist id="companies-list-edit">
-                  {myClients.map((c) => (
+                  {companySuggestions.map((c) => (
                     <option key={c.id} value={c.company_name}>
                       {`${c.responsible} • ${c.city}/${c.state}`}
                     </option>
@@ -2340,31 +2324,6 @@ export default function RotasPage() {
                       ? `Será usado o nome digitado: "${companyInput.trim()}"`
                       : 'Escolha um cliente da lista ou digite o nome da empresa'}
                 </p>
-                <ClientContactSuggestionBlock
-                  matched={companyInputMatch}
-                  onUsePhone={() => {
-                    if (!companyInputMatch) return
-                    const v = (companyInputMatch.whatsapp ?? '').trim()
-                    if (!v) return
-                    setFormData((prev) => ({ ...prev, companyPhone: v }))
-                  }}
-                  onUseEmail={() => {
-                    if (!companyInputMatch) return
-                    const v = (companyInputMatch.email ?? '').trim()
-                    if (!v) return
-                    setFormData((prev) => ({ ...prev, companyEmail: v }))
-                  }}
-                  onUseBoth={() => {
-                    if (!companyInputMatch) return
-                    const p = (companyInputMatch.whatsapp ?? '').trim()
-                    const e = (companyInputMatch.email ?? '').trim()
-                    setFormData((prev) => ({
-                      ...prev,
-                      ...(p ? { companyPhone: p } : {}),
-                      ...(e ? { companyEmail: e } : {}),
-                    }))
-                  }}
-                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2480,7 +2439,7 @@ export default function RotasPage() {
               </div>
 
               {/* Origem - Começando pelo CEP */}
-              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-blue-600" />
                   Origem / Coleta
@@ -2564,7 +2523,7 @@ export default function RotasPage() {
               </div>
 
               {/* Destino - Começando pelo CEP */}
-              <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200">
+              <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-green-600" />
                   Destino / Entrega
@@ -2715,6 +2674,19 @@ export default function RotasPage() {
                       placeholder="Ex: 150,00"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">
+                      Vale pedagio <span className="text-gray-500 font-normal">(opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={formData.valePedagio}
+                      onChange={(e) => setFormData({ ...formData, valePedagio: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      placeholder="Ex: 300,00"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -2748,7 +2720,7 @@ export default function RotasPage() {
                     </select>
                   ) : (
                     <p className="mb-2 text-xs text-gray-600">
-                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0%, 10%, 12% ou 18%).
+                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0%, 10%, 12%, 16% ou 18%).
                     </p>
                   )}
                   <input
