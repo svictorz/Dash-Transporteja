@@ -2092,32 +2092,34 @@ export default function RotasPage() {
                       placeholder="Ex: 12500,00"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Valor de CTE{' '}
-                      <span className="text-gray-500 font-normal">(opcional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.cteValue}
-                      onChange={(e) => setFormData({ ...formData, cteValue: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Ex: 150,00"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Vale pedagio <span className="text-gray-500 font-normal">(opcional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.valePedagio}
-                      onChange={(e) => setFormData({ ...formData, valePedagio: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Ex: 300,00"
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-2">
+                        Valor de CTE{' '}
+                        <span className="text-gray-500 font-normal">(opcional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={formData.cteValue}
+                        onChange={(e) => setFormData({ ...formData, cteValue: e.target.value })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                        placeholder="Ex: 150,00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-2">
+                        Vale pedágio <span className="text-gray-500 font-normal">(opcional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={formData.valePedagio}
+                        onChange={(e) => setFormData({ ...formData, valePedagio: e.target.value })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                        placeholder="Ex: 300,00"
+                      />
+                    </div>
                   </div>
                 </div>
                 <div>
@@ -2660,32 +2662,34 @@ export default function RotasPage() {
                       placeholder="Ex: 12500,00"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Valor de CTE{' '}
-                      <span className="text-gray-500 font-normal">(opcional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.cteValue}
-                      onChange={(e) => setFormData({ ...formData, cteValue: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Ex: 150,00"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Vale pedagio <span className="text-gray-500 font-normal">(opcional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.valePedagio}
-                      onChange={(e) => setFormData({ ...formData, valePedagio: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Ex: 300,00"
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-2">
+                        Valor de CTE{' '}
+                        <span className="text-gray-500 font-normal">(opcional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={formData.cteValue}
+                        onChange={(e) => setFormData({ ...formData, cteValue: e.target.value })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                        placeholder="Ex: 150,00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-2">
+                        Vale pedágio <span className="text-gray-500 font-normal">(opcional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={formData.valePedagio}
+                        onChange={(e) => setFormData({ ...formData, valePedagio: e.target.value })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
+                        placeholder="Ex: 300,00"
+                      />
+                    </div>
                   </div>
                 </div>
                 <div>
