@@ -1,8 +1,28 @@
 /*
- * Ilha “papel A4”: no tema escuro o html tem .dark e overrides globais
+ * Ilha "papel A4": no tema escuro o html tem .dark e overrides globais
  * (.dark .bg-white, .dark .text-gray-*, etc.). Esta árvore força o mesmo
  * aspecto do tema clássico na pré-visualização e no conteúdo impresso.
  */
+
+/*
+ * Preview zoom — usa zoom (não transform: scale) para que a altura de layout
+ * reflita a altura visual. Isso evita que o container com max-h corte o
+ * conteúdo quando a observação é muito longa.
+ */
+.proposta-preview-zoom {
+  zoom: 0.56;
+}
+@media (min-width: 768px) {
+  .proposta-preview-zoom {
+    zoom: 0.74;
+  }
+}
+@media (min-width: 1280px) {
+  .proposta-preview-zoom {
+    zoom: 0.80;
+  }
+}
+
 .dark .proposta-a4-light-island {
   background-color: #ffffff !important;
   color: #0f172a !important;
@@ -54,15 +74,10 @@
 
   .proposta-a4-print {
     width: 210mm !important;
-    height: 297mm !important;
-    min-height: 0 !important;
+    min-height: 297mm !important;
     margin: 0 auto !important;
     padding: 10mm 12mm !important;
     box-sizing: border-box !important;
-    overflow: hidden !important;
-    break-inside: avoid-page !important;
-    break-after: avoid-page !important;
-    page-break-inside: avoid !important;
-    page-break-after: avoid !important;
+    overflow: visible !important;
   }
 }

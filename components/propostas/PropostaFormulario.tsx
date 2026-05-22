@@ -9,14 +9,6 @@ const UFS = [
 
 const TIPOS_CARGA = ['Carga Dedicada', 'Carga Fracionada', 'Lotação', 'Expressa'] as const
 
-const EQUIPAMENTOS = [
-  'Caminhão 3/4 (Baú)',
-  'Toco (Baú)',
-  'Truck (Baú)',
-  'Carreta (Baú)',
-  'Carreta LS / Sider',
-  'Bitrem / Rodotrem',
-] as const
 
 const inputClass =
   'w-full px-3 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0f2847]/30 focus:border-[#0f2847] dark:bg-slate-950 dark:border-slate-600 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:ring-slate-500/30 dark:focus:border-slate-400'
@@ -29,9 +21,10 @@ const sectionTitle =
 interface Props {
   value: PropostaFormState
   onChange: (next: PropostaFormState) => void
+  statusDistancia?: 'idle' | 'loading' | 'ok' | 'erro'
 }
 
-export default function PropostaFormulario({ value, onChange }: Props) {
+export default function PropostaFormulario({ value, onChange, statusDistancia = 'idle' }: Props) {
   const set = <K extends keyof PropostaFormState>(key: K, v: PropostaFormState[K]) =>
     onChange({ ...value, [key]: v })
 
@@ -46,20 +39,6 @@ export default function PropostaFormulario({ value, onChange }: Props) {
             value={value.remetente}
             onChange={(e) => set('remetente', e.target.value)}
           />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              className={inputClass}
-              placeholder="CNPJ Remetente"
-              value={value.cnpjRemetente}
-              onChange={(e) => set('cnpjRemetente', e.target.value)}
-            />
-            <input
-              className={inputClass}
-              placeholder="CNPJ Destinatário"
-              value={value.cnpjDestinatario}
-              onChange={(e) => set('cnpjDestinatario', e.target.value)}
-            />
-          </div>
           <input
             className={inputClass}
             placeholder="Destinatário"
@@ -113,22 +92,50 @@ export default function PropostaFormulario({ value, onChange }: Props) {
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              className={inputClass}
-              inputMode="decimal"
-              placeholder="Distância KM"
-              value={value.distanciaKm}
-              onChange={(e) => set('distanciaKm', e.target.value)}
-            />
-            <input
-              className={`${inputClass} font-semibold text-[#0f2847] dark:text-sky-300`}
-              readOnly
-              title="Código único da proposta"
-              value={value.codigoUnico}
-              aria-label="Código único"
-            />
-          </div>
+          <input
+            className={`${inputClass} font-semibold text-[#0f2847] dark:text-sky-300`}
+            readOnly
+            title="Código único da proposta"
+            value={value.codigoUnico}
+            aria-label="Código único"
+          />
+
+          {/* Indicador de distância calculada automaticamente */}
+          {statusDistancia !== 'idle' && (
+            <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border ${
+              statusDistancia === 'loading'
+                ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300'
+                : statusDistancia === 'ok'
+                ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-950/40 dark:border-green-800 dark:text-green-300'
+                : 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950/40 dark:border-orange-800 dark:text-orange-300'
+            }`}>
+              {statusDistancia === 'loading' && (
+                <>
+                  <svg className="animate-spin h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 100 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z" />
+                  </svg>
+                  <span>Calculando distância rodoviária…</span>
+                </>
+              )}
+              {statusDistancia === 'ok' && (
+                <>
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Distância calculada: <strong>{value.distanciaKm} km</strong></span>
+                </>
+              )}
+              {statusDistancia === 'erro' && (
+                <>
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                  <span>Não foi possível calcular a distância automaticamente</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -155,18 +162,6 @@ export default function PropostaFormulario({ value, onChange }: Props) {
               onChange={(e) => set('cargaParam', e.target.value)}
             />
           </div>
-          <select
-            className={selectClass}
-            value={value.equipamento}
-            onChange={(e) => set('equipamento', e.target.value)}
-          >
-            {EQUIPAMENTOS.map((eq) => (
-              <option key={eq} value={eq}>
-                {eq}
-              </option>
-            ))}
-          </select>
-
           <div className="space-y-2">
             <p className="text-sm font-semibold text-[#0f2847] dark:text-white">Frete base</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -189,77 +184,25 @@ export default function PropostaFormulario({ value, onChange }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              className={inputClass}
-              inputMode="decimal"
-              placeholder="Valor NF R$"
-              value={value.valorNf}
-              onChange={(e) => set('valorNf', e.target.value)}
-            />
-            <input
-              className={inputClass}
-              inputMode="decimal"
-              placeholder="Peso KG"
-              value={value.pesoKg}
-              onChange={(e) => set('pesoKg', e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            <input
-              className={inputClass}
-              inputMode="decimal"
-              placeholder="Alt (m)"
-              value={value.altM}
-              onChange={(e) => set('altM', e.target.value)}
-            />
-            <input
-              className={inputClass}
-              inputMode="decimal"
-              placeholder="Larg (m)"
-              value={value.largM}
-              onChange={(e) => set('largM', e.target.value)}
-            />
-            <input
-              className={inputClass}
-              inputMode="decimal"
-              placeholder="Prof (m)"
-              value={value.profM}
-              onChange={(e) => set('profM', e.target.value)}
-            />
-          </div>
+          <input
+            className={inputClass}
+            inputMode="decimal"
+            placeholder="Peso KG"
+            value={value.pesoKg}
+            onChange={(e) => set('pesoKg', e.target.value)}
+          />
 
           <input
             className={inputClass}
             inputMode="decimal"
-            placeholder="Seguro sobre NF (%) — ex: 0,50"
-            value={value.seguroPct}
-            onChange={(e) => set('seguroPct', e.target.value)}
+            placeholder={
+              value.freteManual.trim()
+                ? 'Taxas embutidas no frete base (R$)'
+                : 'Taxas fixas (R$) — somadas ao frete por km'
+            }
+            value={value.taxasFixas}
+            onChange={(e) => set('taxasFixas', e.target.value)}
           />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <input
-                className={inputClass}
-                inputMode="decimal"
-                placeholder={
-                  value.freteManual.trim()
-                    ? 'Taxas embutidas no frete base (R$)'
-                    : 'Taxas fixas (R$) — somadas ao frete por km'
-                }
-                value={value.taxasFixas}
-                onChange={(e) => set('taxasFixas', e.target.value)}
-              />
-            </div>
-            <input
-              className={inputClass}
-              inputMode="decimal"
-              placeholder={value.freteManual.trim() ? 'ICMS (%) — embutido no frete base' : 'ICMS (%)'}
-              value={value.icmsPct}
-              onChange={(e) => set('icmsPct', e.target.value)}
-            />
-          </div>
 
           <input
             className={inputClass}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Briefcase } from 'lucide-react'
 import { BRAND_NAME_SHORT } from '@/lib/constants/brand'
 import PropostaFormulario from '@/components/propostas/PropostaFormulario'
@@ -11,6 +11,48 @@ import './proposta-print.css'
 
 export default function PropostasPage() {
   const [form, setForm] = useState(() => defaultPropostaFormState(gerarCodigoPropostaAGT()))
+  const [statusDistancia, setStatusDistancia] = useState<'idle' | 'loading' | 'ok' | 'erro'>('idle')
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    const co = form.cidadeOrigem.trim()
+    const cd = form.cidadeDestino.trim()
+    const uo = form.ufOrigem
+    const ud = form.ufDestino
+
+    setForm(prev => ({ ...prev, distanciaKm: '' }))
+
+    if (!co || !cd) {
+      setStatusDistancia('idle')
+      return
+    }
+
+    setStatusDistancia('loading')
+
+    const timer = setTimeout(async () => {
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+
+      try {
+        const params = new URLSearchParams({ co, uo, cd, ud })
+        const res = await fetch(`/api/calcular-distancia?${params}`, { signal: controller.signal })
+        if (!res.ok) throw new Error('erro')
+        const data = await res.json()
+        setForm(prev => ({ ...prev, distanciaKm: String(data.km) }))
+        setStatusDistancia('ok')
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return
+        setStatusDistancia('erro')
+      }
+    }, 900)
+
+    return () => {
+      clearTimeout(timer)
+      abortRef.current?.abort()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.cidadeOrigem, form.ufOrigem, form.cidadeDestino, form.ufDestino])
 
   const dataEmissao = new Date().toLocaleDateString('pt-BR', {
     day: '2-digit',
@@ -36,12 +78,12 @@ export default function PropostasPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-8 items-start">
           <div className="glass-card rounded-2xl border border-white/40 p-5 md:p-6 shadow-lg backdrop-blur-xl">
-            <PropostaFormulario value={form} onChange={setForm} />
+            <PropostaFormulario value={form} onChange={setForm} statusDistancia={statusDistancia} />
             <div className="mt-6 flex flex-wrap gap-3">
               <button
                 type="button"
                 onClick={() => setForm(defaultPropostaFormState(gerarCodigoPropostaAGT()))}
-                className="px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                className="px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-500 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
               >
                 Limpar e novo código
               </button>
@@ -59,12 +101,12 @@ export default function PropostasPage() {
               Imprimir proposta (A4)
             </button>
 
-            <div className="rounded-2xl border border-gray-200 bg-[#f1f5f9]/95 dark:border-slate-600 dark:bg-[#f1f5f9]/95 p-4 md:p-5 shadow-inner overflow-auto max-h-[calc(100vh-8rem)]">
+            <div className="rounded-2xl border border-gray-200 bg-[#f1f5f9]/95 dark:border-slate-500 dark:bg-[#f1f5f9]/95 p-4 md:p-5 shadow-inner overflow-auto max-h-[calc(100vh-8rem)]">
               <p className="text-xs text-gray-500 mb-3 text-center xl:text-left">
                 Pré-visualização (escala reduzida no ecrã; impressão em A4 completo)
               </p>
               <div className="flex justify-center overflow-x-auto pb-4 pt-1">
-                <div className="inline-block shadow-2xl ring-1 ring-black/10 rounded-sm scale-[0.56] md:scale-[0.74] xl:scale-[0.80] origin-top">
+                <div className="inline-block shadow-2xl ring-1 ring-black/10 rounded-sm proposta-preview-zoom">
                   <PropostaPdfPreview form={form} calc={calc} dataEmissao={dataEmissao} />
                 </div>
               </div>

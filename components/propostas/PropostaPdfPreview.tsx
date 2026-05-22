@@ -3,7 +3,7 @@
 import type { PropostaFormState } from '@/lib/types/proposta'
 import { PROPOSTA_DOC_EMPRESA } from '@/lib/constants/proposta-doc'
 import type { PropostaCalculo } from '@/lib/utils/proposta-calculo'
-import { formatBRLProposta, parseDecimalBR } from '@/lib/utils/proposta-calculo'
+import { formatBRLProposta } from '@/lib/utils/proposta-calculo'
 
 interface Props {
   form: PropostaFormState
@@ -20,8 +20,6 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
     n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' KG'
   const fmtM3 = (n: number) =>
     n.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' M³'
-  const fmtM = (n: number) =>
-    n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m'
 
   const dist = form.distanciaKm.trim() ? `${form.distanciaKm.replace('.', ',')} KM` : '0 KM'
 
@@ -71,14 +69,12 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
               Expeditor (remetente):
             </p>
             <p className="text-gray-900">{form.remetente || '—'}</p>
-            {form.cnpjRemetente && <p className="text-gray-600 text-[8pt]">CNPJ: {form.cnpjRemetente}</p>}
           </div>
           <div className="border p-2 rounded-sm" style={{ borderColor: border }}>
             <p className="font-bold text-[7.5pt] uppercase mb-0.5" style={{ color: navy }}>
               Destinatário:
             </p>
             <p className="text-gray-900">{form.destinatario || '—'}</p>
-            {form.cnpjDestinatario && <p className="text-gray-600 text-[8pt]">CNPJ: {form.cnpjDestinatario}</p>}
           </div>
         </div>
         <div className="space-y-2">
@@ -131,12 +127,6 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
             <th className="border p-1.5 text-left font-semibold" style={{ borderColor: border }}>
               Vol. m³
             </th>
-            <th className="border p-1.5 text-left font-semibold" style={{ borderColor: border }}>
-              Equipamento
-            </th>
-            <th className="border p-1.5 text-left font-semibold" style={{ borderColor: border }}>
-              Valor NF
-            </th>
           </tr>
         </thead>
         <tbody>
@@ -149,12 +139,6 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
             </td>
             <td className="border p-1.5" style={{ borderColor: border }}>
               {fmtM3(calc.volumeM3)}
-            </td>
-            <td className="border p-1.5 font-semibold" style={{ color: '#1d4ed8', borderColor: border }}>
-              {form.equipamento.toUpperCase()}
-            </td>
-            <td className="border p-1.5" style={{ borderColor: border }}>
-              {formatBRLProposta(parseDecimalBR(form.valorNf))}
             </td>
           </tr>
         </tbody>
@@ -172,25 +156,16 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
             Frete base: <span className="tabular-nums">{formatBRLProposta(calc.freteBaseInformado)}</span>
           </p>
         ) : null}
-        <div className="grid grid-cols-3 border border-t-0 text-[8.5pt]" style={{ borderColor: border }}>
+        <div className="grid grid-cols-2 border border-t-0 text-[8.5pt]" style={{ borderColor: border }}>
           <div className="border-r p-2" style={{ borderColor: border }}>
             <span className="font-semibold">
               {calc.modoFreteInclusivo ? 'Frete líquido: ' : 'Frete base: '}
             </span>
             <strong>{formatBRLProposta(calc.freteBase)}</strong>
           </div>
-          <div className="border-r p-2" style={{ borderColor: border }}>
+          <div className="p-2">
             <span className="font-semibold">Taxas: </span>
             <strong>{formatBRLProposta(calc.taxas)}</strong>
-          </div>
-          <div className="p-2">
-            <span className="font-semibold">
-              Seguro ({form.seguroPct.replace('.', ',')}%):{' '}
-            </span>
-            <strong>{formatBRLProposta(calc.seguro)}</strong>
-            {calc.seguro > 0 ? (
-              <span className="block text-[7pt] text-gray-500 mt-0.5">Não entra no total do CT-e</span>
-            ) : null}
           </div>
         </div>
         <div className="grid grid-cols-3 border border-t-0 min-h-[4.5rem]" style={{ borderColor: border }}>
@@ -202,12 +177,6 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
             <p>
               <span className="font-semibold">Desc. ({form.descontoPct.replace('.', ',')}%): </span>
               <strong className="text-orange-600">{formatBRLProposta(calc.descontoValor)}</strong>
-            </p>
-            <p className="mt-1">
-              <span className="font-semibold">
-                ICMS ({form.icmsPct.replace('.', ',')}%):{' '}
-              </span>
-              <strong>{formatBRLProposta(calc.icmsValor)}</strong>
             </p>
           </div>
           <div
@@ -232,47 +201,15 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 mt-4 text-[8pt]">
-        <div>
-          <table className="w-full border-collapse" style={{ borderColor: border }}>
-            <tbody>
-              <tr>
-                <td className="border p-1 font-semibold bg-gray-100" style={{ borderColor: border }}>
-                  Altura:
-                </td>
-                <td className="border p-1 text-right" style={{ borderColor: border }}>
-                  {fmtM(parseDecimalBR(form.altM))}
-                </td>
-              </tr>
-              <tr>
-                <td className="border p-1 font-semibold bg-gray-100" style={{ borderColor: border }}>
-                  Largura:
-                </td>
-                <td className="border p-1 text-right" style={{ borderColor: border }}>
-                  {fmtM(parseDecimalBR(form.largM))}
-                </td>
-              </tr>
-              <tr>
-                <td className="border p-1 font-semibold bg-gray-100" style={{ borderColor: border }}>
-                  Profund.:
-                </td>
-                <td className="border p-1 text-right" style={{ borderColor: border }}>
-                  {fmtM(parseDecimalBR(form.profM))}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div className="text-gray-600 leading-snug">
-          <p>
-            Proposta válida por <strong>{PROPOSTA_DOC_EMPRESA.validadeDias} dias</strong> a partir da emissão.
-            Valores sujeitos a confirmação de disponibilidade de equipamento e janela de coleta.
-          </p>
-          <p className="mt-1">Não inclui ajudantes, pedágios e taxas de terminal, salvo negociação expressa.</p>
-          <p className="mt-1">
-            Cálculo: peso cubado = volume (m³) × 300 kg/m³; faturamento pelo maior entre peso real e cubado.
-          </p>
-        </div>
+      <div className="mt-4 text-[8pt] text-gray-600 leading-snug">
+        <p>
+          Proposta válida por <strong>{PROPOSTA_DOC_EMPRESA.validadeDias} dias</strong> a partir da emissão.
+          Valores sujeitos a confirmação de disponibilidade de equipamento e janela de coleta.
+        </p>
+        <p className="mt-1">Não inclui ajudantes, pedágios e taxas de terminal, salvo negociação expressa.</p>
+        <p className="mt-1">
+          Cálculo: peso cubado = volume (m³) × 300 kg/m³; faturamento pelo maior entre peso real e cubado.
+        </p>
       </div>
 
       <p
@@ -281,7 +218,6 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
       >
         {PROPOSTA_DOC_EMPRESA.slogan}
       </p>
-      <p className="text-center text-[7.5pt] text-gray-500 mt-2">{PROPOSTA_DOC_EMPRESA.rodape}</p>
     </article>
   )
 }
