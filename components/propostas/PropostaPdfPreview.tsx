@@ -52,7 +52,6 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
           </p>
           <p className="text-gray-700 leading-snug">{PROPOSTA_DOC_EMPRESA.enderecoLogradouro}</p>
           <p className="text-gray-700 leading-snug">{PROPOSTA_DOC_EMPRESA.enderecoBairroCepCidade}</p>
-          <p className="text-gray-700">{PROPOSTA_DOC_EMPRESA.cnpj}</p>
           {PROPOSTA_DOC_EMPRESA.inscricaoEstadual ? (
             <p className="text-gray-700">IE: {PROPOSTA_DOC_EMPRESA.inscricaoEstadual}</p>
           ) : null}
@@ -168,16 +167,10 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
             <strong>{formatBRLProposta(calc.taxas)}</strong>
           </div>
         </div>
-        <div className="grid grid-cols-3 border border-t-0 min-h-[4.5rem]" style={{ borderColor: border }}>
+        <div className="grid grid-cols-2 border border-t-0 min-h-[4.5rem]" style={{ borderColor: border }}>
           <div className="border-r p-2 text-[8pt] text-gray-700" style={{ borderColor: border }}>
             <p className="font-bold text-gray-900 mb-0.5">Notas:</p>
             <p>Carga em conformidade legal.</p>
-          </div>
-          <div className="border-r p-2 flex flex-col justify-center text-[8.5pt]" style={{ borderColor: border }}>
-            <p>
-              <span className="font-semibold">Desc. ({form.descontoPct.replace('.', ',')}%): </span>
-              <strong className="text-orange-600">{formatBRLProposta(calc.descontoValor)}</strong>
-            </p>
           </div>
           <div
             className="p-2 flex flex-col items-center justify-center text-center text-white"

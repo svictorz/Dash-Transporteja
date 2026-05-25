@@ -192,26 +192,6 @@ export default function PropostaFormulario({ value, onChange, statusDistancia = 
             onChange={(e) => set('pesoKg', e.target.value)}
           />
 
-          <input
-            className={inputClass}
-            inputMode="decimal"
-            placeholder={
-              value.freteManual.trim()
-                ? 'Taxas embutidas no frete base (R$)'
-                : 'Taxas fixas (R$) — somadas ao frete por km'
-            }
-            value={value.taxasFixas}
-            onChange={(e) => set('taxasFixas', e.target.value)}
-          />
-
-          <input
-            className={inputClass}
-            inputMode="decimal"
-            placeholder="Desconto (%)"
-            value={value.descontoPct}
-            onChange={(e) => set('descontoPct', e.target.value)}
-          />
-
           <div>
             <label htmlFor="proposta-obs" className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1.5">
               Observações
