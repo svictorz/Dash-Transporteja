@@ -204,21 +204,23 @@ function KpiCard({ label, value, hint, icon: Icon, iconBg, iconColor, delta, del
       <motion.div
         whileHover={{ y: -3 }}
         transition={{ type: 'spring', stiffness: 260, damping: 22 }}
-        className="relative bg-white rounded-2xl p-5 border border-gray-200/80 shadow-sm hover:shadow-md transition-shadow overflow-hidden"
+        className="relative bg-white dark:bg-slate-900 rounded-2xl p-5 border border-gray-200/80 dark:border-slate-500 shadow-sm hover:shadow-md transition-shadow overflow-hidden"
       >
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className={`w-10 h-10 ${iconBg} rounded-xl flex items-center justify-center shrink-0`}>
+            <div className={`w-10 h-10 ${iconBg} dark:bg-slate-800 rounded-xl flex items-center justify-center shrink-0`}>
               <Icon className={`w-5 h-5 ${iconColor}`} />
             </div>
-            <div className="text-[11px] uppercase tracking-wider text-gray-500 font-medium truncate">
+            <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-slate-300 font-medium truncate">
               {label}
             </div>
           </div>
           {showDelta ? (
             <div
               className={`flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
-                good ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
+                good
+                  ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-200 dark:bg-emerald-500/20'
+                  : 'text-rose-700 bg-rose-50 dark:text-rose-200 dark:bg-rose-500/20'
               }`}
               title="Variação vs período anterior"
             >
@@ -227,8 +229,8 @@ function KpiCard({ label, value, hint, icon: Icon, iconBg, iconColor, delta, del
             </div>
           ) : null}
         </div>
-        <div className="text-2xl font-bold text-gray-900 mt-1 tabular-nums">{value}</div>
-        {hint ? <div className="text-xs text-gray-500 mt-1">{hint}</div> : null}
+        <div className="text-2xl font-bold text-gray-900 dark:text-slate-100 mt-1 tabular-nums">{value}</div>
+        {hint ? <div className="text-xs text-gray-500 dark:text-slate-300 mt-1">{hint}</div> : null}
       </motion.div>
     </FadeIn>
   )
@@ -379,21 +381,21 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-slate-100">Dashboard</h1>
               <motion.button
                 whileHover={{ rotate: 90 }}
                 whileTap={{ scale: 0.92 }}
                 onClick={() => loadRoutes()}
-                className="p-2 bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-500 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
                 title="Atualizar dados"
               >
-                <RefreshCw className="w-4 h-4 text-gray-600" />
+                <RefreshCw className="w-4 h-4 text-gray-600 dark:text-slate-300" />
               </motion.button>
             </div>
-            <p className="text-xs sm:text-sm text-gray-500 mt-1">
-              Seus lançamentos · <span className="font-medium text-gray-700">{periodLabel}</span>
-              <span className="text-gray-400"> · por data de coleta</span>
-              {kpis.count > 0 ? <span className="text-gray-400"> · {kpis.count} fretes no período</span> : null}
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-300 mt-1">
+              Seus lançamentos · <span className="font-medium text-gray-700 dark:text-slate-100">{periodLabel}</span>
+              <span className="text-gray-400 dark:text-slate-400"> · por data de coleta</span>
+              {kpis.count > 0 ? <span className="text-gray-400 dark:text-slate-400"> · {kpis.count} fretes no período</span> : null}
             </p>
           </div>
         </div>
@@ -404,7 +406,7 @@ export default function DashboardPage() {
         <div
           role="tablist"
           aria-label="Período"
-          className="flex flex-wrap items-center gap-1 p-1 bg-white rounded-xl border border-gray-200 shadow-sm w-fit"
+          className="flex flex-wrap items-center gap-1 p-1 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-500 shadow-sm w-fit"
         >
           {PERIOD_OPTIONS.map((opt) => {
             const active = period === opt.value
@@ -415,13 +417,13 @@ export default function DashboardPage() {
                 aria-selected={active}
                 onClick={() => setPeriod(opt.value)}
                 className={`relative px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-colors ${
-                  active ? 'text-white' : 'text-gray-600 hover:text-gray-900'
+                  active ? 'text-white dark:text-slate-900' : 'text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100'
                 }`}
               >
                 {active && (
                   <motion.span
                     layoutId="period-pill"
-                    className="absolute inset-0 bg-slate-900 rounded-lg"
+                    className="absolute inset-0 bg-slate-900 dark:bg-slate-200 rounded-lg"
                     transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                   />
                 )}
@@ -570,8 +572,8 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-bold text-gray-900">Fretes</h2>
-              <span className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Fretes</h2>
+              <span className="px-3 py-1.5 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg text-sm font-medium">
                 {recentRoutes.length}
               </span>
             </div>
@@ -579,20 +581,20 @@ export default function DashboardPage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => router.push('/rotas')}
-              className="text-sm text-gray-600 hover:text-gray-900 font-medium"
+              className="text-sm text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100 font-medium"
             >
               Ver todos →
             </motion.button>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-500 overflow-hidden">
             {recentRoutes.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-gray-500 dark:text-slate-300">
                 <RouteIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p>Nenhum frete no período selecionado</p>
                 <button
                   onClick={() => router.push('/rotas')}
-                  className="mt-4 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium"
+                  className="mt-4 px-4 py-2 bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 rounded-lg hover:bg-slate-900 dark:hover:bg-slate-300 transition-colors font-medium"
                 >
                   Abrir Fretes
                 </button>
@@ -601,29 +603,29 @@ export default function DashboardPage() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50">
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <tr className="border-b border-gray-200 dark:border-slate-500 bg-gray-50 dark:bg-slate-800">
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                         ID do Frete
                       </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                         Cliente
                       </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                         Rota
                       </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                         Veículo
                       </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                         Previsão de Entrega
                       </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                         Status
                       </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"></th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider"></th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-slate-500">
                     {recentRoutes.map((route, index) => {
                       const statusDisplay = getStatusDisplay(route.status)
                       return (
@@ -632,30 +634,30 @@ export default function DashboardPage() {
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: 0.65 + index * 0.05 }}
-                          className="hover:bg-gray-50 transition-colors"
+                          className="hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors"
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="text-sm font-medium text-gray-900">#{route.freightId}</span>
+                            <span className="text-sm font-medium text-gray-900 dark:text-slate-100">#{route.freightId}</span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex flex-col">
-                              <span className="text-sm text-gray-900">{route.companyName}</span>
-                              <span className="text-xs text-gray-500 mt-1">{route.companyResponsible}</span>
+                              <span className="text-sm text-gray-900 dark:text-slate-100">{route.companyName}</span>
+                              <span className="text-xs text-gray-500 dark:text-slate-300 mt-1">{route.companyResponsible}</span>
                             </div>
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <div className="flex flex-col gap-1">
                                 <div className="flex items-center gap-2">
-                                  <MapPin className="w-4 h-4 text-gray-600" />
-                                  <span className="text-sm text-gray-900">
+                                  <MapPin className="w-4 h-4 text-gray-600 dark:text-slate-300" />
+                                  <span className="text-sm text-gray-900 dark:text-slate-100">
                                     {route.origin}, {route.originState}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <ArrowRight className="w-4 h-4 text-gray-400" />
-                                  <MapPin className="w-4 h-4 text-gray-600" />
-                                  <span className="text-sm text-gray-900">
+                                  <ArrowRight className="w-4 h-4 text-gray-400 dark:text-slate-400" />
+                                  <MapPin className="w-4 h-4 text-gray-600 dark:text-slate-300" />
+                                  <span className="text-sm text-gray-900 dark:text-slate-100">
                                     {route.destination}, {route.destinationState}
                                   </span>
                                 </div>
@@ -664,22 +666,22 @@ export default function DashboardPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex flex-col">
-                              <span className="text-sm text-gray-900">{route.vehicle}</span>
-                              <span className="text-xs text-gray-500 mt-1">
+                              <span className="text-sm text-gray-900 dark:text-slate-100">{route.vehicle}</span>
+                              <span className="text-xs text-gray-500 dark:text-slate-300 mt-1">
                                 {route.plate} • {route.weight}
                               </span>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex flex-col">
-                              <span className="text-sm text-gray-900">{route.estimatedDelivery}</span>
-                              <span className="text-xs text-gray-500 mt-1">Coletado: {route.pickupDate}</span>
+                              <span className="text-sm text-gray-900 dark:text-slate-100">{route.estimatedDelivery}</span>
+                              <span className="text-xs text-gray-500 dark:text-slate-300 mt-1">Coletado: {route.pickupDate}</span>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <div className={`w-2 h-2 rounded-full ${statusDisplay.dotColor}`}></div>
-                              <span className="text-sm text-gray-900">{statusDisplay.label}</span>
+                              <span className="text-sm text-gray-900 dark:text-slate-100">{statusDisplay.label}</span>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -687,7 +689,7 @@ export default function DashboardPage() {
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => router.push('/rotas')}
-                              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                              className="px-4 py-2 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-100 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors text-sm font-medium"
                             >
                               Ver mais
                             </motion.button>

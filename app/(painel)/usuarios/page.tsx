@@ -54,9 +54,12 @@ const ROLE_OPTIONS: { value: AssignableRole; label: string; description: string;
 ]
 
 const ROLE_BADGE: Record<AssignableRole, string> = {
-  admin: 'bg-rose-100 text-rose-700 border-rose-200',
-  financeiro: 'bg-amber-100 text-amber-700 border-amber-200',
-  comercial: 'bg-sky-100 text-sky-700 border-sky-200',
+  admin:
+    'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-500/25 dark:text-rose-200 dark:border-rose-400/50',
+  financeiro:
+    'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/25 dark:text-amber-200 dark:border-amber-400/50',
+  comercial:
+    'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-500/25 dark:text-sky-200 dark:border-sky-400/50',
 }
 
 export default function UsuariosPage() {
@@ -313,10 +316,10 @@ export default function UsuariosPage() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+        <div className="rounded-2xl border border-gray-200 bg-white dark:bg-slate-900 dark:border-slate-500 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600 text-left">
+              <thead className="bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-200 text-left">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Usuário</th>
                   <th className="px-4 py-3 font-semibold">Função atual</th>
@@ -348,17 +351,17 @@ export default function UsuariosPage() {
                     const isOwner = isSuperAdminEmail(u.email)
                     const badge = currentRole && currentRole !== 'driver'
                       ? ROLE_BADGE[currentRole]
-                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                      : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-500'
 
                     return (
-                      <tr key={u.id} className="border-t border-gray-100">
+                      <tr key={u.id} className="border-t border-gray-100 dark:border-slate-500">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-full bg-slate-800 text-white flex items-center justify-center text-sm font-semibold uppercase flex-shrink-0">
                               {(u.name?.trim().charAt(0) || u.email.charAt(0)).toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <p className="font-medium text-gray-900 truncate">
+                              <p className="font-medium text-gray-900 dark:text-slate-100 truncate">
                                 {u.name || '—'}
                                 {isOwner && (
                                   <span className="ml-2 inline-flex items-center text-[10px] uppercase tracking-wide text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
@@ -366,7 +369,7 @@ export default function UsuariosPage() {
                                   </span>
                                 )}
                               </p>
-                              <p className="text-xs text-gray-500 truncate flex items-center gap-1">
+                              <p className="text-xs text-gray-500 dark:text-slate-300 truncate flex items-center gap-1">
                                 <Mail className="w-3 h-3" aria-hidden />
                                 {u.email}
                               </p>
@@ -375,14 +378,14 @@ export default function UsuariosPage() {
                         </td>
                         <td className="px-4 py-3">
                           <span
-                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${badge}`}
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${badge}`}
                           >
                             {dashboardRoleLabel(u.role)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <div className="inline-flex rounded-xl border border-gray-200 bg-white overflow-hidden">
+                            <div className="inline-flex rounded-xl border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-900 overflow-hidden">
                               {(['admin', 'financeiro', 'comercial'] as AssignableRole[]).map(
                                 (roleKey) => {
                                   const isActive =
@@ -399,8 +402,8 @@ export default function UsuariosPage() {
                                       onClick={() => handleChangeRole(u, roleKey)}
                                       className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                                         isActive
-                                          ? 'bg-slate-800 text-white'
-                                          : 'text-gray-700 hover:bg-gray-50'
+                                          ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900'
+                                          : 'text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800'
                                       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                       aria-pressed={isActive}
                                     >
@@ -423,7 +426,7 @@ export default function UsuariosPage() {
                                 u.role === null
                               }
                               onClick={() => handleRevokeAccess(u)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-200 bg-white text-red-600 text-xs font-medium hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 transition-colors dark:border-red-400/60 dark:bg-red-500/20 dark:text-red-200 dark:hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                               title={
                                 isOwner
                                   ? 'O proprietário não pode ser revogado'

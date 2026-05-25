@@ -124,7 +124,7 @@ export default function CEPInput({
             onBlur={handleBlur}
             maxLength={9}
             placeholder="00000-000"
-            className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 pr-10 ${
+            className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 pr-10 bg-white text-gray-900 placeholder:text-gray-400 ${
               error || searchError
                 ? 'border-red-300 focus:ring-red-500'
                 : isValid

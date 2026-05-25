@@ -333,8 +333,8 @@ export default function ClientesPage() {
       <FadeIn delay={0.1}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-gray-900">Clientes</h1>
-            <span className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-slate-100">Clientes</h1>
+            <span className="px-3 py-1.5 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg text-sm font-medium">
               {filteredClients.length}
             </span>
           </div>
@@ -342,7 +342,7 @@ export default function ClientesPage() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => handleOpenModal()}
-            className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors font-medium flex items-center gap-2"
+            className="px-4 py-2 bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 rounded-lg hover:bg-slate-700 dark:hover:bg-slate-300 transition-colors font-medium flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
             Adicionar Cliente
@@ -352,15 +352,15 @@ export default function ClientesPage() {
 
       {/* Busca */}
       <FadeIn delay={0.15}>
-        <div className="bg-white rounded-xl p-4 border border-gray-200">
+        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-200 dark:border-slate-500">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-400 w-5 h-5" />
             <input
               type="text"
               placeholder="Buscar por empresa, responsável, email ou cidade..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-500 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 focus:border-transparent"
             />
           </div>
         </div>
@@ -377,14 +377,14 @@ export default function ClientesPage() {
 
       {/* Tabela de Clientes */}
       <FadeIn delay={0.2}>
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-500 overflow-hidden">
           {loading ? (
             <div className="text-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto text-gray-400" />
-              <p className="text-gray-500 mt-2">Carregando clientes...</p>
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-gray-400 dark:text-slate-400" />
+              <p className="text-gray-500 dark:text-slate-300 mt-2">Carregando clientes...</p>
             </div>
           ) : filteredClients.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-gray-500 dark:text-slate-300">
               <Users className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p className="mb-2">
                 {searchTerm ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado'}
@@ -392,7 +392,7 @@ export default function ClientesPage() {
               {!searchTerm && (
                 <button
                   onClick={() => handleOpenModal()}
-                  className="text-sm text-slate-800 hover:text-slate-600 font-medium"
+                  className="text-sm text-slate-800 dark:text-slate-200 hover:text-slate-600 dark:hover:text-slate-100 font-medium"
                 >
                   Adicionar primeiro cliente
                 </button>
@@ -402,34 +402,34 @@ export default function ClientesPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  <tr className="border-b border-gray-200 dark:border-slate-500 bg-gray-50 dark:bg-slate-800">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                       Empresa
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                       CNPJ
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                       Responsável
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                       Contato
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                       Localização
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                       Ações
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-slate-500">
                   {filteredClients.map((client) => {
                     const clientWhatsAppUrl = getWhatsAppWebUrl(client.whatsapp)
                     return (
                     <tr
                       key={client.id}
-                      className="hover:bg-gray-50 transition-colors"
+                      className="hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors"
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
@@ -437,23 +437,23 @@ export default function ClientesPage() {
                             <Building2 className="w-5 h-5 text-white" />
                           </div>
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium text-gray-900">{client.company_name}</span>
+                            <span className="text-sm font-medium text-gray-900 dark:text-slate-100">{client.company_name}</span>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900">{client.cnpj || 'Não informado'}</span>
+                        <span className="text-sm text-gray-900 dark:text-slate-100">{client.cnpj || 'Não informado'}</span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <Users className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm text-gray-900">{client.responsible}</span>
+                          <Users className="w-4 h-4 text-gray-400 dark:text-slate-400" />
+                          <span className="text-sm text-gray-900 dark:text-slate-100">{client.responsible}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2 min-w-0">
-                            <Phone className="w-4 h-4 shrink-0 text-gray-400" />
+                            <Phone className="w-4 h-4 shrink-0 text-gray-400 dark:text-slate-400" />
                             {clientWhatsAppUrl ? (
                               <a
                                 href={clientWhatsAppUrl}
@@ -464,36 +464,36 @@ export default function ClientesPage() {
                                 {client.whatsapp}
                               </a>
                             ) : (
-                              <span className="text-sm text-gray-900 truncate">{client.whatsapp}</span>
+                              <span className="text-sm text-gray-900 dark:text-slate-100 truncate">{client.whatsapp}</span>
                             )}
                           </div>
                           <div className="flex items-center gap-2">
-                            <Mail className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-900">{client.email}</span>
+                            <Mail className="w-4 h-4 text-gray-400 dark:text-slate-400" />
+                            <span className="text-sm text-gray-900 dark:text-slate-100">{client.email}</span>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-900">{client.city}, {client.state}</span>
+                            <MapPin className="w-4 h-4 text-gray-400 dark:text-slate-400" />
+                            <span className="text-sm text-gray-900 dark:text-slate-100">{client.city}, {client.state}</span>
                           </div>
-                          <span className="text-xs text-gray-500">{client.neighborhood}</span>
+                          <span className="text-xs text-gray-500 dark:text-slate-300">{client.neighborhood}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleOpenModal(client)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="p-1.5 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-500/20 rounded-lg transition-colors"
                             title="Editar"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(client.id)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            className="p-1.5 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/20 rounded-lg transition-colors"
                             title="Excluir"
                           >
                             <Trash2 className="w-4 h-4" />
