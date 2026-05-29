@@ -1,11 +1,14 @@
 'use client'
 
+import type { PropostaEmitente } from '@/lib/constants/proposta-emitentes'
+import { getPropostaDoc } from '@/lib/constants/proposta-emitentes'
 import type { PropostaFormState } from '@/lib/types/proposta'
-import { PROPOSTA_DOC_EMPRESA } from '@/lib/constants/proposta-doc'
 import type { PropostaCalculo } from '@/lib/utils/proposta-calculo'
 import { formatBRLProposta } from '@/lib/utils/proposta-calculo'
+import PropostaBrandLogo from '@/components/propostas/PropostaBrandLogo'
 
 interface Props {
+  emitente: PropostaEmitente
   form: PropostaFormState
   calc: PropostaCalculo
   dataEmissao: string
@@ -15,7 +18,8 @@ interface Props {
 const navy = '#0f2847'
 const border = '#1e293b'
 
-export default function PropostaPdfPreview({ form, calc, dataEmissao, className }: Props) {
+export default function PropostaPdfPreview({ emitente, form, calc, dataEmissao, className }: Props) {
+  const doc = getPropostaDoc(emitente)
   const fmtKg = (n: number) =>
     n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' KG'
   const fmtM3 = (n: number) =>
@@ -38,26 +42,18 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
     >
       <header className="flex justify-between gap-4 pb-3 border-b-2" style={{ borderColor: navy }}>
         <div className="min-w-0 flex items-start">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo-header.png"
-            alt=""
-            className="block max-h-10 w-auto max-w-[56mm] object-contain object-left"
-            aria-hidden
-          />
+          <PropostaBrandLogo doc={doc} />
         </div>
         <div className="text-right text-[8.5pt] max-w-[95mm] ml-auto">
           <p className="text-xl font-black tracking-tight mb-1" style={{ color: navy }}>
             PROPOSTA DE COTAÇÃO
           </p>
-          <p className="text-gray-700 leading-snug">{PROPOSTA_DOC_EMPRESA.enderecoLogradouro}</p>
-          <p className="text-gray-700 leading-snug">{PROPOSTA_DOC_EMPRESA.enderecoBairroCepCidade}</p>
-          {PROPOSTA_DOC_EMPRESA.inscricaoEstadual ? (
-            <p className="text-gray-700">IE: {PROPOSTA_DOC_EMPRESA.inscricaoEstadual}</p>
-          ) : null}
-          {PROPOSTA_DOC_EMPRESA.telefone ? (
-            <p className="text-gray-700">{PROPOSTA_DOC_EMPRESA.telefone}</p>
-          ) : null}
+          <p className="text-[8pt] font-semibold text-gray-800 mb-0.5">{doc.razaoSocial}</p>
+          {doc.cnpj ? <p className="text-gray-700">{doc.cnpj}</p> : null}
+          <p className="text-gray-700 leading-snug">{doc.enderecoLogradouro}</p>
+          <p className="text-gray-700 leading-snug">{doc.enderecoBairroCepCidade}</p>
+          {doc.inscricaoEstadual ? <p className="text-gray-700">IE: {doc.inscricaoEstadual}</p> : null}
+          {doc.telefone ? <p className="text-gray-700">{doc.telefone}</p> : null}
         </div>
       </header>
 
@@ -196,7 +192,7 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
 
       <div className="mt-4 text-[8pt] text-gray-600 leading-snug">
         <p>
-          Proposta válida por <strong>{PROPOSTA_DOC_EMPRESA.validadeDias} dias</strong> a partir da emissão.
+          Proposta válida por <strong>{doc.validadeDias} dias</strong> a partir da emissão.
           Valores sujeitos a confirmação de disponibilidade de equipamento e janela de coleta.
         </p>
         <p className="mt-1">Não inclui ajudantes, pedágios e taxas de terminal, salvo negociação expressa.</p>
@@ -209,8 +205,9 @@ export default function PropostaPdfPreview({ form, calc, dataEmissao, className 
         className="text-center font-bold text-[9pt] mt-4 pt-3 border-t"
         style={{ color: navy, borderColor: border }}
       >
-        {PROPOSTA_DOC_EMPRESA.slogan}
+        {doc.slogan}
       </p>
+      <p className="text-center text-[7pt] text-gray-500 mt-2">{doc.rodape}</p>
     </article>
   )
 }

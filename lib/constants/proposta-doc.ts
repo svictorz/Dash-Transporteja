@@ -1,43 +1,34 @@
 /**
- * Dados cadastrais da empresa emitente (proposta de cotação / PDF).
- * Nome fantasia em destaque: OP TRANSPORTES. Razão e CNPJ conforme registro.
+ * Legado: dados da Ágape Transportes (emitente padrão).
+ * Preferir `getPropostaDoc('agape')` em código novo.
  */
+import { getPropostaDoc, propostaDocEnderecoUmaLinha as enderecoLinha } from '@/lib/constants/proposta-emitentes'
+
+const agape = getPropostaDoc('agape')
+
 export const PROPOSTA_DOC_EMPRESA = {
-  /** Nome fantasia */
-  nomeFantasia: 'OP TRANSPORTES',
-  /** Razão social */
-  razaoSocial: 'AGAPE TRANSPORTES LTDA',
-  /** Exibição curta (legado / textos) */
-  nomeExibicao: 'OP TRANSPORTES',
-  nomeMaiusculo: 'OP TRANSPORTES',
-
+  nomeFantasia: agape.nomeFantasia,
+  razaoSocial: agape.razaoSocial,
+  nomeExibicao: agape.nomeFantasia,
+  nomeMaiusculo: agape.nomeMaiusculo,
   cnpjNumeros: '40189703000124',
-  cnpj: 'CNPJ: 40.189.703/0001-24',
-
-  matriz: 'MATRIZ — CAMPINAS / SP',
-  enderecoLogradouro: 'R. Alcides Modesto de Camargo, nº 390, Sala C',
-  enderecoBairroCepCidade: 'Parque Santa Bárbara — CEP 13.064-030 — Campinas / SP',
-
-  /** Inscrição estadual: preencha quando for usar em NF / CT-e; omitida no PDF se vazia */
-  inscricaoEstadual: '',
-
-  /** Telefone comercial: preencha para aparecer no cabeçalho da proposta */
-  telefone: '',
-
+  cnpj: agape.cnpj,
+  matriz: agape.matriz,
+  enderecoLogradouro: agape.enderecoLogradouro,
+  enderecoBairroCepCidade: agape.enderecoBairroCepCidade,
+  inscricaoEstadual: agape.inscricaoEstadual,
+  telefone: agape.telefone,
   dataAbertura: '23/12/2020',
   porte: 'ME',
   naturezaJuridica: '206-2 — Sociedade Empresária Limitada',
   cnaePrincipal:
     '49.30-2/02 — Transporte rodoviário de carga, exceto produtos perigosos e mudanças, intermunicipal, interestadual e internacional',
-
-  slogan: 'QUALIDADE E SEGURANÇA LOGÍSTICA.',
-  rodape: 'DOCUMENTO DIGITAL ORIGINAL — AGAPE TRANSPORTES LTDA',
-
-  validadeDias: 7,
+  slogan: agape.slogan,
+  rodape: agape.rodape,
+  validadeDias: agape.validadeDias,
 }
 
-/** Linha única de endereço (impressão / textos compactos) */
+/** Linha única de endereço (impressão / textos compactos) — emitente Ágape. */
 export function propostaDocEnderecoUmaLinha(): string {
-  const e = PROPOSTA_DOC_EMPRESA
-  return `${e.enderecoLogradouro} — ${e.enderecoBairroCepCidade}`
+  return enderecoLinha('agape')
 }

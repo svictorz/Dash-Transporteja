@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS public.routes (
   taxes_value NUMERIC(14,2),
   net_freight_value NUMERIC(14,2),
   commission_value NUMERIC(14,2),
+  commission_paid BOOLEAN NOT NULL DEFAULT false,
   payment_status TEXT,
   payment_type TEXT,
   driver_name TEXT,
@@ -141,6 +142,7 @@ ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS driver_value NUMERIC(14,2);
 ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS taxes_value NUMERIC(14,2);
 ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS net_freight_value NUMERIC(14,2);
 ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS commission_value NUMERIC(14,2);
+ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS commission_paid BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS payment_status TEXT;
 ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS payment_type TEXT;
 ALTER TABLE public.routes ADD COLUMN IF NOT EXISTS driver_name TEXT;

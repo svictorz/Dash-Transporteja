@@ -1,3 +1,5 @@
+import type { PropostaEmitente } from '@/lib/constants/proposta-emitentes'
+import { getPropostaDoc } from '@/lib/constants/proposta-emitentes'
 import type { PropostaFormState } from '@/lib/types/proposta'
 
 const FATOR_CUBAGEM_KG_M3 = 300
@@ -7,14 +9,20 @@ export function parseDecimalBR(value: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
-/** AGT + YYYYMMDD + 2 dígitos aleatórios */
-export function gerarCodigoPropostaAGT(): string {
+/** Prefixo do emitente + YYYYMMDD + 2 dígitos aleatórios */
+export function gerarCodigoProposta(emitente: PropostaEmitente = 'agape'): string {
+  const prefix = getPropostaDoc(emitente).codigoPrefix
   const d = new Date()
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   const r = String(Math.floor(Math.random() * 90) + 10)
-  return `AGT${y}${m}${day}${r}`
+  return `${prefix}${y}${m}${day}${r}`
+}
+
+/** @deprecated Use gerarCodigoProposta('agape') */
+export function gerarCodigoPropostaAGT(): string {
+  return gerarCodigoProposta('agape')
 }
 
 export interface PropostaCalculo {

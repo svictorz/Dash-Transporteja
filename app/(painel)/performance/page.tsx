@@ -11,7 +11,9 @@ import {
   Building2,
   Calendar,
   CalendarDays,
+  CheckCircle2,
   ChevronDown,
+  Circle,
   Eye,
   EyeOff,
   FileText,
@@ -309,6 +311,7 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     })(),
     net_freight_value: toNumberOrNull(r.net_freight_value),
     commission_value: toNumberOrNull(r.commission_value),
+    commission_paid: r.commission_paid === true,
     payment_status: nullableStr(r.payment_status),
     payment_type: nullableStr(r.payment_type),
     driver_payment_status: nullableStr(r.driver_payment_status),
@@ -320,6 +323,52 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     created_at: strField(r.created_at),
     updated_at: strField(r.updated_at),
   }
+}
+
+function CommissionPaidToggle({
+  paid,
+  loading,
+  onClick,
+  compact = true,
+}: {
+  paid: boolean
+  loading?: boolean
+  onClick: () => void
+  compact?: boolean
+}) {
+  const sizeClass = compact ? 'px-1.5 py-0.5 text-[10px] gap-0.5' : 'px-2.5 py-1 text-xs gap-1'
+  const iconClass = compact ? 'w-3 h-3' : 'w-3.5 h-3.5'
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      disabled={loading}
+      title={
+        paid
+          ? 'Comissão paga — clique para marcar como pendente'
+          : 'Comissão pendente — clique para marcar como paga'
+      }
+      aria-pressed={paid}
+      aria-label={paid ? 'Comissão paga' : 'Comissão pendente'}
+      className={`inline-flex items-center rounded-md border font-semibold transition-colors disabled:opacity-60 ${sizeClass} ${
+        paid
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950'
+          : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/60'
+      }`}
+    >
+      {loading ? (
+        <Loader2 className={`${iconClass} animate-spin shrink-0`} aria-hidden />
+      ) : paid ? (
+        <CheckCircle2 className={`${iconClass} shrink-0`} aria-hidden />
+      ) : (
+        <Circle className={`${iconClass} shrink-0`} aria-hidden />
+      )}
+      {paid ? 'Pago' : 'Pendente'}
+    </button>
+  )
 }
 
 function perfDetailStatusLabel(s: Route['status']): string {
@@ -672,6 +721,7 @@ export default function PerformancePage() {
     vehicle: '',
     plate: '',
   })
+  const [commissionToggleRouteId, setCommissionToggleRouteId] = useState<string | null>(null)
 
   useEffect(() => {
     setVisibleMoney(parseStoredMoneyVisibility())
@@ -952,6 +1002,7 @@ export default function PerformancePage() {
   )
 
   const isAdmin = role === 'admin' || role === 'financeiro'
+  const isStrictAdmin = role === 'admin'
   const canManagePerfModal = role === 'admin' || role === 'financeiro'
   /** Coluna Rotas: admin/financeiro (detalhe na própria página) ou link para fretes próprios. */
   const showRotasColumn = useMemo(
@@ -971,6 +1022,34 @@ export default function PerformancePage() {
     const parsed = Number(normalized)
     return Number.isFinite(parsed) ? parsed : null
   }, [])
+
+  const handleToggleCommissionPaid = useCallback(
+    async (route: Route) => {
+      if (!isStrictAdmin) return
+      const nextPaid = !route.commission_paid
+      setCommissionToggleRouteId(route.id)
+      try {
+        const { data, error: updateError } = await supabase
+          .from('routes')
+          .update({ commission_paid: nextPaid })
+          .eq('id', route.id)
+          .select('*')
+          .single()
+
+        if (updateError) throw new Error(updateError.message)
+        const updatedRoute = normalizeRouteFromApi((data as Record<string, unknown>) || {})
+        setRows((prev) => prev.map((r) => (r.id === updatedRoute.id ? updatedRoute : r)))
+        setSelectedPerfRoute((prev) => (prev?.id === updatedRoute.id ? updatedRoute : prev))
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : 'Erro ao atualizar o status da comissão.'
+        alert(msg)
+      } finally {
+        setCommissionToggleRouteId(null)
+      }
+    },
+    [isStrictAdmin],
+  )
 
   const handleSaveFinancialFields = useCallback(async () => {
     if (!selectedPerfRoute || !canManagePerfModal) return
@@ -1440,7 +1519,16 @@ export default function PerformancePage() {
                   return (
                     <tr key={r.id} className="border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
                         <td className="px-4 py-3 align-top font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap">
-                          {r.freight_id > 0 ? `#${r.freight_id}` : '—'}
+                          <div className="flex flex-col items-start gap-1.5">
+                            <span>{r.freight_id > 0 ? `#${r.freight_id}` : '—'}</span>
+                            {isStrictAdmin ? (
+                              <CommissionPaidToggle
+                                paid={Boolean(r.commission_paid)}
+                                loading={commissionToggleRouteId === r.id}
+                                onClick={() => void handleToggleCommissionPaid(r)}
+                              />
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-4 py-3 align-top border-r border-gray-100 dark:border-slate-700">
                           <p className="text-gray-900 dark:text-slate-100 truncate" title={r.company_name?.trim() || '—'}>
@@ -1528,9 +1616,19 @@ export default function PerformancePage() {
                   <Truck className="w-6 h-6 text-white" aria-hidden />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    Frete #{selectedPerfRoute.freight_id > 0 ? selectedPerfRoute.freight_id : '—'}
-                  </h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-2xl font-bold text-gray-900">
+                      Frete #{selectedPerfRoute.freight_id > 0 ? selectedPerfRoute.freight_id : '—'}
+                    </h2>
+                    {isStrictAdmin ? (
+                      <CommissionPaidToggle
+                        paid={Boolean(selectedPerfRoute.commission_paid)}
+                        loading={commissionToggleRouteId === selectedPerfRoute.id}
+                        onClick={() => void handleToggleCommissionPaid(selectedPerfRoute)}
+                        compact={false}
+                      />
+                    ) : null}
+                  </div>
                   <div className="flex items-center gap-2 mt-1">
                     <div className={`w-2 h-2 rounded-full ${perfStatusDisplay(selectedPerfRoute.status).dotColor}`} />
                     <span className="text-sm text-gray-600">{perfStatusDisplay(selectedPerfRoute.status).label}</span>

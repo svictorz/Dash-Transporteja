@@ -129,6 +129,7 @@ export interface Database {
           taxes_percent?: number | null
           net_freight_value?: number | null
           commission_value?: number | null
+          commission_paid?: boolean
           payment_status?: string | null
           payment_type?: string | null
           driver_payment_status?: string | null
@@ -172,6 +173,7 @@ export interface Database {
           taxes_percent?: number | null
           net_freight_value?: number | null
           commission_value?: number | null
+          commission_paid?: boolean
           payment_status?: string | null
           payment_type?: string | null
           driver_payment_status?: string | null
@@ -215,6 +217,7 @@ export interface Database {
           taxes_percent?: number | null
           net_freight_value?: number | null
           commission_value?: number | null
+          commission_paid?: boolean
           payment_status?: string | null
           payment_type?: string | null
           driver_payment_status?: string | null
