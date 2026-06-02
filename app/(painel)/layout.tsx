@@ -46,7 +46,7 @@ export default function DashboardLayout({
   const handleSignOut = async () => {
     try {
       setSigningOut(true)
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: 'local' })
       router.replace('/login')
     } finally {
       setSigningOut(false)

@@ -90,7 +90,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   const handleLogout = async () => {
     try {
       const { supabase } = await import('@/lib/supabase/client')
-      const { error } = await supabase.auth.signOut()
+      const { error } = await supabase.auth.signOut({ scope: 'local' })
       void error
 
       localStorage.removeItem('transporteja-user')
