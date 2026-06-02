@@ -431,7 +431,7 @@ export default function UsuariosPage() {
                                   }
                                   onBlur={() => void handleSaveCommissionRate(u)}
                                   onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveCommissionRate(u) }}
-                                  className="w-full pr-5 pl-2 py-1.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/40 text-right"
+                                  className="w-full pr-5 pl-2 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/40 text-right"
                                 />
                                 <Percent className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
                               </div>
