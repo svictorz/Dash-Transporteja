@@ -89,19 +89,13 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
 
   const handleLogout = async () => {
     try {
-      const { supabase } = await import('@/lib/supabase/client')
-      const { error } = await supabase.auth.signOut({ scope: 'local' })
-      void error
-
-      localStorage.removeItem('transporteja-user')
-      localStorage.removeItem('transporteja-notifications')
-
-      router.replace('/login')
-      window.location.href = '/login'
+      await fetch('/api/auth/signout', { method: 'POST' })
     } catch {
-      router.replace('/login')
-      window.location.href = '/login'
+      // ignora erros de rede — segue para limpar local
     }
+    localStorage.removeItem('transporteja-user')
+    localStorage.removeItem('transporteja-notifications')
+    window.location.href = '/login'
   }
 
   // Conteúdo da sidebar — sem stagger / FadeIn / backdrop-blur internos.

@@ -156,27 +156,11 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
 
   const handleLogout = async () => {
     try {
-      // Limpar sessão do Supabase
-      const { error } = await supabase.auth.signOut({ scope: 'local' })
-      
-      if (error) {
-        console.error('Erro ao fazer logout:', error)
-      }
-      
-      // Limpar estado local
-      setUser(null)
-      
-      // Redirecionar para login e forçar recarregamento
-      router.replace('/login')
-      
-      // Forçar recarregamento completo para limpar qualquer cache
-      window.location.href = '/login'
-    } catch (error) {
-      console.error('Erro ao fazer logout:', error)
-      // Mesmo com erro, redirecionar para login
-      router.replace('/login')
-      window.location.href = '/login'
+      await fetch('/api/auth/signout', { method: 'POST' })
+    } catch {
+      // ignora erros de rede
     }
+    window.location.href = '/login'
   }
 
   return (

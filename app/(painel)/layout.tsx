@@ -8,7 +8,6 @@ import TopBarTransporteja from '@/components/transporteja/TopBarTransporteja'
 import BrandLoading from '@/components/transporteja/BrandLoading'
 import { useAuthState } from '@/lib/hooks/useAuthState'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
-import { supabase } from '@/lib/supabase/client'
 import { PANEL_ROLES, isSuperAdminEmail } from '@/lib/utils/roles'
 
 export default function DashboardLayout({
@@ -46,11 +45,13 @@ export default function DashboardLayout({
   const handleSignOut = async () => {
     try {
       setSigningOut(true)
-      await supabase.auth.signOut({ scope: 'local' })
-      router.replace('/login')
+      await fetch('/api/auth/signout', { method: 'POST' })
+    } catch {
+      // ignora erros de rede
     } finally {
       setSigningOut(false)
     }
+    window.location.href = '/login'
   }
 
   if (!mounted || authLoading || !session) {
