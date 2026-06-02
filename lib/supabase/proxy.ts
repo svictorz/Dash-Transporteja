@@ -24,12 +24,15 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // getUser() revalida o JWT com o servidor Auth (mais seguro que getSession(), que pode
-  // confiar só no cookie). Mantém refresh de sessão via setAll nos cookies.
+  // getUser() revalida o JWT com o servidor Auth. Timeout de 1200ms evita
+  // MIDDLEWARE_INVOCATION_TIMEOUT na Vercel Edge (limite ~1500ms).
+  const timeout = new Promise<{ data: { user: null }; error: Error }>((resolve) =>
+    setTimeout(() => resolve({ data: { user: null }, error: new Error('timeout') }), 1200)
+  )
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser()
+  } = await Promise.race([supabase.auth.getUser(), timeout])
 
   const pathname = request.nextUrl.pathname
   const isPainel = isPainelPath(pathname)
