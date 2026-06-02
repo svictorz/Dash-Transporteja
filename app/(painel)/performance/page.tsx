@@ -11,9 +11,7 @@ import {
   Building2,
   Calendar,
   CalendarDays,
-  CheckCircle2,
   ChevronDown,
-  Circle,
   Eye,
   EyeOff,
   FileText,
@@ -32,7 +30,12 @@ import {
 import type { Route } from '@/lib/services/routes'
 import { supabase } from '@/lib/supabase/client'
 import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
+import {
+  ROUTE_PERIOD_FILTER_HINT,
+  filterRoutesByDateRange,
+} from '@/lib/utils/route-period-filter'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
+import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
 
 type Periodo = 'tudo' | 'essaSemana' | 'mesAtual' | '30d' | 'mesPassado' | 'custom'
 type UserRole = 'admin' | 'comercial' | 'financeiro' | 'driver' | 'operator' | null
@@ -156,12 +159,6 @@ function routeStatesShort(originState: string | null, destState: string | null):
   return `${o} > ${d}`
 }
 
-function endOfTodayIso(): string {
-  const now = new Date()
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-  return end.toISOString()
-}
-
 function toIsoRange(periodo: Periodo, customStart: string, customEnd: string): { fromIso: string; toIso: string } {
   const now = new Date()
 
@@ -199,6 +196,33 @@ function toIsoRange(periodo: Periodo, customStart: string, customEnd: string): {
   from.setDate(now.getDate() - 29)
   from.setHours(0, 0, 0, 0)
   return { fromIso: from.toISOString(), toIso: endOfTodayIso() }
+}
+
+function endOfTodayIso(): string {
+  const now = new Date()
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+  return end.toISOString()
+}
+
+function periodBoundsFromSelection(
+  periodo: Periodo,
+  customStart: string,
+  customEnd: string,
+): { start: Date | null; end: Date | null } {
+  const { fromIso, toIso } = toIsoRange(periodo, customStart, customEnd)
+  if (periodo === 'tudo') {
+    return { start: null, end: new Date(toIso) }
+  }
+  return { start: new Date(fromIso), end: new Date(toIso) }
+}
+
+const PERIODO_LABELS: Record<Periodo, string> = {
+  tudo: 'Todo período',
+  essaSemana: 'Essa semana',
+  mesAtual: 'Mês atual',
+  '30d': 'Últimos 30 dias',
+  mesPassado: 'Mês passado',
+  custom: 'Personalizado',
 }
 
 const TAXES_PERCENT_OPTIONS = [0, 10, 12, 18] as const
@@ -323,52 +347,6 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     created_at: strField(r.created_at),
     updated_at: strField(r.updated_at),
   }
-}
-
-function CommissionPaidToggle({
-  paid,
-  loading,
-  onClick,
-  compact = true,
-}: {
-  paid: boolean
-  loading?: boolean
-  onClick: () => void
-  compact?: boolean
-}) {
-  const sizeClass = compact ? 'px-1.5 py-0.5 text-[10px] gap-0.5' : 'px-2.5 py-1 text-xs gap-1'
-  const iconClass = compact ? 'w-3 h-3' : 'w-3.5 h-3.5'
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onClick()
-      }}
-      disabled={loading}
-      title={
-        paid
-          ? 'Comissão paga — clique para marcar como pendente'
-          : 'Comissão pendente — clique para marcar como paga'
-      }
-      aria-pressed={paid}
-      aria-label={paid ? 'Comissão paga' : 'Comissão pendente'}
-      className={`inline-flex items-center rounded-md border font-semibold transition-colors disabled:opacity-60 ${sizeClass} ${
-        paid
-          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950'
-          : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/60'
-      }`}
-    >
-      {loading ? (
-        <Loader2 className={`${iconClass} animate-spin shrink-0`} aria-hidden />
-      ) : paid ? (
-        <CheckCircle2 className={`${iconClass} shrink-0`} aria-hidden />
-      ) : (
-        <Circle className={`${iconClass} shrink-0`} aria-hidden />
-      )}
-      {paid ? 'Pago' : 'Pendente'}
-    </button>
-  )
 }
 
 function perfDetailStatusLabel(s: Route['status']): string {
@@ -691,7 +669,7 @@ export default function PerformancePage() {
   const [role, setRole] = useState<UserRole>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserName, setCurrentUserName] = useState<string>('Usuário')
-  const [periodo, setPeriodo] = useState<Periodo>('tudo')
+  const [periodo, setPeriodo] = useState<Periodo>('mesAtual')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
   const [rows, setRows] = useState<Route[]>([])
@@ -839,14 +817,10 @@ export default function PerformancePage() {
         setRole(userRole)
         setCurrentUserName(me?.name || me?.email || sessionEmail || 'Usuário')
 
-        const { fromIso, toIso } = toIsoRange(periodo, customStart, customEnd)
-
         const isAdmin = userRole === 'admin' || userRole === 'financeiro'
         const routesQuery = supabase
           .from('routes')
           .select('*')
-          .gte('created_at', fromIso)
-          .lte('created_at', toIso)
           .order('created_at', { ascending: false })
 
         // Para admins/financeiro carregamos TODOS os usuários (não só comerciais),
@@ -892,15 +866,25 @@ export default function PerformancePage() {
     return () => {
       cancelled = true
     }
-  }, [periodo, customStart, customEnd, selectedComercial, didInitSelectedComercial])
+  }, [didInitSelectedComercial])
+
+  const periodBounds = useMemo(
+    () => periodBoundsFromSelection(periodo, customStart, customEnd),
+    [periodo, customStart, customEnd],
+  )
+
+  const periodRows = useMemo(
+    () => filterRoutesByDateRange(rows, periodBounds.start, periodBounds.end),
+    [rows, periodBounds],
+  )
 
   const filteredRows = useMemo(() => {
-    if (selectedComercial === 'all') return rows
+    if (selectedComercial === 'all') return periodRows
     if (selectedComercial === '__sem_responsavel__') {
-      return rows.filter((r) => !r.created_by_user_id)
+      return periodRows.filter((r) => !r.created_by_user_id)
     }
-    return rows.filter((r) => r.created_by_user_id === selectedComercial)
-  }, [rows, selectedComercial])
+    return periodRows.filter((r) => r.created_by_user_id === selectedComercial)
+  }, [periodRows, selectedComercial])
 
   const byUser = useMemo(() => {
     const map = new Map<string, UserPerfAgg>()
@@ -997,8 +981,8 @@ export default function PerformancePage() {
   }, [filteredRows, userById, currentUserId, currentUserName, role])
 
   const hasSemResponsavel = useMemo(
-    () => rows.some((r) => !r.created_by_user_id),
-    [rows],
+    () => periodRows.some((r) => !r.created_by_user_id),
+    [periodRows],
   )
 
   const isAdmin = role === 'admin' || role === 'financeiro'
@@ -1202,7 +1186,13 @@ export default function PerformancePage() {
                   : 'Visão da performance de todo o time comercial'
                 : `Performance de ${selectedComercialLabel}`
               : `Métricas dos fretes no período — ${currentUserName}`}
+            {' · '}
+            <span className="font-medium text-gray-700">{PERIODO_LABELS[periodo]}</span>
+            {periodRows.length > 0 ? (
+              <span className="text-gray-500"> · {periodRows.length} fretes no período</span>
+            ) : null}
           </p>
+          <p className="text-xs text-gray-500 mt-1 max-w-2xl">{ROUTE_PERIOD_FILTER_HINT}</p>
           {!isAdmin && (
             <p className="text-xs text-gray-500 mt-2 max-w-xl">
               Os totais refletem os fretes disponíveis para sua conta no período, incluindo registros antigos sem responsável definido.
@@ -1220,11 +1210,11 @@ export default function PerformancePage() {
                 className="appearance-none rounded-xl border border-gray-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900 pl-9 pr-8 py-2 text-xs text-gray-700 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-800/20 cursor-pointer"
                 aria-label="Filtrar por vendedor"
               >
-                <option value="all" className={selectOptionClass}>Todos os vendedores ({rows.length})</option>
+                <option value="all" className={selectOptionClass}>Todos os vendedores ({periodRows.length})</option>
                 {comerciais
                   .filter((u) => u.role === 'comercial' || u.role === 'operator' || u.role === 'admin')
                   .map((u) => {
-                    const count = rows.filter((r) => r.created_by_user_id === u.id).length
+                    const count = periodRows.filter((r) => r.created_by_user_id === u.id).length
                     const label = u.name || u.email
                     return (
                       <option key={u.id} value={u.id} className={selectOptionClass}>
@@ -1234,7 +1224,7 @@ export default function PerformancePage() {
                   })}
                 {hasSemResponsavel && (
                   <option value="__sem_responsavel__" className={selectOptionClass}>
-                    Sem responsável ({rows.filter((r) => !r.created_by_user_id).length})
+                    Sem responsável ({periodRows.filter((r) => !r.created_by_user_id).length})
                   </option>
                 )}
               </select>
@@ -1476,7 +1466,8 @@ export default function PerformancePage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-200">
                 <tr>
-                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">#</th>
+                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">ID do Frete</th>
+                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">Pgto. comissão</th>
                   <th className="text-left px-4 py-3 font-semibold border-r border-gray-200/80">
                     Cliente
                   </th>
@@ -1519,16 +1510,15 @@ export default function PerformancePage() {
                   return (
                     <tr key={r.id} className="border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
                         <td className="px-4 py-3 align-top font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap">
-                          <div className="flex flex-col items-start gap-1.5">
-                            <span>{r.freight_id > 0 ? `#${r.freight_id}` : '—'}</span>
-                            {isStrictAdmin ? (
-                              <CommissionPaidToggle
-                                paid={Boolean(r.commission_paid)}
-                                loading={commissionToggleRouteId === r.id}
-                                onClick={() => void handleToggleCommissionPaid(r)}
-                              />
-                            ) : null}
-                          </div>
+                          {r.freight_id > 0 ? `#${r.freight_id}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 align-top whitespace-nowrap">
+                          <CommissionPaidStatus
+                            paid={Boolean(r.commission_paid)}
+                            loading={commissionToggleRouteId === r.id}
+                            editable={isStrictAdmin}
+                            onToggle={() => void handleToggleCommissionPaid(r)}
+                          />
                         </td>
                         <td className="px-4 py-3 align-top border-r border-gray-100 dark:border-slate-700">
                           <p className="text-gray-900 dark:text-slate-100 truncate" title={r.company_name?.trim() || '—'}>
@@ -1621,13 +1611,19 @@ export default function PerformancePage() {
                       Frete #{selectedPerfRoute.freight_id > 0 ? selectedPerfRoute.freight_id : '—'}
                     </h2>
                     {isStrictAdmin ? (
-                      <CommissionPaidToggle
+                      <CommissionPaidStatus
                         paid={Boolean(selectedPerfRoute.commission_paid)}
                         loading={commissionToggleRouteId === selectedPerfRoute.id}
-                        onClick={() => void handleToggleCommissionPaid(selectedPerfRoute)}
+                        editable
+                        compact={false}
+                        onToggle={() => void handleToggleCommissionPaid(selectedPerfRoute)}
+                      />
+                    ) : (
+                      <CommissionPaidStatus
+                        paid={Boolean(selectedPerfRoute.commission_paid)}
                         compact={false}
                       />
-                    ) : null}
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <div className={`w-2 h-2 rounded-full ${perfStatusDisplay(selectedPerfRoute.status).dotColor}`} />

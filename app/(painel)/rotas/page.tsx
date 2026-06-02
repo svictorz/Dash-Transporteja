@@ -16,6 +16,7 @@ import {
 import { Client, ensureClientFromRoute } from '@/lib/services/clients'
 import { Driver } from '@/lib/services/drivers'
 import CEPInput from '@/components/transporteja/CEPInput'
+import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
 import { CEPData } from '@/lib/services/cep'
 import { findCityMatch, prefetchCityIndex } from '@/lib/services/ibge'
 import { supabase } from '@/lib/supabase/client'
@@ -167,6 +168,7 @@ export default function RotasPage() {
   const [uploadingDocument, setUploadingDocument] = useState<DocumentKey | null>(null)
   const [removingDocumentPath, setRemovingDocumentPath] = useState<string | null>(null)
   const [updatingStatusRouteId, setUpdatingStatusRouteId] = useState<string | null>(null)
+  const [commissionToggleRouteId, setCommissionToggleRouteId] = useState<string | null>(null)
   
   const [companyInput, setCompanyInput] = useState('')
   
@@ -427,6 +429,23 @@ export default function RotasPage() {
     handleOpenEdit,
     router,
   ])
+
+  const handleToggleCommissionPaid = useCallback(
+    async (routeId: string, currentPaid: boolean) => {
+      if (!isAdminUser) return
+      setCommissionToggleRouteId(routeId)
+      try {
+        await updateRoute(routeId, { commission_paid: !currentPaid })
+      } catch (err: unknown) {
+        const msg =
+          err instanceof Error ? err.message : 'Erro ao atualizar o status da comissão.'
+        alert(msg)
+      } finally {
+        setCommissionToggleRouteId(null)
+      }
+    },
+    [isAdminUser, updateRoute],
+  )
 
   const handleDeleteRoute = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir esta rota?')) return
@@ -1068,6 +1087,9 @@ export default function RotasPage() {
                 <th className="px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Frete
                 </th>
+                <th className="px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                  Pgto. comissão
+                </th>
                 <th className="hidden sm:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Cliente
                 </th>
@@ -1108,6 +1130,14 @@ export default function RotasPage() {
                       <span className="text-sm font-medium text-gray-900">
                         #{route.freight_id}
                       </span>
+                    </td>
+                    <td className="px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <CommissionPaidStatus
+                        paid={route.commission_paid === true}
+                        loading={commissionToggleRouteId === route.id}
+                        editable={isAdminUser}
+                        onToggle={() => void handleToggleCommissionPaid(route.id, route.commission_paid === true)}
+                      />
                     </td>
                     <td className="hidden sm:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import FadeIn from '@/components/animations/FadeIn'
 import {
@@ -22,9 +22,17 @@ import {
 import { useRouter } from 'next/navigation'
 import { useRoutes } from '@/lib/hooks/useRoutes'
 import { useAuthState } from '@/lib/hooks/useAuthState'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import type { Route as RouteRecord } from '@/lib/services/routes'
 import { formatDateDdMmYyyy } from '@/lib/utils/date-format'
+import {
+  ROUTE_PERIOD_FILTER_HINT,
+  filterRoutesByDateRange,
+  getRouteOperationalDate,
+  startOfDay,
+} from '@/lib/utils/route-period-filter'
 import BrandLoading from '@/components/transporteja/BrandLoading'
+import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
 
 interface Alert {
   id: string
@@ -48,6 +56,7 @@ interface RoutePreview {
   weight: string
   estimatedDelivery: string
   pickupDate: string
+  commissionPaid: boolean
   status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
 }
 
@@ -75,32 +84,6 @@ const formatBRLShort = (value: number) => {
   if (Math.abs(value) >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1).replace('.', ',')}M`
   if (Math.abs(value) >= 1_000) return `R$ ${(value / 1_000).toFixed(1).replace('.', ',')}k`
   return formatBRL(value)
-}
-
-function startOfDay(d: Date) {
-  const x = new Date(d)
-  x.setHours(0, 0, 0, 0)
-  return x
-}
-
-/**
- * Data de referência usada pelos filtros do dashboard.
- *
- * Para um painel financeiro/operacional de transportes a data que importa é
- * a **data da coleta** (quando o frete ocorreu). Caímos para a previsão de
- * entrega ou, em último caso, para `created_at` apenas para registros que
- * ainda não tenham coleta marcada — assim, fretes recém-cadastrados
- * referentes a períodos anteriores continuam aparecendo nas métricas do
- * período em que efetivamente aconteceram.
- */
-function getRouteDate(r: RouteRecord): Date | null {
-  const candidates = [r.pickup_date, r.estimated_delivery, r.created_at]
-  for (const raw of candidates) {
-    if (!raw) continue
-    const d = new Date(raw)
-    if (!isNaN(d.getTime())) return d
-  }
-  return null
 }
 
 function periodRange(period: PeriodKey, now = new Date()): { start: Date | null; end: Date; prevStart: Date | null; prevEnd: Date | null } {
@@ -138,17 +121,6 @@ function periodRange(period: PeriodKey, now = new Date()): { start: Date | null;
   const prevStart = new Date(now.getFullYear() - 1, 0, 1, 0, 0, 0, 0)
   const prevEnd = new Date(start.getTime() - 1)
   return { start, end, prevStart, prevEnd }
-}
-
-function filterByRange(routes: RouteRecord[], start: Date | null, end: Date | null): RouteRecord[] {
-  if (!start && !end) return routes
-  return routes.filter((r) => {
-    const d = getRouteDate(r)
-    if (!d) return false
-    if (start && d < start) return false
-    if (end && d > end) return false
-    return true
-  })
 }
 
 function sumBy(routes: RouteRecord[], field: keyof RouteRecord): number {
@@ -238,11 +210,14 @@ function KpiCard({ label, value, hint, icon: Icon, iconBg, iconColor, delta, del
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { routes, loadRoutes } = useRoutes()
+  const { routes, loadRoutes, updateRoute } = useRoutes()
   const { session, loading: authLoading } = useAuthState()
+  const { user: currentUser } = useCurrentUser()
   const currentUserId = session?.user?.id ?? null
+  const isStrictAdmin = currentUser?.role === 'admin'
   const [mounted, setMounted] = useState(false)
-  const [period, setPeriod] = useState<PeriodKey>('30d')
+  const [period, setPeriod] = useState<PeriodKey>('month')
+  const [commissionToggleRouteId, setCommissionToggleRouteId] = useState<string | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -261,6 +236,23 @@ export default function DashboardPage() {
     } catch {}
   }, [period, mounted])
 
+  const handleToggleCommissionPaid = useCallback(
+    async (routeId: string, currentPaid: boolean) => {
+      if (!isStrictAdmin) return
+      setCommissionToggleRouteId(routeId)
+      try {
+        await updateRoute(routeId, { commission_paid: !currentPaid })
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : 'Erro ao atualizar o status da comissão.'
+        alert(msg)
+      } finally {
+        setCommissionToggleRouteId(null)
+      }
+    },
+    [isStrictAdmin, updateRoute],
+  )
+
   const { start, end, prevStart, prevEnd } = useMemo(() => periodRange(period), [period])
 
   /**
@@ -273,8 +265,14 @@ export default function DashboardPage() {
     return routes.filter((r) => r.created_by_user_id === currentUserId)
   }, [routes, currentUserId])
 
-  const currentRoutes = useMemo(() => filterByRange(ownedRoutes, start, end), [ownedRoutes, start, end])
-  const previousRoutes = useMemo(() => filterByRange(ownedRoutes, prevStart, prevEnd), [ownedRoutes, prevStart, prevEnd])
+  const currentRoutes = useMemo(
+    () => filterRoutesByDateRange(ownedRoutes, start, end),
+    [ownedRoutes, start, end],
+  )
+  const previousRoutes = useMemo(
+    () => filterRoutesByDateRange(ownedRoutes, prevStart, prevEnd),
+    [ownedRoutes, prevStart, prevEnd],
+  )
 
   // ---------- KPIs ----------
   const isPaidFull = (r: RouteRecord) => (r.payment_status ?? '').trim() === '100%'
@@ -326,8 +324,8 @@ export default function DashboardPage() {
   const recentRoutes = useMemo<RoutePreview[]>(() => {
     return [...currentRoutes]
       .sort((a, b) => {
-        const da = getRouteDate(a)?.getTime() ?? 0
-        const db = getRouteDate(b)?.getTime() ?? 0
+        const da = getRouteOperationalDate(a)?.getTime() ?? 0
+        const db = getRouteOperationalDate(b)?.getTime() ?? 0
         return db - da
       })
       .slice(0, 5)
@@ -345,6 +343,7 @@ export default function DashboardPage() {
         weight: route.weight,
         estimatedDelivery: formatDateDdMmYyyy(route.estimated_delivery),
         pickupDate: formatDateDdMmYyyy(route.pickup_date),
+        commissionPaid: route.commission_paid === true,
         status: route.status,
       }))
   }, [currentRoutes])
@@ -394,7 +393,7 @@ export default function DashboardPage() {
             </div>
             <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-300 mt-1">
               Seus lançamentos · <span className="font-medium text-gray-700 dark:text-slate-100">{periodLabel}</span>
-              <span className="text-gray-400 dark:text-slate-400"> · por data de coleta</span>
+              <span className="text-gray-400 dark:text-slate-400"> · {ROUTE_PERIOD_FILTER_HINT.toLowerCase()}</span>
               {kpis.count > 0 ? <span className="text-gray-400 dark:text-slate-400"> · {kpis.count} fretes no período</span> : null}
             </p>
           </div>
@@ -607,6 +606,9 @@ export default function DashboardPage() {
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                         ID do Frete
                       </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider whitespace-nowrap">
+                        Pgto. comissão
+                      </th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-slate-200 uppercase tracking-wider">
                         Cliente
                       </th>
@@ -638,6 +640,14 @@ export default function DashboardPage() {
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm font-medium text-gray-900 dark:text-slate-100">#{route.freightId}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <CommissionPaidStatus
+                              paid={route.commissionPaid}
+                              loading={commissionToggleRouteId === route.id}
+                              editable={isStrictAdmin}
+                              onToggle={() => void handleToggleCommissionPaid(route.id, route.commissionPaid)}
+                            />
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex flex-col">
