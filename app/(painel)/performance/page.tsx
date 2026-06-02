@@ -48,6 +48,7 @@ interface ComercialUser {
   name: string | null
   email: string
   role: string
+  commission_rate: number | null
 }
 
 interface UserPerfAgg {
@@ -257,9 +258,10 @@ function calculatePerfTaxesValue(freightValue?: number | null, taxesPercent?: nu
   return Math.round(freightValue * p * 100) / 100
 }
 
-function calculatePerfCommissionValue(netFreightValue?: number | null) {
+function calculatePerfCommissionValue(netFreightValue?: number | null, ratePercent?: number | null) {
   if (netFreightValue == null) return null
-  return Math.round(netFreightValue * 0.3 * 100) / 100
+  const rate = (ratePercent ?? 30) / 100
+  return Math.round(netFreightValue * rate * 100) / 100
 }
 
 function calculatePerfNetFreightValue(
@@ -830,7 +832,7 @@ export default function PerformancePage() {
         const usersQuery = isAdmin
           ? supabase
               .from('users')
-              .select('id, name, email, role')
+              .select('id, name, email, role, commission_rate')
               .order('name', { ascending: true })
           : Promise.resolve({ data: [], error: null } as { data: ComercialUser[]; error: null })
 
@@ -958,12 +960,13 @@ export default function PerformancePage() {
 
   // Map id -> nome/email para resolver o vendedor de cada frete na tabela detalhada.
   const userById = useMemo(() => {
-    const map = new Map<string, { name: string; email: string; role: string }>()
+    const map = new Map<string, { name: string; email: string; role: string; commission_rate: number | null }>()
     comerciais.forEach((u) => {
       map.set(u.id, {
         name: u.name?.trim() || u.email,
         email: u.email,
         role: u.role,
+        commission_rate: u.commission_rate,
       })
     })
     return map
@@ -976,7 +979,8 @@ export default function PerformancePage() {
       const sellerName = owner?.name || (isMine ? currentUserName : null) || 'Sem responsável'
       const sellerEmail = owner?.email || (isMine ? '' : '')
       const sellerRole = owner?.role || (isMine ? role || '' : '')
-      return { route: r, sellerName, sellerEmail, sellerRole }
+      const sellerCommissionRate = owner?.commission_rate ?? null
+      return { route: r, sellerName, sellerEmail, sellerRole, sellerCommissionRate }
     })
   }, [filteredRows, userById, currentUserId, currentUserName, role])
 
@@ -1045,7 +1049,10 @@ export default function PerformancePage() {
       const baseFreight = selectedPerfRoute.freight_value ?? selectedPerfRoute.nf_value
       const taxesValue = calculatePerfTaxesValue(baseFreight, taxesPercent)
       const netFreightValue = calculatePerfNetFreightValue(baseFreight, driverValue, taxesPercent)
-      const commissionValue = calculatePerfCommissionValue(netFreightValue)
+      const sellerRate = selectedPerfRoute.created_by_user_id
+        ? (comerciais.find((u) => u.id === selectedPerfRoute.created_by_user_id)?.commission_rate ?? null)
+        : null
+      const commissionValue = calculatePerfCommissionValue(netFreightValue, sellerRate)
 
       const updatePayload: Partial<Route> = {
         cte_value: cteValue,
@@ -1485,7 +1492,7 @@ export default function PerformancePage() {
                 </tr>
               </thead>
               <tbody>
-                {detailedRows.map(({ route: r, sellerName, sellerEmail, sellerRole }) => {
+                {detailedRows.map(({ route: r, sellerName, sellerEmail, sellerRole, sellerCommissionRate }) => {
                   const statusLabel =
                     r.status === 'delivered'
                       ? 'Entregue'

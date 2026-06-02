@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Mail,
   UserMinus,
+  Percent,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
@@ -29,6 +30,7 @@ interface ManagedUser {
   email: string
   name: string | null
   role: DashboardUserRole | null
+  commission_rate: number | null
   created_at: string | null
 }
 
@@ -72,6 +74,8 @@ export default function UsuariosPage() {
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | AssignableRole>('all')
+  const [commissionDraft, setCommissionDraft] = useState<Record<string, string>>({})
+  const [savingCommissionId, setSavingCommissionId] = useState<string | null>(null)
 
   const isAuthorized =
     me?.role === 'admin' || isSuperAdminEmail(me?.email)
@@ -93,7 +97,7 @@ export default function UsuariosPage() {
         setError(null)
         const { data, error: err } = await supabase
           .from('users')
-          .select('id, email, name, role, created_at')
+          .select('id, email, name, role, commission_rate, created_at')
           .order('created_at', { ascending: false })
 
         if (err) throw new Error(err.message)
@@ -169,6 +173,34 @@ export default function UsuariosPage() {
       setError(e instanceof Error ? e.message : 'Erro ao salvar permissão')
     } finally {
       setSavingId(null)
+    }
+  }
+
+  const handleSaveCommissionRate = async (target: ManagedUser) => {
+    const raw = commissionDraft[target.id]
+    if (raw === undefined) return
+    const parsed = parseFloat(raw.replace(',', '.'))
+    if (isNaN(parsed) || parsed < 0 || parsed > 100) return
+    const rounded = Math.round(parsed * 100) / 100
+    if (rounded === (target.commission_rate ?? 30)) return
+
+    try {
+      setSavingCommissionId(target.id)
+      const { error: err } = await supabase
+        .from('users')
+        .update({ commission_rate: rounded })
+        .eq('id', target.id)
+      if (err) throw new Error(err.message)
+      setUsers((prev) =>
+        prev.map((u) => (u.id === target.id ? { ...u, commission_rate: rounded } : u)),
+      )
+      setCommissionDraft((prev) => { const n = { ...prev }; delete n[target.id]; return n })
+      setSavedId(target.id)
+      setTimeout(() => setSavedId((curr) => (curr === target.id ? null : curr)), 2000)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao salvar comissão')
+    } finally {
+      setSavingCommissionId(null)
     }
   }
 
@@ -323,13 +355,14 @@ export default function UsuariosPage() {
                 <tr>
                   <th className="px-4 py-3 font-semibold">Usuário</th>
                   <th className="px-4 py-3 font-semibold">Função atual</th>
+                  <th className="px-4 py-3 font-semibold whitespace-nowrap">% Comissão</th>
                   <th className="px-4 py-3 font-semibold">Alterar permissão</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={3} className="px-4 py-10 text-center text-gray-500">
+                    <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Carregando usuários...
                     </td>
@@ -338,7 +371,7 @@ export default function UsuariosPage() {
 
                 {!loading && filteredUsers.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="px-4 py-10 text-center text-gray-500">
+                    <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
                       Nenhum usuário encontrado.
                     </td>
                   </tr>
@@ -382,6 +415,33 @@ export default function UsuariosPage() {
                           >
                             {dashboardRoleLabel(u.role)}
                           </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {currentRole === 'comercial' ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="relative w-20">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  step={0.5}
+                                  value={commissionDraft[u.id] ?? String(u.commission_rate ?? 30)}
+                                  onChange={(e) =>
+                                    setCommissionDraft((prev) => ({ ...prev, [u.id]: e.target.value }))
+                                  }
+                                  onBlur={() => void handleSaveCommissionRate(u)}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveCommissionRate(u) }}
+                                  className="w-full pr-5 pl-2 py-1.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/40 text-right"
+                                />
+                                <Percent className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                              </div>
+                              {savingCommissionId === u.id && (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 flex-shrink-0" />
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-sm">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
