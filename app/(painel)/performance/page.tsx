@@ -823,7 +823,7 @@ export default function PerformancePage() {
         const routesQuery = supabase
           .from('routes')
           .select('*')
-          .order('created_at', { ascending: false })
+          .order('pickup_date', { ascending: false })
 
         // Para admins/financeiro carregamos TODOS os usuários (não só comerciais),
         // para conseguir resolver o nome do vendedor mesmo quando o frete foi criado

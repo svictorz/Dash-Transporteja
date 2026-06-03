@@ -143,7 +143,7 @@ export default function CalendarioPage() {
       const routesPromise = supabase
         .from('routes')
         .select('id, pickup_date, estimated_delivery, origin, destination, freight_id')
-        .order('created_at', { ascending: false })
+        .order('pickup_date', { ascending: false })
 
       const compromissosPromise = supabase
         .from('calendar_events')

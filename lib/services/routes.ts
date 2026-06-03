@@ -149,7 +149,7 @@ export async function getRoutes(): Promise<Route[]> {
   const { data, error } = await supabase
     .from('routes')
     .select('*')
-    .order('created_at', { ascending: false })
+    .order('pickup_date', { ascending: false })
 
   if (error) {
     throw new Error(`Erro ao buscar rotas: ${error.message}`)
@@ -293,7 +293,7 @@ export async function getRoutesByStatus(status: 'pending' | 'inTransit' | 'picke
     .from('routes')
     .select('*')
     .eq('status', status)
-    .order('created_at', { ascending: false })
+    .order('pickup_date', { ascending: false })
 
   if (error) {
     throw new Error(`Erro ao buscar rotas: ${error.message}`)
@@ -310,7 +310,7 @@ export async function getRoutesByDriver(driverId: string): Promise<Route[]> {
     .from('routes')
     .select('*')
     .eq('driver_id', driverId)
-    .order('created_at', { ascending: false })
+    .order('pickup_date', { ascending: false })
 
   if (error) {
     throw new Error(`Erro ao buscar rotas: ${error.message}`)
