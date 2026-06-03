@@ -974,15 +974,22 @@ export default function PerformancePage() {
     return map
   }, [comerciais])
 
+  // Rows filtradas pelo comercial selecionado (sem filtro de data)
+  const comercialRows = useMemo(() => {
+    if (selectedComercial === 'all') return rows
+    if (selectedComercial === '__sem_responsavel__') return rows.filter((r) => !r.created_by_user_id)
+    return rows.filter((r) => r.created_by_user_id === selectedComercial)
+  }, [rows, selectedComercial])
+
   const statusFilteredRows = useMemo(() => {
     if (statusFilter === 'all') return filteredRows
-    // "Entregues": filtra por estimated_delivery no período (todos os comerciais)
+    // "Entregues": fretes do comercial selecionado com estimated_delivery no período
     if (statusFilter === 'delivered') {
-      return rows.filter((r) => isDeliveryInDateRange(r, periodBounds.start, periodBounds.end))
+      return comercialRows.filter((r) => isDeliveryInDateRange(r, periodBounds.start, periodBounds.end))
     }
-    // "Coletados": todos os fretes com pickup_date no período (qualquer status)
+    // "Coletados": todos os fretes do comercial com pickup_date no período (qualquer status)
     return periodRows
-  }, [filteredRows, periodRows, rows, statusFilter, periodBounds])
+  }, [filteredRows, periodRows, comercialRows, statusFilter, periodBounds])
 
   const detailedRows = useMemo(() => {
     return statusFilteredRows.map((r) => {
