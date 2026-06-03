@@ -677,6 +677,7 @@ export default function PerformancePage() {
   const [rows, setRows] = useState<Route[]>([])
   const [comerciais, setComerciais] = useState<ComercialUser[]>([])
   const [selectedComercial, setSelectedComercial] = useState<'all' | string>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pickedUp' | 'delivered'>('all')
   const [didInitSelectedComercial, setDidInitSelectedComercial] = useState(false)
   const [visibleMoney, setVisibleMoney] = useState<Record<MoneyFieldKey, boolean>>(ALL_MONEY_VISIBLE)
   const [selectedPerfRoute, setSelectedPerfRoute] = useState<Route | null>(null)
@@ -972,8 +973,13 @@ export default function PerformancePage() {
     return map
   }, [comerciais])
 
+  const statusFilteredRows = useMemo(() => {
+    if (statusFilter === 'all') return filteredRows
+    return filteredRows.filter((r) => r.status === statusFilter)
+  }, [filteredRows, statusFilter])
+
   const detailedRows = useMemo(() => {
-    return filteredRows.map((r) => {
+    return statusFilteredRows.map((r) => {
       const owner = r.created_by_user_id ? userById.get(r.created_by_user_id) : null
       const isMine = r.created_by_user_id && r.created_by_user_id === currentUserId
       const sellerName = owner?.name || (isMine ? currentUserName : null) || 'Sem responsável'
@@ -982,7 +988,7 @@ export default function PerformancePage() {
       const sellerCommissionRate = owner?.commission_rate ?? null
       return { route: r, sellerName, sellerEmail, sellerRole, sellerCommissionRate }
     })
-  }, [filteredRows, userById, currentUserId, currentUserName, role])
+  }, [statusFilteredRows, userById, currentUserId, currentUserName, role])
 
   const hasSemResponsavel = useMemo(
     () => periodRows.some((r) => !r.created_by_user_id),
@@ -1466,6 +1472,25 @@ export default function PerformancePage() {
               </h2>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
+              <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-slate-800 rounded-lg">
+                {([
+                  { value: 'all', label: 'Todos' },
+                  { value: 'pickedUp', label: 'Coletados' },
+                  { value: 'delivered', label: 'Entregues' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setStatusFilter(opt.value)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      statusFilter === opt.value
+                        ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm'
+                        : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               <span className="text-xs text-gray-500 dark:text-slate-300">Selecionado: {selectedComercialLabel}</span>
             </div>
           </div>

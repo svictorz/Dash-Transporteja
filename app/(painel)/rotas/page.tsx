@@ -1129,7 +1129,7 @@ export default function RotasPage() {
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
           }`}
         >
-          Pendente {statusCounts.pickedUp}
+          Coletados {statusCounts.pickedUp}
         </button>
         <button
           onClick={() => setFilterStatus('inTransit')}
