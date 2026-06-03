@@ -9,25 +9,35 @@ export type RouteForPeriodFilter = {
 }
 
 /**
- * Data operacional usada nos filtros de dashboard e performance.
- *
- * - **Entregue** → `estimated_delivery` (quando o frete foi concluído no mês)
- * - **Coletado / em trânsito / pendente** → `pickup_date` (quando a coleta ocorreu)
- * - Fallback → `created_at` apenas se não houver datas operacionais
+ * Data operacional usada nos filtros de período.
+ * Sempre usa pickup_date como referência principal.
+ * Fallback para estimated_delivery se não houver pickup_date.
  */
 export function getRouteOperationalDate(route: RouteForPeriodFilter): Date | null {
   const pickup = route.pickup_date?.trim() ? parseDateFlexible(route.pickup_date) : null
   const delivery = route.estimated_delivery?.trim() ? parseDateFlexible(route.estimated_delivery) : null
-
-  if (route.status === 'delivered') {
-    return delivery ?? pickup
-  }
-
   return pickup ?? delivery
 }
 
-export function getRouteOperationalDateKind(route: RouteForPeriodFilter): 'coleta' | 'entrega' {
-  return route.status === 'delivered' ? 'entrega' : 'coleta'
+export function getRouteOperationalDateKind(_route: RouteForPeriodFilter): 'coleta' | 'entrega' {
+  return 'coleta'
+}
+
+/**
+ * Verifica se a data de entrega (estimated_delivery) está no intervalo.
+ * Usado no filtro "Entregues" da Performance.
+ */
+export function isDeliveryInDateRange(
+  route: RouteForPeriodFilter,
+  start: Date | null,
+  end: Date | null,
+): boolean {
+  if (route.status !== 'delivered') return false
+  const d = route.estimated_delivery?.trim() ? parseDateFlexible(route.estimated_delivery) : null
+  if (!d) return false
+  if (start && d < start) return false
+  if (end && d > end) return false
+  return true
 }
 
 export function startOfDay(d: Date): Date {
@@ -65,4 +75,4 @@ export function filterRoutesByDateRange<T extends RouteForPeriodFilter>(
 
 /** Texto curto para exibir junto ao seletor de período. */
 export const ROUTE_PERIOD_FILTER_HINT =
-  'Coletas pelo mês da data de coleta · entregues pelo mês da data de entrega'
+  'Filtrado pela data de coleta · "Entregues" usa a data de entrega'

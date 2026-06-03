@@ -33,6 +33,7 @@ import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import {
   ROUTE_PERIOD_FILTER_HINT,
   filterRoutesByDateRange,
+  isDeliveryInDateRange,
 } from '@/lib/utils/route-period-filter'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
@@ -973,12 +974,15 @@ export default function PerformancePage() {
     return map
   }, [comerciais])
 
-  // Quando um status específico é selecionado, mostra todos os fretes do período
-  // independente do comercial selecionado (para fechamento financeiro)
   const statusFilteredRows = useMemo(() => {
     if (statusFilter === 'all') return filteredRows
-    return periodRows.filter((r) => r.status === statusFilter)
-  }, [filteredRows, periodRows, statusFilter])
+    // "Entregues": filtra por estimated_delivery no período (todos os comerciais)
+    if (statusFilter === 'delivered') {
+      return rows.filter((r) => isDeliveryInDateRange(r, periodBounds.start, periodBounds.end))
+    }
+    // "Coletados": todos os fretes com pickup_date no período (qualquer status)
+    return periodRows
+  }, [filteredRows, periodRows, rows, statusFilter, periodBounds])
 
   const detailedRows = useMemo(() => {
     return statusFilteredRows.map((r) => {
