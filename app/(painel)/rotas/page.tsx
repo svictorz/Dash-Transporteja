@@ -26,6 +26,37 @@ import { useDebouncedRouteDistance } from '@/lib/hooks/useDebouncedRouteDistance
 import { equalsFold, foldText } from '@/lib/utils/strings'
 import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
+import {
+  ROUTE_PERIOD_FILTER_HINT,
+  filterRoutesByDateRange,
+  startOfDay,
+} from '@/lib/utils/route-period-filter'
+
+type PeriodKey = 'today' | '7d' | '30d' | 'month' | 'year' | 'all'
+
+const PERIOD_OPTIONS: { value: PeriodKey; label: string; short: string }[] = [
+  { value: 'today', label: 'Hoje', short: 'Hoje' },
+  { value: '7d', label: '7 dias', short: '7d' },
+  { value: '30d', label: '30 dias', short: '30d' },
+  { value: 'month', label: 'Este mês', short: 'Mês' },
+  { value: 'year', label: 'Este ano', short: 'Ano' },
+  { value: 'all', label: 'Tudo', short: 'Tudo' },
+]
+
+const PERIOD_STORAGE_KEY = 'rotas:period'
+
+function periodRange(period: PeriodKey, now = new Date()): { start: Date | null; end: Date } {
+  const end = new Date(now)
+  end.setHours(23, 59, 59, 999)
+  if (period === 'all') return { start: null, end }
+  if (period === 'today') return { start: startOfDay(now), end }
+  if (period === '7d' || period === '30d') {
+    const days = period === '7d' ? 7 : 30
+    return { start: startOfDay(new Date(now.getTime() - (days - 1) * 86400000)), end }
+  }
+  if (period === 'month') return { start: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0), end }
+  return { start: new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0), end }
+}
 
 const TAXES_PERCENT_OPTIONS = [0, 10, 12, 16, 18] as const
 
@@ -158,6 +189,23 @@ export default function RotasPage() {
   }, [clients, session?.user?.id])
 
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'>('all')
+  const [period, setPeriod] = useState<PeriodKey>('all')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+    try {
+      const saved = localStorage.getItem(PERIOD_STORAGE_KEY) as PeriodKey | null
+      if (saved && PERIOD_OPTIONS.some((o) => o.value === saved)) setPeriod(saved)
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+    try { localStorage.setItem(PERIOD_STORAGE_KEY, period) } catch {}
+  }, [period, mounted])
+
+  const { start, end } = useMemo(() => periodRange(period), [period])
   const [selectedRoute, setSelectedRoute] = useState<RouteDisplayData | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -251,10 +299,9 @@ export default function RotasPage() {
   }, [myRoutes, myClients, drivers])
 
   const filteredRoutes = useMemo(() => {
-    return routesWithDetails.filter(route => {
-    return filterStatus === 'all' || route.status === filterStatus
-  })
-  }, [routesWithDetails, filterStatus])
+    const byPeriod = filterRoutesByDateRange(routesWithDetails, start, end)
+    return byPeriod.filter(route => filterStatus === 'all' || route.status === filterStatus)
+  }, [routesWithDetails, filterStatus, start, end])
 
   const statusCounts = useMemo(() => ({
     all: myRoutes.length,
@@ -1020,6 +1067,34 @@ export default function RotasPage() {
           <Plus className="w-5 h-5" />
           Criar Nova Rota
         </motion.button>
+      </div>
+
+      {/* Filtro de período */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div
+          role="tablist"
+          aria-label="Período"
+          className="flex flex-wrap items-center gap-1 p-1 bg-white rounded-xl border border-gray-200 shadow-sm w-fit"
+        >
+          {PERIOD_OPTIONS.map((opt) => {
+            const active = period === opt.value
+            return (
+              <button
+                key={opt.value}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setPeriod(opt.value)}
+                className={`relative px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-colors ${
+                  active ? 'bg-gray-800 text-white' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <span className="hidden sm:inline">{opt.label}</span>
+                <span className="sm:hidden">{opt.short}</span>
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-xs text-gray-400 hidden sm:block">{ROUTE_PERIOD_FILTER_HINT}</p>
       </div>
 
       {/* Filtros de Status - Estilo Referência */}
