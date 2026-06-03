@@ -86,12 +86,12 @@ const formatBRLShort = (value: number) => {
   return formatBRL(value)
 }
 
-function periodRange(period: PeriodKey, now = new Date()): { start: Date | null; end: Date; prevStart: Date | null; prevEnd: Date | null } {
+function periodRange(period: PeriodKey, now = new Date()): { start: Date | null; end: Date | null; prevStart: Date | null; prevEnd: Date | null } {
   const end = new Date(now)
   end.setHours(23, 59, 59, 999)
 
   if (period === 'all') {
-    return { start: null, end, prevStart: null, prevEnd: null }
+    return { start: null, end: null, prevStart: null, prevEnd: null }
   }
 
   if (period === 'today') {
