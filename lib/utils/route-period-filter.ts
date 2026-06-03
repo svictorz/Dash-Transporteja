@@ -18,13 +18,12 @@ export type RouteForPeriodFilter = {
 export function getRouteOperationalDate(route: RouteForPeriodFilter): Date | null {
   const pickup = route.pickup_date?.trim() ? parseDateFlexible(route.pickup_date) : null
   const delivery = route.estimated_delivery?.trim() ? parseDateFlexible(route.estimated_delivery) : null
-  const created = route.created_at?.trim() ? parseDateFlexible(route.created_at) : null
 
   if (route.status === 'delivered') {
-    return delivery ?? pickup ?? created
+    return delivery ?? pickup
   }
 
-  return pickup ?? delivery ?? created
+  return pickup ?? delivery
 }
 
 export function getRouteOperationalDateKind(route: RouteForPeriodFilter): 'coleta' | 'entrega' {
