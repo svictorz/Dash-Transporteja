@@ -163,7 +163,7 @@ export default function PoliticaPrivacidadePage() {
                 </p>
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                   <p className="text-gray-700">
-                    <strong>E-mail:</strong> privacidade@transporteja.com<br />
+                    <strong>E-mail:</strong> privacidade@jcntransportes.com<br />
                     <strong>Página de Dados Pessoais:</strong> <Link href="/dados-pessoais" className="text-blue-600 hover:underline">/dados-pessoais</Link>
                   </p>
                 </div>
