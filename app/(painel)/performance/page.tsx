@@ -987,8 +987,8 @@ export default function PerformancePage() {
     if (statusFilter === 'delivered') {
       return comercialRows.filter((r) => isDeliveryInDateRange(r, periodBounds.start, periodBounds.end))
     }
-    // "Coletados": todos os fretes do comercial com pickup_date no período (qualquer status)
-    return periodRows
+    // "Coletados": fretes do comercial selecionado com pickup_date no período (qualquer status)
+    return filteredRows
   }, [filteredRows, periodRows, comercialRows, statusFilter, periodBounds])
 
   const detailedRows = useMemo(() => {
