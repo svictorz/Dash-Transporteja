@@ -973,10 +973,12 @@ export default function PerformancePage() {
     return map
   }, [comerciais])
 
+  // Quando um status específico é selecionado, mostra todos os fretes do período
+  // independente do comercial selecionado (para fechamento financeiro)
   const statusFilteredRows = useMemo(() => {
     if (statusFilter === 'all') return filteredRows
-    return filteredRows.filter((r) => r.status === statusFilter)
-  }, [filteredRows, statusFilter])
+    return periodRows.filter((r) => r.status === statusFilter)
+  }, [filteredRows, periodRows, statusFilter])
 
   const detailedRows = useMemo(() => {
     return statusFilteredRows.map((r) => {
@@ -1260,6 +1262,25 @@ export default function PerformancePage() {
               <option value="custom" className={selectOptionClass}>Personalizado</option>
             </select>
           </div>
+          <div className="flex items-center gap-1 p-1 bg-white/80 dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700">
+            {([
+              { value: 'all', label: 'Todos' },
+              { value: 'pickedUp', label: 'Coletados' },
+              { value: 'delivered', label: 'Entregues' },
+            ] as const).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setStatusFilter(opt.value)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  statusFilter === opt.value
+                    ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900'
+                    : 'text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1472,25 +1493,6 @@ export default function PerformancePage() {
               </h2>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-slate-800 rounded-lg">
-                {([
-                  { value: 'all', label: 'Todos' },
-                  { value: 'pickedUp', label: 'Coletados' },
-                  { value: 'delivered', label: 'Entregues' },
-                ] as const).map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setStatusFilter(opt.value)}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                      statusFilter === opt.value
-                        ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm'
-                        : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
               <span className="text-xs text-gray-500 dark:text-slate-300">Selecionado: {selectedComercialLabel}</span>
             </div>
           </div>

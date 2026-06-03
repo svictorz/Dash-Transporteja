@@ -32,30 +32,35 @@ import {
   startOfDay,
 } from '@/lib/utils/route-period-filter'
 
-type PeriodKey = 'today' | '7d' | '30d' | 'month' | 'year' | 'all'
+type PeriodKey = '7d' | 'month' | 'prevMonth' | 'all' | 'custom'
 
 const PERIOD_OPTIONS: { value: PeriodKey; label: string; short: string }[] = [
-  { value: 'today', label: 'Hoje', short: 'Hoje' },
   { value: '7d', label: '7 dias', short: '7d' },
-  { value: '30d', label: '30 dias', short: '30d' },
   { value: 'month', label: 'Este mês', short: 'Mês' },
-  { value: 'year', label: 'Este ano', short: 'Ano' },
-  { value: 'all', label: 'Tudo', short: 'Tudo' },
+  { value: 'prevMonth', label: 'Mês passado', short: 'M. ant.' },
+  { value: 'all', label: 'Todo período', short: 'Tudo' },
+  { value: 'custom', label: 'Personalizado', short: 'Custom' },
 ]
 
 const PERIOD_STORAGE_KEY = 'rotas:period'
 
-function periodRange(period: PeriodKey, now = new Date()): { start: Date | null; end: Date } {
+function periodRange(period: PeriodKey, now = new Date(), customStart?: string, customEnd?: string): { start: Date | null; end: Date } {
   const end = new Date(now)
   end.setHours(23, 59, 59, 999)
   if (period === 'all') return { start: null, end }
-  if (period === 'today') return { start: startOfDay(now), end }
-  if (period === '7d' || period === '30d') {
-    const days = period === '7d' ? 7 : 30
-    return { start: startOfDay(new Date(now.getTime() - (days - 1) * 86400000)), end }
-  }
+  if (period === '7d') return { start: startOfDay(new Date(now.getTime() - 6 * 86400000)), end }
   if (period === 'month') return { start: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0), end }
-  return { start: new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0), end }
+  if (period === 'prevMonth') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0)
+    const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+    return { start, end: prevEnd }
+  }
+  if (period === 'custom') {
+    const s = customStart ? new Date(customStart + 'T00:00:00') : null
+    const e = customEnd ? new Date(customEnd + 'T23:59:59') : end
+    return { start: s, end: e }
+  }
+  return { start: null, end }
 }
 
 const TAXES_PERCENT_OPTIONS = [0, 10, 12, 16, 18] as const
@@ -172,8 +177,7 @@ export default function RotasPage() {
   const { drivers, loading: driversLoading } = useDrivers()
 
   /**
-   * Visão da aba Rotas: cada usuário enxerga apenas os fretes que ele criou.
-   * (Admin continua com privilégios em outras áreas, mas aqui o escopo é "meus fretes".)
+   * Cada usuário vê apenas os fretes que ele criou.
    */
   const myRoutes = useMemo(() => {
     const uid = session?.user?.id
@@ -181,7 +185,6 @@ export default function RotasPage() {
     return routes.filter((r) => r.created_by_user_id === uid)
   }, [routes, session?.user?.id])
 
-  /** Clientes do próprio usuário para manter consistência com o escopo de "meus fretes". */
   const myClients = useMemo(() => {
     const uid = session?.user?.id
     if (!uid) return []
@@ -189,8 +192,10 @@ export default function RotasPage() {
   }, [clients, session?.user?.id])
 
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'>('all')
-  const [period, setPeriod] = useState<PeriodKey>('all')
+  const [period, setPeriod] = useState<PeriodKey>('month')
   const [mounted, setMounted] = useState(false)
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
 
   useEffect(() => {
     setMounted(true)
@@ -205,7 +210,7 @@ export default function RotasPage() {
     try { localStorage.setItem(PERIOD_STORAGE_KEY, period) } catch {}
   }, [period, mounted])
 
-  const { start, end } = useMemo(() => periodRange(period), [period])
+  const { start, end } = useMemo(() => periodRange(period, new Date(), customStart, customEnd), [period, customStart, customEnd])
   const [selectedRoute, setSelectedRoute] = useState<RouteDisplayData | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -298,19 +303,22 @@ export default function RotasPage() {
     })
   }, [myRoutes, myClients, drivers])
 
+  const periodFilteredRoutes = useMemo(() => {
+    return filterRoutesByDateRange(routesWithDetails, start, end)
+  }, [routesWithDetails, start, end])
+
   const filteredRoutes = useMemo(() => {
-    const byPeriod = filterRoutesByDateRange(routesWithDetails, start, end)
-    return byPeriod.filter(route => filterStatus === 'all' || route.status === filterStatus)
-  }, [routesWithDetails, filterStatus, start, end])
+    return periodFilteredRoutes.filter(route => filterStatus === 'all' || route.status === filterStatus)
+  }, [periodFilteredRoutes, filterStatus])
 
   const statusCounts = useMemo(() => ({
-    all: myRoutes.length,
-    pending: myRoutes.filter(r => r.status === 'pending').length,
-    inTransit: myRoutes.filter(r => r.status === 'inTransit').length,
-    pickedUp: myRoutes.filter(r => r.status === 'pickedUp').length,
-    delivered: myRoutes.filter(r => r.status === 'delivered').length,
-    cancelled: myRoutes.filter(r => r.status === 'cancelled').length
-  }), [myRoutes])
+    all: periodFilteredRoutes.length,
+    pending: periodFilteredRoutes.filter(r => r.status === 'pending').length,
+    inTransit: periodFilteredRoutes.filter(r => r.status === 'inTransit').length,
+    pickedUp: periodFilteredRoutes.filter(r => r.status === 'pickedUp').length,
+    delivered: periodFilteredRoutes.filter(r => r.status === 'delivered').length,
+    cancelled: periodFilteredRoutes.filter(r => r.status === 'cancelled').length
+  }), [periodFilteredRoutes])
 
   const getStatusDisplay = (status: string) => {
     switch (status) {
@@ -1096,6 +1104,31 @@ export default function RotasPage() {
         </div>
         <p className="text-xs text-gray-400 hidden sm:block">{ROUTE_PERIOD_FILTER_HINT}</p>
       </div>
+
+      {period === 'custom' && (
+        <div className="flex flex-wrap items-center gap-3 p-3 bg-white rounded-xl border border-gray-200 w-fit">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 whitespace-nowrap">De</label>
+            <input
+              type="date"
+              value={customStart}
+              max={customEnd || undefined}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-800/20"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 whitespace-nowrap">Até</label>
+            <input
+              type="date"
+              value={customEnd}
+              min={customStart || undefined}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-slate-800/20"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Filtros de Status - Estilo Referência */}
       <div className="flex items-center gap-3 flex-wrap">
