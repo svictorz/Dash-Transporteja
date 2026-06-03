@@ -213,7 +213,7 @@ function periodBoundsFromSelection(
 ): { start: Date | null; end: Date | null } {
   const { fromIso, toIso } = toIsoRange(periodo, customStart, customEnd)
   if (periodo === 'tudo') {
-    return { start: null, end: new Date(toIso) }
+    return { start: null, end: null }
   }
   return { start: new Date(fromIso), end: new Date(toIso) }
 }
