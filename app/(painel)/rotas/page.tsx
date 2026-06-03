@@ -44,10 +44,10 @@ const PERIOD_OPTIONS: { value: PeriodKey; label: string; short: string }[] = [
 
 const PERIOD_STORAGE_KEY = 'rotas:period'
 
-function periodRange(period: PeriodKey, now = new Date(), customStart?: string, customEnd?: string): { start: Date | null; end: Date } {
+function periodRange(period: PeriodKey, now = new Date(), customStart?: string, customEnd?: string): { start: Date | null; end: Date | null } {
   const end = new Date(now)
   end.setHours(23, 59, 59, 999)
-  if (period === 'all') return { start: null, end }
+  if (period === 'all') return { start: null, end: null }
   if (period === '7d') return { start: startOfDay(new Date(now.getTime() - 6 * 86400000)), end }
   if (period === 'month') return { start: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0), end }
   if (period === 'prevMonth') {
