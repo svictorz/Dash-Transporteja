@@ -17,7 +17,8 @@ import {
   Shield,
   BarChart3,
   CalendarDays,
-  UserCog
+  UserCog,
+  Wallet
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Logo from './Logo'
@@ -54,6 +55,15 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   const isAdmin =
     currentUser?.role === 'admin' || isSuperAdminEmail(currentUser?.email)
 
+  /**
+   * Acesso ao Controle Financeiro: admin e financeiro (que já têm visão
+   * global dos valores na Performance). O super admin entra pelo e-mail.
+   */
+  const hasFinancialAccess =
+    currentUser?.role === 'admin' ||
+    currentUser?.role === 'financeiro' ||
+    isSuperAdminEmail(currentUser?.email)
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     
@@ -82,6 +92,9 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
     { icon: FileText, label: 'Propostas', path: '/propostas' },
     { icon: CalendarDays, label: 'Calendário', path: '/calendario' },
     { icon: BarChart3, label: 'Performance', path: '/performance' },
+    ...(hasFinancialAccess
+      ? [{ icon: Wallet, label: 'Controle Financeiro', path: '/controle-financeiro' } as MenuItem]
+      : []),
     ...(isAdmin
       ? [{ icon: UserCog, label: 'Permissões', path: '/usuarios' } as MenuItem]
       : []),

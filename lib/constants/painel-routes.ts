@@ -9,6 +9,7 @@ export const PAINEL_ROUTES = [
   '/clientes',
   '/calendario',
   '/performance',
+  '/controle-financeiro',
   '/propostas',
   '/relatorios',
   '/usuarios',
