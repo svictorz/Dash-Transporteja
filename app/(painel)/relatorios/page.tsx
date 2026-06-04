@@ -40,6 +40,8 @@ export default function RelatoriosPage() {
         break
       case 'thisMonth':
         start.setDate(1)
+        // Fim do mês (inclui dias futuros do mês), não apenas até hoje.
+        end.setMonth(today.getMonth() + 1, 0)
         break
       case 'all':
         start.setFullYear(2020, 0, 1) // Data inicial do sistema

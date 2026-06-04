@@ -49,7 +49,13 @@ function periodRange(period: PeriodKey, now = new Date(), customStart?: string, 
   end.setHours(23, 59, 59, 999)
   if (period === 'all') return { start: null, end: null }
   if (period === '7d') return { start: startOfDay(new Date(now.getTime() - 6 * 86400000)), end }
-  if (period === 'month') return { start: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0), end }
+  // "Este mês" cobre o mês inteiro (inclui dias futuros do mês corrente),
+  // não apenas até hoje — senão fretes com coleta futura no mês somem.
+  if (period === 'month')
+    return {
+      start: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0),
+      end: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999),
+    }
   if (period === 'prevMonth') {
     const start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0)
     const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
@@ -64,6 +70,8 @@ function periodRange(period: PeriodKey, now = new Date(), customStart?: string, 
 }
 
 const TAXES_PERCENT_OPTIONS = [0, 10, 12, 16, 18] as const
+/** Alíquotas selecionáveis pelo admin ao lançar/editar um frete: 18% ou 0%. */
+const TAXES_PERCENT_CHOICES = [18, 0] as const
 
 function normalizeTaxesPercent(value: unknown): (typeof TAXES_PERCENT_OPTIONS)[number] {
   const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
@@ -88,6 +96,18 @@ function getRouteTaxesPercent(route: RouteType): (typeof TAXES_PERCENT_OPTIONS)[
   const raw = route.taxes_percent
   if (raw === 0 || raw === 10 || raw === 12 || raw === 16 || raw === 18) return raw
   return inferTaxesPercentFromValues(route.freight_value ?? route.nf_value ?? undefined, route.taxes_value ?? undefined)
+}
+
+/** Alíquotas de seguro selecionáveis pelo admin: 0,2% ou isento (0%). */
+const SEGURO_PERCENT_CHOICES = [0.2, 0] as const
+
+function normalizeSeguroPercentRota(value: unknown): number {
+  const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
+  return n === 0.2 ? 0.2 : 0
+}
+
+function getRouteSeguroPercent(route: RouteType): number {
+  return normalizeSeguroPercentRota(route.seguro_percent)
 }
 
 // Interface para exibição (com dados do cliente)
@@ -254,6 +274,7 @@ export default function RotasPage() {
     estimatedDelivery: '',
     pickupDate: '',
     taxesPercent: '18',
+    seguroPercent: '0',
   })
   const [originCEP, setOriginCEP] = useState('')
   const [destinationCEP, setDestinationCEP] = useState('')
@@ -457,6 +478,7 @@ export default function RotasPage() {
       estimatedDelivery: route.estimated_delivery,
       pickupDate: route.pickup_date,
       taxesPercent: String(getRouteTaxesPercent(route)),
+      seguroPercent: String(getRouteSeguroPercent(route)),
     })
     setShowEditModal(true)
   }, [myClients])
@@ -756,6 +778,12 @@ export default function RotasPage() {
     return Math.round(freightValue * p * 100) / 100
   }
 
+  const calculateSeguroValue = (nfValue?: number | null, seguroPercent?: number | null) => {
+    if (nfValue == null) return null
+    const p = normalizeSeguroPercentRota(seguroPercent) / 100
+    return Math.round(nfValue * p * 100) / 100
+  }
+
   const calculateCommissionValue = (netFreightValue?: number | null) => {
     if (netFreightValue == null) return null
     return Math.round(netFreightValue * 0.3 * 100) / 100
@@ -765,10 +793,11 @@ export default function RotasPage() {
     freightValue?: number | null,
     driverValue?: number | null,
     taxesPercent?: number | null,
+    seguroValue?: number | null,
   ) => {
     if (freightValue == null) return null
     const taxesValue = calculateTaxesValue(freightValue, taxesPercent) ?? 0
-    return Math.round((freightValue - taxesValue - (driverValue ?? 0)) * 100) / 100
+    return Math.round((freightValue - taxesValue - (driverValue ?? 0) - (seguroValue ?? 0)) * 100) / 100
   }
 
   const handleCreateRoute = async (e: React.FormEvent) => {
@@ -807,10 +836,14 @@ export default function RotasPage() {
     try {
       const freightValue = parseCurrencyInput(formData.freightValue)
       const driverValue = parseCurrencyInput(formData.driverValue)
+      const nfValueParsed = parseCurrencyInput(formData.nfValue)
       const taxesPercent = isAdminUser
         ? normalizeTaxesPercent(Number(formData.taxesPercent))
         : 18
-      const netFreightValue = calculateNetFreightValue(freightValue, driverValue, taxesPercent)
+      // Seguro só pode ser definido por admin.
+      const seguroPercent = isAdminUser ? normalizeSeguroPercentRota(Number(formData.seguroPercent)) : 0
+      const seguroValue = calculateSeguroValue(nfValueParsed, seguroPercent)
+      const netFreightValue = calculateNetFreightValue(freightValue, driverValue, taxesPercent, seguroValue)
       const routeData: CreateRouteData = {
         driver_id: null,
       origin: formData.origin,
@@ -826,6 +859,8 @@ export default function RotasPage() {
       driver_value: driverValue,
       taxes_value: calculateTaxesValue(freightValue, taxesPercent),
       taxes_percent: taxesPercent,
+      seguro_percent: seguroPercent,
+      seguro_value: seguroValue,
       net_freight_value: netFreightValue,
       commission_value: calculateCommissionValue(netFreightValue),
       payment_status: formData.paymentStatus.trim() || null,
@@ -914,10 +949,16 @@ export default function RotasPage() {
     try {
       const freightValue = parseCurrencyInput(formData.freightValue)
       const driverValue = parseCurrencyInput(formData.driverValue)
+      const nfValueParsed = parseCurrencyInput(formData.nfValue)
       const taxesPercent = isAdminUser
         ? normalizeTaxesPercent(Number(formData.taxesPercent))
         : getRouteTaxesPercent(editingRoute)
-      const netFreightValue = calculateNetFreightValue(freightValue, driverValue, taxesPercent)
+      // Seguro só pode ser alterado por admin; demais mantêm o atual do frete.
+      const seguroPercent = isAdminUser
+        ? normalizeSeguroPercentRota(Number(formData.seguroPercent))
+        : getRouteSeguroPercent(editingRoute)
+      const seguroValue = calculateSeguroValue(nfValueParsed, seguroPercent)
+      const netFreightValue = calculateNetFreightValue(freightValue, driverValue, taxesPercent, seguroValue)
       await updateRoute(editingRoute.id, {
         driver_id: null,
         origin: formData.origin,
@@ -933,6 +974,8 @@ export default function RotasPage() {
         driver_value: driverValue,
         taxes_value: calculateTaxesValue(freightValue, taxesPercent),
         taxes_percent: taxesPercent,
+        seguro_percent: seguroPercent,
+        seguro_value: seguroValue,
         net_freight_value: netFreightValue,
         commission_value: calculateCommissionValue(netFreightValue),
         payment_status: formData.paymentStatus.trim() || null,
@@ -1014,6 +1057,7 @@ export default function RotasPage() {
       estimatedDelivery: '',
       pickupDate: '',
       taxesPercent: '18',
+      seguroPercent: '0.2',
     })
   }
 
@@ -1053,6 +1097,7 @@ export default function RotasPage() {
       estimatedDelivery: '',
       pickupDate: '',
       taxesPercent: '18',
+      seguroPercent: '0.2',
     })
   }
 
@@ -1207,6 +1252,9 @@ export default function RotasPage() {
                 <th className="hidden md:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Valor do Frete
                 </th>
+                <th className="hidden md:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  NF
+                </th>
                 <th className="hidden lg:table-cell px-3 sm:px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Valor do Motorista
                 </th>
@@ -1274,6 +1322,11 @@ export default function RotasPage() {
                     <td className="hidden md:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-900 tabular-nums">
                         {formatCurrencyBR(route.freight_value ?? route.nf_value)}
+                      </span>
+                    </td>
+                    <td className="hidden md:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-medium text-gray-900 tabular-nums">
+                        {formatCurrencyBR(route.nf_value)}
                       </span>
                     </td>
                     <td className="hidden lg:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
@@ -1639,6 +1692,18 @@ export default function RotasPage() {
                     </p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Seguro</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrencyBR(
+                        selectedRoute.seguro_value ??
+                          calculateSeguroValue(selectedRoute.nf_value, getRouteSeguroPercent(selectedRoute)),
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Alíquota: {getRouteSeguroPercent(selectedRoute)}% sobre a NF
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Frete Líquido</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(
@@ -1647,6 +1712,8 @@ export default function RotasPage() {
                             selectedRoute.freight_value ?? selectedRoute.nf_value,
                             selectedRoute.driver_value,
                             getRouteTaxesPercent(selectedRoute),
+                            selectedRoute.seguro_value ??
+                              calculateSeguroValue(selectedRoute.nf_value, getRouteSeguroPercent(selectedRoute)),
                           ),
                       )}
                     </p>
@@ -2284,7 +2351,7 @@ export default function RotasPage() {
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
                       aria-label="Percentual de tributos sobre o frete"
                     >
-                      {TAXES_PERCENT_OPTIONS.map((p) => (
+                      {TAXES_PERCENT_CHOICES.map((p) => (
                         <option key={p} value={String(p)}>
                           {p}% sobre o frete
                         </option>
@@ -2292,7 +2359,7 @@ export default function RotasPage() {
                     </select>
                   ) : (
                     <p className="mb-2 text-xs text-gray-600">
-                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0%, 10%, 12%, 16% ou 18%).
+                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0% ou 18%).
                     </p>
                   )}
                   <input
@@ -2310,6 +2377,45 @@ export default function RotasPage() {
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     Calculado automaticamente: {normalizeTaxesPercent(Number(formData.taxesPercent))}% do valor do frete.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Seguro
+                  </label>
+                  {isAdminUser ? (
+                    <select
+                      value={formData.seguroPercent}
+                      onChange={(e) => setFormData({ ...formData, seguroPercent: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
+                      aria-label="Percentual de seguro sobre a NF"
+                    >
+                      {SEGURO_PERCENT_CHOICES.map((p) => (
+                        <option key={p} value={String(p)}>
+                          {p}% sobre a NF
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="mb-2 text-xs text-gray-600">
+                      Alíquota de <strong>{normalizeSeguroPercentRota(Number(formData.seguroPercent))}%</strong> — somente administrador pode alterar.
+                    </p>
+                  )}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    readOnly
+                    value={formatCurrencyBR(
+                      calculateSeguroValue(
+                        parseCurrencyInput(formData.nfValue),
+                        normalizeSeguroPercentRota(Number(formData.seguroPercent)),
+                      ),
+                    )}
+                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
+                    placeholder="Valor calculado"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Calculado automaticamente: {normalizeSeguroPercentRota(Number(formData.seguroPercent))}% do valor da NF.
                   </p>
                 </div>
                 <div>
@@ -2854,7 +2960,7 @@ export default function RotasPage() {
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
                       aria-label="Percentual de tributos sobre o frete"
                     >
-                      {TAXES_PERCENT_OPTIONS.map((p) => (
+                      {TAXES_PERCENT_CHOICES.map((p) => (
                         <option key={p} value={String(p)}>
                           {p}% sobre o frete
                         </option>
@@ -2862,7 +2968,7 @@ export default function RotasPage() {
                     </select>
                   ) : (
                     <p className="mb-2 text-xs text-gray-600">
-                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0%, 10%, 12%, 16% ou 18%).
+                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0% ou 18%).
                     </p>
                   )}
                   <input
@@ -2880,6 +2986,45 @@ export default function RotasPage() {
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     Calculado automaticamente: {normalizeTaxesPercent(Number(formData.taxesPercent))}% do valor do frete.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Seguro
+                  </label>
+                  {isAdminUser ? (
+                    <select
+                      value={formData.seguroPercent}
+                      onChange={(e) => setFormData({ ...formData, seguroPercent: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
+                      aria-label="Percentual de seguro sobre a NF"
+                    >
+                      {SEGURO_PERCENT_CHOICES.map((p) => (
+                        <option key={p} value={String(p)}>
+                          {p}% sobre a NF
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="mb-2 text-xs text-gray-600">
+                      Alíquota de <strong>{normalizeSeguroPercentRota(Number(formData.seguroPercent))}%</strong> — somente administrador pode alterar.
+                    </p>
+                  )}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    readOnly
+                    value={formatCurrencyBR(
+                      calculateSeguroValue(
+                        parseCurrencyInput(formData.nfValue),
+                        normalizeSeguroPercentRota(Number(formData.seguroPercent)),
+                      ),
+                    )}
+                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
+                    placeholder="Valor calculado"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Calculado automaticamente: {normalizeSeguroPercentRota(Number(formData.seguroPercent))}% do valor da NF.
                   </p>
                 </div>
                 <div>

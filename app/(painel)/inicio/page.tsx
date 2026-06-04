@@ -111,16 +111,19 @@ function periodRange(period: PeriodKey, now = new Date()): { start: Date | null;
 
   if (period === 'month') {
     const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+    // Mês inteiro (inclui dias futuros do mês), não só até hoje.
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
     const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0)
     const prevEnd = new Date(start.getTime() - 1)
-    return { start, end, prevStart, prevEnd }
+    return { start, end: monthEnd, prevStart, prevEnd }
   }
 
-  // year
+  // year — ano inteiro (inclui meses futuros do ano), não só até hoje.
   const start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0)
+  const yearEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999)
   const prevStart = new Date(now.getFullYear() - 1, 0, 1, 0, 0, 0, 0)
   const prevEnd = new Date(start.getTime() - 1)
-  return { start, end, prevStart, prevEnd }
+  return { start, end: yearEnd, prevStart, prevEnd }
 }
 
 function sumBy(routes: RouteRecord[], field: keyof RouteRecord): number {

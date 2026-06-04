@@ -48,6 +48,10 @@ export interface Route {
   cte_value?: number | null
   /** Valor de vale pedágio informado manualmente no cadastro do frete. */
   vale_pedagio?: number | null
+  /** Alíquota do seguro sobre a NF: 0 ou 0,2 (%). Editável apenas por admin. */
+  seguro_percent?: number | null
+  /** Valor do seguro = nf_value × seguro_percent/100. */
+  seguro_value?: number | null
   observation?: string | null
   created_by_user_id?: string | null
   created_at?: string
@@ -95,6 +99,8 @@ export interface CreateRouteData {
   nf_value?: number | null
   cte_value?: number | null
   vale_pedagio?: number | null
+  seguro_percent?: number | null
+  seguro_value?: number | null
   observation?: string | null
   created_by_user_id?: string
 }
@@ -139,6 +145,8 @@ export interface UpdateRouteData {
   nf_value?: number | null
   cte_value?: number | null
   vale_pedagio?: number | null
+  seguro_percent?: number | null
+  seguro_value?: number | null
   observation?: string | null
 }
 

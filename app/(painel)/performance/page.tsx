@@ -36,7 +36,25 @@ import {
   isDeliveryInDateRange,
 } from '@/lib/utils/route-period-filter'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
+import { useColumnPrefs, type ColumnDef } from '@/lib/hooks/useColumnPrefs'
+import ColumnManager from '@/components/transporteja/ColumnManager'
+import StickyScrollX from '@/components/transporteja/StickyScrollX'
 import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
+
+/** Colunas da "Lista de fretes" (a coluna Detalhes fica fora do organizador). */
+const PERF_LIST_COLUMNS: ColumnDef[] = [
+  { key: 'idFrete', label: 'ID do Frete', locked: true },
+  { key: 'pgtoComissao', label: 'Pgto. comissão' },
+  { key: 'cliente', label: 'Cliente' },
+  { key: 'rota', label: 'Rota' },
+  { key: 'vendedor', label: 'Vendedor' },
+  { key: 'status', label: 'Status' },
+  { key: 'frete', label: 'Frete' },
+  { key: 'comissao', label: 'Comissão' },
+  { key: 'data', label: 'Data' },
+]
+const PERF_LABEL_BY_KEY = new Map(PERF_LIST_COLUMNS.map((c) => [c.key, c.label]))
+const PERF_LIST_COLUMNS_STORAGE_KEY = 'performance:listColumns'
 
 type Periodo = 'tudo' | 'essaSemana' | 'mesAtual' | '30d' | 'mesPassado' | 'custom'
 type UserRole = 'admin' | 'comercial' | 'financeiro' | 'driver' | 'operator' | null
@@ -175,16 +193,20 @@ function toIsoRange(periodo: Periodo, customStart: string, customEnd: string): {
   }
 
   if (periodo === 'essaSemana') {
-    // Considera semana iniciando em segunda-feira (padrão BR).
+    // Semana inteira (segunda a domingo), incluindo dias futuros da semana —
+    // não corta em "hoje", senão fretes com data futura na semana somem.
     const day = now.getDay() // 0 = dom, 1 = seg, ..., 6 = sáb
     const diff = (day + 6) % 7 // dias desde a última segunda-feira
     const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff, 0, 0, 0, 0)
-    return { fromIso: from.toISOString(), toIso: endOfTodayIso() }
+    const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff + 6, 23, 59, 59, 999)
+    return { fromIso: from.toISOString(), toIso: to.toISOString() }
   }
 
   if (periodo === 'mesAtual') {
+    // Mês inteiro (inclui dias futuros do mês), não só até hoje.
     const from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0)
-    return { fromIso: from.toISOString(), toIso: endOfTodayIso() }
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+    return { fromIso: from.toISOString(), toIso: to.toISOString() }
   }
 
   if (periodo === 'mesPassado') {
@@ -228,6 +250,8 @@ const PERIODO_LABELS: Record<Periodo, string> = {
 }
 
 const TAXES_PERCENT_OPTIONS = [0, 10, 12, 18] as const
+/** Alíquotas que o admin/financeiro pode escolher: 18% ou isento (0%). */
+const TAXES_PERCENT_CHOICES = [18, 0] as const
 
 function normalizeTaxesPercentPerf(value: unknown): (typeof TAXES_PERCENT_OPTIONS)[number] {
   const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
@@ -269,16 +293,43 @@ function calculatePerfNetFreightValue(
   freightValue?: number | null,
   driverValue?: number | null,
   taxesPercent?: number | null,
+  seguroValue?: number | null,
 ) {
   if (freightValue == null) return null
   const taxesValue = calculatePerfTaxesValue(freightValue, taxesPercent) ?? 0
-  return Math.round((freightValue - taxesValue - (driverValue ?? 0)) * 100) / 100
+  return Math.round((freightValue - taxesValue - (driverValue ?? 0) - (seguroValue ?? 0)) * 100) / 100
+}
+
+/** Alíquotas de seguro: 0,2% ou isento. Editável apenas por admin. */
+const SEGURO_PERCENT_CHOICES = [0.2, 0] as const
+
+function normalizeSeguroPercentPerf(value: unknown): number {
+  const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
+  return n === 0.2 ? 0.2 : 0
+}
+
+function calculatePerfSeguroValue(nfValue?: number | null, seguroPercent?: number | null) {
+  if (nfValue == null) return null
+  const p = normalizeSeguroPercentPerf(seguroPercent) / 100
+  return Math.round(nfValue * p * 100) / 100
+}
+
+function getPerfRouteSeguroPercent(route: Route): number {
+  return normalizeSeguroPercentPerf(route.seguro_percent)
+}
+
+function getPerfRouteSeguroValue(route: Route): number {
+  return route.seguro_value ?? calculatePerfSeguroValue(route.nf_value, getPerfRouteSeguroPercent(route)) ?? 0
 }
 
 function getPerfRouteNetFreightValue(route: Route): number {
   const baseFreight = route.freight_value ?? route.nf_value
   const pct = getPerfRouteTaxesPercent(route)
-  return route.net_freight_value ?? calculatePerfNetFreightValue(baseFreight, route.driver_value, pct) ?? 0
+  return (
+    route.net_freight_value ??
+    calculatePerfNetFreightValue(baseFreight, route.driver_value, pct, getPerfRouteSeguroValue(route)) ??
+    0
+  )
 }
 
 function strField(v: unknown): string {
@@ -336,6 +387,11 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
       if (n === 0 || n === 10 || n === 12 || n === 18) return n
       return null
     })(),
+    seguro_percent: ((): number | null => {
+      const n = toNumberOrNull(r.seguro_percent)
+      return n === 0.2 ? 0.2 : n === 0 ? 0 : null
+    })(),
+    seguro_value: toNumberOrNull(r.seguro_value),
     net_freight_value: toNumberOrNull(r.net_freight_value),
     commission_value: toNumberOrNull(r.commission_value),
     commission_paid: r.commission_paid === true,
@@ -345,6 +401,7 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     driver_payment_type: nullableStr(r.driver_payment_type),
     nf_value: toNumberOrNull(r.nf_value),
     cte_value: toNumberOrNull(r.cte_value),
+    vale_pedagio: toNumberOrNull(r.vale_pedagio),
     observation: nullableStr(r.observation),
     created_by_user_id: typeof r.created_by_user_id === 'string' ? r.created_by_user_id : null,
     created_at: strField(r.created_at),
@@ -618,6 +675,10 @@ function PerfFreightDetailPanel({
             <p className="text-sm font-medium text-gray-900">{moneyOrHidden(route.cte_value, visibleMoney.freight)}</p>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <p className="text-xs text-gray-500 mb-1">Vale pedágio</p>
+            <p className="text-sm font-medium text-gray-900">{moneyOrHidden(route.vale_pedagio, visibleMoney.freight)}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
             <p className="text-xs text-gray-500 mb-1">Motorista</p>
             <p className="text-sm font-medium text-gray-900">{moneyOrHidden(route.driver_value, visibleMoney.driver)}</p>
           </div>
@@ -631,10 +692,17 @@ function PerfFreightDetailPanel({
             </p>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <p className="text-xs text-gray-500 mb-1">Seguro ({getPerfRouteSeguroPercent(route)}%)</p>
+            <p className="text-sm font-medium text-gray-900">
+              {moneyOrHidden(getPerfRouteSeguroValue(route), visibleMoney.taxes)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
             <p className="text-xs text-gray-500 mb-1">Frete líquido</p>
             <p className="text-sm font-medium text-gray-900">
               {moneyOrHidden(
-                route.net_freight_value ?? calculatePerfNetFreightValue(baseFreight, route.driver_value, pct),
+                route.net_freight_value ??
+                  calculatePerfNetFreightValue(baseFreight, route.driver_value, pct, getPerfRouteSeguroValue(route)),
                 visibleMoney.netFreight,
               )}
             </p>
@@ -645,7 +713,8 @@ function PerfFreightDetailPanel({
               {moneyOrHidden(
                 route.commission_value ??
                   calculatePerfCommissionValue(
-                    route.net_freight_value ?? calculatePerfNetFreightValue(baseFreight, route.driver_value, pct),
+                    route.net_freight_value ??
+                      calculatePerfNetFreightValue(baseFreight, route.driver_value, pct, getPerfRouteSeguroValue(route)),
                   ),
                 visibleMoney.commission,
               )}
@@ -690,8 +759,10 @@ export default function PerformancePage() {
   const [savingFinancial, setSavingFinancial] = useState(false)
   const [editingFields, setEditingFields] = useState({
     cteValue: '',
+    valePedagioValue: '',
     driverValue: '',
     taxesPercent: '18',
+    seguroPercent: '0.2',
   })
   const [editingDriver, setEditingDriver] = useState(false)
   const [savingDriver, setSavingDriver] = useState(false)
@@ -704,6 +775,7 @@ export default function PerformancePage() {
     plate: '',
   })
   const [commissionToggleRouteId, setCommissionToggleRouteId] = useState<string | null>(null)
+  const listColumns = useColumnPrefs(PERF_LIST_COLUMNS_STORAGE_KEY, PERF_LIST_COLUMNS)
 
   useEffect(() => {
     setVisibleMoney(parseStoredMoneyVisibility())
@@ -742,9 +814,12 @@ export default function PerformancePage() {
     setEditingFields({
       cteValue:
         selectedPerfRoute.cte_value != null ? String(selectedPerfRoute.cte_value).replace('.', ',') : '',
+      valePedagioValue:
+        selectedPerfRoute.vale_pedagio != null ? String(selectedPerfRoute.vale_pedagio).replace('.', ',') : '',
       driverValue:
         selectedPerfRoute.driver_value != null ? String(selectedPerfRoute.driver_value).replace('.', ',') : '',
       taxesPercent: String(getPerfRouteTaxesPercent(selectedPerfRoute)),
+      seguroPercent: String(getPerfRouteSeguroPercent(selectedPerfRoute)),
     })
     setEditingDriverFields({
       driverName: selectedPerfRoute.driver_name ?? '',
@@ -800,10 +875,6 @@ export default function PerformancePage() {
         const uid = session.user.id
         if (cancelled) return
         setCurrentUserId(uid)
-        if (!didInitSelectedComercial) {
-          setSelectedComercial(uid)
-          setDidInitSelectedComercial(true)
-        }
 
         const { data: me, error: meError } = await supabase
           .from('users')
@@ -822,6 +893,15 @@ export default function PerformancePage() {
         setCurrentUserName(me?.name || me?.email || sessionEmail || 'Usuário')
 
         const isAdmin = userRole === 'admin' || userRole === 'financeiro'
+
+        // Default do filtro de vendedor: admin/financeiro abrem com o time
+        // inteiro (senão a tela zera quando a conta do gestor não criou fretes
+        // próprios); demais perfis abrem com os próprios registros.
+        if (!didInitSelectedComercial) {
+          setSelectedComercial(isAdmin ? 'all' : uid)
+          setDidInitSelectedComercial(true)
+        }
+
         const routesQuery = supabase
           .from('routes')
           .select('*')
@@ -1063,11 +1143,17 @@ export default function PerformancePage() {
     try {
       setSavingFinancial(true)
       const taxesPercent = normalizeTaxesPercentPerf(Number(editingFields.taxesPercent))
+      // Seguro só pode ser alterado por admin; demais perfis mantêm o valor atual.
+      const seguroPercent = isStrictAdmin
+        ? normalizeSeguroPercentPerf(Number(editingFields.seguroPercent))
+        : getPerfRouteSeguroPercent(selectedPerfRoute)
       const cteValue = parseCurrencyInput(editingFields.cteValue)
+      const valePedagioValue = parseCurrencyInput(editingFields.valePedagioValue)
       const driverValue = parseCurrencyInput(editingFields.driverValue)
       const baseFreight = selectedPerfRoute.freight_value ?? selectedPerfRoute.nf_value
       const taxesValue = calculatePerfTaxesValue(baseFreight, taxesPercent)
-      const netFreightValue = calculatePerfNetFreightValue(baseFreight, driverValue, taxesPercent)
+      const seguroValue = calculatePerfSeguroValue(selectedPerfRoute.nf_value, seguroPercent)
+      const netFreightValue = calculatePerfNetFreightValue(baseFreight, driverValue, taxesPercent, seguroValue)
       const sellerRate = selectedPerfRoute.created_by_user_id
         ? (comerciais.find((u) => u.id === selectedPerfRoute.created_by_user_id)?.commission_rate ?? null)
         : null
@@ -1075,9 +1161,12 @@ export default function PerformancePage() {
 
       const updatePayload: Partial<Route> = {
         cte_value: cteValue,
+        vale_pedagio: valePedagioValue,
         driver_value: driverValue,
         taxes_percent: taxesPercent,
         taxes_value: taxesValue,
+        seguro_percent: seguroPercent,
+        seguro_value: seguroValue,
         net_freight_value: netFreightValue,
         commission_value: commissionValue,
       }
@@ -1100,7 +1189,7 @@ export default function PerformancePage() {
     } finally {
       setSavingFinancial(false)
     }
-  }, [selectedPerfRoute, canManagePerfModal, editingFields, parseCurrencyInput])
+  }, [selectedPerfRoute, canManagePerfModal, editingFields, parseCurrencyInput, isStrictAdmin, comerciais])
 
   const handleSaveDriverFields = useCallback(async () => {
     if (!selectedPerfRoute || !canManagePerfModal) return
@@ -1198,6 +1287,92 @@ export default function PerformancePage() {
     },
     [canManagePerfModal, selectedPerfRoute],
   )
+
+  /** Conteúdo de uma célula da lista de fretes por chave de coluna. */
+  const renderPerfListCell = (
+    key: string,
+    ctx: {
+      r: Route
+      sellerName: string
+      sellerEmail: string
+      sellerRole: string
+      statusLabel: string
+      statusClass: string
+      created: string
+    },
+  ) => {
+    const { r, sellerName, sellerEmail, sellerRole, statusLabel, statusClass, created } = ctx
+    switch (key) {
+      case 'idFrete':
+        return (
+          <span className="font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap">
+            {r.freight_id > 0 ? `#${r.freight_id}` : '—'}
+          </span>
+        )
+      case 'pgtoComissao':
+        return (
+          <CommissionPaidStatus
+            paid={Boolean(r.commission_paid)}
+            loading={commissionToggleRouteId === r.id}
+            editable={isStrictAdmin}
+            onToggle={() => void handleToggleCommissionPaid(r)}
+          />
+        )
+      case 'cliente':
+        return (
+          <p className="text-gray-900 dark:text-slate-100 truncate" title={r.company_name?.trim() || '—'}>
+            {r.company_name?.trim() || '—'}
+          </p>
+        )
+      case 'rota':
+        return (
+          <p
+            className="text-gray-900 dark:text-slate-100 text-sm font-semibold tabular-nums tracking-tight"
+            title={
+              [r.origin, r.origin_state].filter(Boolean).join(', ') +
+              ' → ' +
+              [r.destination, r.destination_state].filter(Boolean).join(', ')
+            }
+          >
+            {routeStatesShort(r.origin_state || null, r.destination_state || null)}
+          </p>
+        )
+      case 'vendedor':
+        return (
+          <>
+            <p className="font-medium text-gray-900 dark:text-slate-100">{sellerName}</p>
+            {sellerEmail ? <p className="text-xs text-gray-500 dark:text-slate-400">{sellerEmail}</p> : null}
+            {sellerRole ? (
+              <span className="inline-block mt-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400">
+                {sellerRole}
+              </span>
+            ) : null}
+          </>
+        )
+      case 'status':
+        return (
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-medium ${statusClass}`}>
+            {statusLabel}
+          </span>
+        )
+      case 'frete':
+        return (
+          <span className="whitespace-nowrap">
+            {visibleMoney.freight ? formatBRL(r.freight_value ?? r.nf_value ?? 0) : 'R$ ••••••'}
+          </span>
+        )
+      case 'comissao':
+        return (
+          <span className="whitespace-nowrap">
+            {visibleMoney.commission ? formatBRL(r.commission_value ?? 0) : 'R$ ••••••'}
+          </span>
+        )
+      case 'data':
+        return <span className="text-xs text-gray-600 dark:text-slate-300 whitespace-nowrap">{created}</span>
+      default:
+        return null
+    }
+  }
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
@@ -1494,7 +1669,7 @@ export default function PerformancePage() {
 
       {/* Lista detalhada de fretes com o vendedor responsável */}
       {!loading && detailedRows.length > 0 && (
-        <div className="rounded-2xl border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+        <div className="rounded-2xl border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
           <div className="px-4 md:px-5 py-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <Truck className="w-4 h-4 text-gray-600 dark:text-slate-300" aria-hidden />
@@ -1505,25 +1680,24 @@ export default function PerformancePage() {
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <span className="text-xs text-gray-500 dark:text-slate-300">Selecionado: {selectedComercialLabel}</span>
+              <ColumnManager
+                orderedColumns={listColumns.orderedColumns}
+                isVisible={listColumns.isVisible}
+                onToggle={listColumns.toggle}
+                onMove={listColumns.move}
+                onReset={listColumns.reset}
+              />
             </div>
           </div>
-          <div className="overflow-x-auto px-1 md:px-2">
+          <StickyScrollX className="px-1 md:px-2">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-200">
                 <tr>
-                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">ID do Frete</th>
-                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">Pgto. comissão</th>
-                  <th className="text-left px-4 py-3 font-semibold border-r border-gray-200/80">
-                    Cliente
-                  </th>
-                  <th className="text-left px-4 py-3 font-semibold">
-                    Rota
-                  </th>
-                  <th className="text-left px-4 py-3 font-semibold">Vendedor</th>
-                  <th className="text-left px-4 py-3 font-semibold">Status</th>
-                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">Frete</th>
-                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">Comissão</th>
-                  <th className="text-left px-4 py-3 font-semibold whitespace-nowrap">Data</th>
+                  {listColumns.visibleKeys.map((key) => (
+                    <th key={key} className="text-left px-4 py-3 font-semibold whitespace-nowrap">
+                      {PERF_LABEL_BY_KEY.get(key)}
+                    </th>
+                  ))}
                   {showRotasColumn ? (
                     <th className="text-right px-4 py-3 font-semibold whitespace-nowrap">Detalhes</th>
                   ) : null}
@@ -1552,67 +1726,14 @@ export default function PerformancePage() {
                   const created = r.created_at
                     ? new Date(r.created_at).toLocaleDateString('pt-BR', DATE_BR_NUMERIC)
                     : '—'
+                  const cellCtx = { r, sellerName, sellerEmail, sellerRole, statusLabel, statusClass, created }
                   return (
                     <tr key={r.id} className="border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
-                        <td className="px-4 py-3 align-top font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap">
-                          {r.freight_id > 0 ? `#${r.freight_id}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 align-top whitespace-nowrap">
-                          <CommissionPaidStatus
-                            paid={Boolean(r.commission_paid)}
-                            loading={commissionToggleRouteId === r.id}
-                            editable={isStrictAdmin}
-                            onToggle={() => void handleToggleCommissionPaid(r)}
-                          />
-                        </td>
-                        <td className="px-4 py-3 align-top border-r border-gray-100 dark:border-slate-700">
-                          <p className="text-gray-900 dark:text-slate-100 truncate" title={r.company_name?.trim() || '—'}>
-                            {r.company_name?.trim() || '—'}
-                          </p>
-                        </td>
-                        <td className="px-4 py-3 align-top whitespace-nowrap">
-                          <p
-                            className="text-gray-900 dark:text-slate-100 text-sm font-semibold tabular-nums tracking-tight"
-                            title={
-                              [r.origin, r.origin_state].filter(Boolean).join(', ') +
-                              ' → ' +
-                              [r.destination, r.destination_state].filter(Boolean).join(', ')
-                            }
-                          >
-                            {routeStatesShort(r.origin_state || null, r.destination_state || null)}
-                          </p>
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          <p className="font-medium text-gray-900 dark:text-slate-100">{sellerName}</p>
-                          {sellerEmail ? (
-                            <p className="text-xs text-gray-500 dark:text-slate-400">{sellerEmail}</p>
-                          ) : null}
-                          {sellerRole ? (
-                            <span className="inline-block mt-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400">
-                              {sellerRole}
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-medium ${statusClass}`}
-                          >
-                            {statusLabel}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 align-top whitespace-nowrap">
-                          {visibleMoney.freight
-                            ? formatBRL(r.freight_value ?? r.nf_value ?? 0)
-                            : 'R$ ••••••'}
-                        </td>
-                        <td className="px-4 py-3 align-top whitespace-nowrap">
-                          {visibleMoney.commission
-                            ? formatBRL(r.commission_value ?? 0)
-                            : 'R$ ••••••'}
-                        </td>
-                        <td className="px-4 py-3 align-top text-xs text-gray-600 dark:text-slate-300 whitespace-nowrap">
-                          {created}
-                        </td>
+                        {listColumns.visibleKeys.map((key) => (
+                          <td key={key} className="px-4 py-3 align-top">
+                            {renderPerfListCell(key, cellCtx)}
+                          </td>
+                        ))}
                         {showRotasColumn ? (
                           <td className="px-4 py-3 align-top text-right whitespace-nowrap">
                             {isAdmin || (r.created_by_user_id && r.created_by_user_id === currentUserId) ? (
@@ -1631,7 +1752,7 @@ export default function PerformancePage() {
                 })}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
       )}
 
@@ -1706,11 +1827,16 @@ export default function PerformancePage() {
                                   selectedPerfRoute.cte_value != null
                                     ? String(selectedPerfRoute.cte_value).replace('.', ',')
                                     : '',
+                                valePedagioValue:
+                                  selectedPerfRoute.vale_pedagio != null
+                                    ? String(selectedPerfRoute.vale_pedagio).replace('.', ',')
+                                    : '',
                                 driverValue:
                                   selectedPerfRoute.driver_value != null
                                     ? String(selectedPerfRoute.driver_value).replace('.', ',')
                                     : '',
                                 taxesPercent: String(getPerfRouteTaxesPercent(selectedPerfRoute)),
+                                seguroPercent: String(getPerfRouteSeguroPercent(selectedPerfRoute)),
                               })
                             }}
                             className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
@@ -1737,7 +1863,7 @@ export default function PerformancePage() {
                         </button>
                       )}
                     </div>
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">Valor de CTE</label>
                         <input
@@ -1746,6 +1872,17 @@ export default function PerformancePage() {
                           onChange={(e) => setEditingFields((prev) => ({ ...prev, cteValue: e.target.value }))}
                           disabled={!editingFinancial || savingFinancial}
                           placeholder="Ex.: 1234,56"
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Vale pedágio</label>
+                        <input
+                          type="text"
+                          value={editingFields.valePedagioValue}
+                          onChange={(e) => setEditingFields((prev) => ({ ...prev, valePedagioValue: e.target.value }))}
+                          disabled={!editingFinancial || savingFinancial}
+                          placeholder="Ex.: 150,00"
                           className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                         />
                       </div>
@@ -1768,7 +1905,24 @@ export default function PerformancePage() {
                           disabled={!editingFinancial || savingFinancial}
                           className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                         >
-                          {TAXES_PERCENT_OPTIONS.map((pct) => (
+                          {TAXES_PERCENT_CHOICES.map((pct) => (
+                            <option key={pct} value={String(pct)}>
+                              {pct}%
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">
+                          Seguro (%) {!isStrictAdmin && <span className="text-gray-400">· só admin</span>}
+                        </label>
+                        <select
+                          value={editingFields.seguroPercent}
+                          onChange={(e) => setEditingFields((prev) => ({ ...prev, seguroPercent: e.target.value }))}
+                          disabled={!editingFinancial || savingFinancial || !isStrictAdmin}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
+                        >
+                          {SEGURO_PERCENT_CHOICES.map((pct) => (
                             <option key={pct} value={String(pct)}>
                               {pct}%
                             </option>

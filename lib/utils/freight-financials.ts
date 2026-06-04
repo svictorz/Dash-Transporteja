@@ -9,8 +9,47 @@ import type { Route } from '@/lib/services/routes'
 export const TAXES_PERCENT_OPTIONS = [0, 10, 12, 18] as const
 export type TaxesPercent = (typeof TAXES_PERCENT_OPTIONS)[number]
 
+/**
+ * Alíquotas selecionáveis pelo admin/financeiro ao lançar/editar um frete.
+ * São apenas duas: isento (0%) ou 18%. Valores históricos diferentes (10%,
+ * 12%) continuam sendo reconhecidos para exibição, mas não são oferecidos
+ * como nova opção.
+ */
+export const TAXES_PERCENT_CHOICES = [18, 0] as const
+
+/**
+ * Alíquotas de seguro selecionáveis pelo admin (apenas admin edita): 0,2% ou
+ * isento (0%). Incide sobre o valor da NF.
+ */
+export const SEGURO_PERCENT_CHOICES = [0.2, 0] as const
+
 /** Comissão padrão (%) quando o vendedor não tem `commission_rate` definido. */
 export const DEFAULT_COMMISSION_RATE = 30
+
+/** Normaliza a alíquota de seguro para um dos valores aceitos (0,2 ou 0). */
+export function normalizeSeguroPercent(value: unknown): number {
+  const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
+  return n === 0.2 ? 0.2 : 0
+}
+
+/** Seguro = valor da NF × alíquota. */
+export function calculateSeguroValue(
+  nfValue?: number | null,
+  seguroPercent?: number | null,
+): number | null {
+  if (nfValue == null) return null
+  const p = normalizeSeguroPercent(seguroPercent) / 100
+  return Math.round(nfValue * p * 100) / 100
+}
+
+export function getRouteSeguroPercent(route: Route): number {
+  return normalizeSeguroPercent(route.seguro_percent)
+}
+
+/** Seguro efetivo: usa o valor gravado ou recalcula a partir da NF. */
+export function getRouteSeguroValue(route: Route): number {
+  return route.seguro_value ?? calculateSeguroValue(route.nf_value, getRouteSeguroPercent(route)) ?? 0
+}
 
 export function normalizeTaxesPercent(value: unknown): TaxesPercent {
   const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
@@ -57,10 +96,11 @@ export function calculateNetFreightValue(
   freightValue?: number | null,
   driverValue?: number | null,
   taxesPercent?: number | null,
+  seguroValue?: number | null,
 ): number | null {
   if (freightValue == null) return null
   const taxesValue = calculateTaxesValue(freightValue, taxesPercent) ?? 0
-  return Math.round((freightValue - taxesValue - (driverValue ?? 0)) * 100) / 100
+  return Math.round((freightValue - taxesValue - (driverValue ?? 0) - (seguroValue ?? 0)) * 100) / 100
 }
 
 export function calculateCommissionValue(
@@ -76,7 +116,11 @@ export function calculateCommissionValue(
 export function getRouteNetFreightValue(route: Route): number {
   const baseFreight = route.freight_value ?? route.nf_value
   const pct = getRouteTaxesPercent(route)
-  return route.net_freight_value ?? calculateNetFreightValue(baseFreight, route.driver_value, pct) ?? 0
+  return (
+    route.net_freight_value ??
+    calculateNetFreightValue(baseFreight, route.driver_value, pct, getRouteSeguroValue(route)) ??
+    0
+  )
 }
 
 /** Tributos efetivos: usa o valor gravado ou recalcula a partir da alíquota. */
