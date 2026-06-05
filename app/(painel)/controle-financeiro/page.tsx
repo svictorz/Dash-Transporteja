@@ -31,7 +31,6 @@ import StickyScrollX from '@/components/transporteja/StickyScrollX'
 import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
 import {
   TAXES_PERCENT_CHOICES,
-  SEGURO_PERCENT_CHOICES,
   formatBRL,
   getRouteTaxesPercent,
   getRouteTaxesValue,
@@ -343,7 +342,7 @@ export default function ControleFinanceiroPage() {
       taxesPercent: String(getRouteTaxesPercent(route)),
       taxesValueManual: '',
       seguroPercent: String(getRouteSeguroPercent(route)),
-      seguroValueManual: '',
+      seguroValueManual: route.seguro_value != null ? String(route.seguro_value).replace('.', ',') : '',
     })
   }, [])
 
@@ -552,27 +551,14 @@ export default function ControleFinanceiroPage() {
       case 'seguro':
         return editing ? (
           isStrictAdmin ? (
-            <div className="flex items-center justify-end gap-1.5">
-              <select
-                value={editFields.seguroPercent}
-                onChange={(e) => setEditFields((p) => ({ ...p, seguroPercent: e.target.value }))}
-                className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-sm text-gray-900 dark:text-slate-100"
-              >
-                {SEGURO_PERCENT_CHOICES.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}%
-                  </option>
-                ))}
-              </select>
-              <input
-                inputMode="decimal"
-                value={editFields.seguroValueManual}
-                onChange={(e) => setEditFields((p) => ({ ...p, seguroValueManual: e.target.value }))}
-                placeholder={money(liveSeguroAuto ?? 0)}
-                title="Deixe em branco para calcular pelo %, ou digite o valor em R$ para sobrescrever"
-                className="w-24 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-right text-sm text-gray-900 dark:text-slate-100"
-              />
-            </div>
+            <input
+              inputMode="decimal"
+              value={editFields.seguroValueManual}
+              onChange={(e) => setEditFields((p) => ({ ...p, seguroValueManual: e.target.value }))}
+              placeholder="0,00"
+              title="Valor do seguro em R$"
+              className="w-24 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-right text-sm text-gray-900 dark:text-slate-100"
+            />
           ) : (
             <span className="text-xs text-gray-400 dark:text-slate-500" title="Somente admin edita o seguro">
               {money(calculateSeguroValue(r.nf_value, getRouteSeguroPercent(r)))}
