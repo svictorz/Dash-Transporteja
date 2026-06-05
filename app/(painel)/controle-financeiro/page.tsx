@@ -43,7 +43,6 @@ import {
   normalizeSeguroPercent,
   calculateTaxesValue,
   calculateSeguroValue,
-  calculateNetFreightValue,
   calculateCommissionValue,
 } from '@/lib/utils/freight-financials'
 
@@ -123,7 +122,7 @@ export default function ControleFinanceiroPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [commissionToggleId, setCommissionToggleId] = useState<string | null>(null)
-  const [editFields, setEditFields] = useState({ cteValue: '', valePedagioValue: '', driverValue: '', taxesPercent: '18', seguroPercent: '0.2' })
+  const [editFields, setEditFields] = useState({ nfValue: '', cteValue: '', valePedagioValue: '', driverValue: '', taxesPercent: '18', taxesValueManual: '', seguroPercent: '0.2', seguroValueManual: '' })
 
   const role = currentUser?.role ?? null
   const roleResolved = currentUser?.roleResolved ?? false
@@ -337,11 +336,14 @@ export default function ControleFinanceiroPage() {
   const startEdit = useCallback((route: Route) => {
     setEditingId(route.id)
     setEditFields({
+      nfValue: route.nf_value != null ? String(route.nf_value).replace('.', ',') : '',
       cteValue: route.cte_value != null ? String(route.cte_value).replace('.', ',') : '',
       valePedagioValue: route.vale_pedagio != null ? String(route.vale_pedagio).replace('.', ',') : '',
       driverValue: route.driver_value != null ? String(route.driver_value).replace('.', ',') : '',
       taxesPercent: String(getRouteTaxesPercent(route)),
+      taxesValueManual: '',
       seguroPercent: String(getRouteSeguroPercent(route)),
+      seguroValueManual: '',
     })
   }, [])
 
@@ -358,19 +360,29 @@ export default function ControleFinanceiroPage() {
         const seguroPercent = isStrictAdmin
           ? normalizeSeguroPercent(Number(editFields.seguroPercent))
           : getRouteSeguroPercent(route)
+        const nfValue = parseCurrencyInput(editFields.nfValue)
         const cteValue = parseCurrencyInput(editFields.cteValue)
         const valePedagioValue = parseCurrencyInput(editFields.valePedagioValue)
         const driverValue = parseCurrencyInput(editFields.driverValue)
-        const baseFreight = route.freight_value ?? route.nf_value
-        const taxesValue = calculateTaxesValue(baseFreight, taxesPercent)
-        const seguroValue = calculateSeguroValue(route.nf_value, seguroPercent)
-        const netFreightValue = calculateNetFreightValue(baseFreight, driverValue, taxesPercent, seguroValue)
+        // Base do frete usa o valor lançado ou, na ausência, a NF editada.
+        const baseFreight = route.freight_value ?? nfValue
+        // Tributos: usa o valor digitado manualmente em R$; se em branco, calcula pelo %.
+        const manualTaxes = parseCurrencyInput(editFields.taxesValueManual)
+        const taxesValue = manualTaxes != null ? manualTaxes : calculateTaxesValue(baseFreight, taxesPercent)
+        // Seguro: admin pode digitar o valor em R$; se em branco, calcula pelo %.
+        const manualSeguro = isStrictAdmin ? parseCurrencyInput(editFields.seguroValueManual) : null
+        const seguroValue = manualSeguro != null ? manualSeguro : calculateSeguroValue(nfValue, seguroPercent)
+        const netFreightValue =
+          baseFreight == null
+            ? null
+            : Math.round((baseFreight - (taxesValue ?? 0) - (driverValue ?? 0) - (seguroValue ?? 0)) * 100) / 100
         const sellerRate = route.created_by_user_id
           ? sellerById.get(route.created_by_user_id)?.commission_rate ?? null
           : null
         const commissionValue = calculateCommissionValue(netFreightValue, sellerRate)
 
         await updateRoute(route.id, {
+          nf_value: nfValue,
           cte_value: cteValue,
           vale_pedagio: valePedagioValue,
           driver_value: driverValue,
@@ -414,15 +426,24 @@ export default function ControleFinanceiroPage() {
     editing: boolean,
   ) => {
     const { seller, baseFreight, pct } = ctx
+    const liveNfValue = parseCurrencyInput(editFields.nfValue)
+    const liveBaseFreight = r.freight_value ?? liveNfValue
+    const liveTaxesAuto = calculateTaxesValue(liveBaseFreight, normalizeTaxesPercent(Number(editFields.taxesPercent)))
+    const liveTaxesManual = parseCurrencyInput(editFields.taxesValueManual)
+    const liveTaxes = liveTaxesManual != null ? liveTaxesManual : liveTaxesAuto
     const liveSeguroPct = isStrictAdmin
       ? normalizeSeguroPercent(Number(editFields.seguroPercent))
       : getRouteSeguroPercent(r)
-    const liveNet = calculateNetFreightValue(
-      baseFreight,
-      parseCurrencyInput(editFields.driverValue),
-      normalizeTaxesPercent(Number(editFields.taxesPercent)),
-      calculateSeguroValue(r.nf_value, liveSeguroPct),
-    )
+    const liveSeguroAuto = calculateSeguroValue(liveNfValue, liveSeguroPct)
+    const liveSeguroManual = isStrictAdmin ? parseCurrencyInput(editFields.seguroValueManual) : null
+    const liveSeguro = liveSeguroManual != null ? liveSeguroManual : liveSeguroAuto
+    const liveNet =
+      liveBaseFreight == null
+        ? null
+        : Math.round(
+            (liveBaseFreight - (liveTaxes ?? 0) - (parseCurrencyInput(editFields.driverValue) ?? 0) - (liveSeguro ?? 0)) *
+              100,
+          ) / 100
 
     switch (key) {
       case 'frete':
@@ -447,7 +468,17 @@ export default function ControleFinanceiroPage() {
       case 'valorFrete':
         return <span className="text-gray-900 dark:text-slate-100">{money(baseFreight)}</span>
       case 'nf':
-        return <span className="text-gray-700 dark:text-slate-200">{money(r.nf_value)}</span>
+        return editing ? (
+          <input
+            inputMode="decimal"
+            value={editFields.nfValue}
+            onChange={(e) => setEditFields((p) => ({ ...p, nfValue: e.target.value }))}
+            placeholder="0,00"
+            className="w-24 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-right text-sm text-gray-900 dark:text-slate-100"
+          />
+        ) : (
+          <span className="text-gray-700 dark:text-slate-200">{money(r.nf_value)}</span>
+        )
       case 'cte':
         return editing ? (
           <input
@@ -491,17 +522,27 @@ export default function ControleFinanceiroPage() {
         )
       case 'tributos':
         return editing ? (
-          <select
-            value={editFields.taxesPercent}
-            onChange={(e) => setEditFields((p) => ({ ...p, taxesPercent: e.target.value }))}
-            className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-sm text-gray-900 dark:text-slate-100"
-          >
-            {TAXES_PERCENT_CHOICES.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}%
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center justify-end gap-1.5">
+            <select
+              value={editFields.taxesPercent}
+              onChange={(e) => setEditFields((p) => ({ ...p, taxesPercent: e.target.value }))}
+              className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-sm text-gray-900 dark:text-slate-100"
+            >
+              {TAXES_PERCENT_CHOICES.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}%
+                </option>
+              ))}
+            </select>
+            <input
+              inputMode="decimal"
+              value={editFields.taxesValueManual}
+              onChange={(e) => setEditFields((p) => ({ ...p, taxesValueManual: e.target.value }))}
+              placeholder={money(liveTaxesAuto ?? 0)}
+              title="Deixe em branco para calcular pelo %, ou digite o valor em R$ para sobrescrever"
+              className="w-24 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-right text-sm text-gray-900 dark:text-slate-100"
+            />
+          </div>
         ) : (
           <>
             <span className="text-gray-700 dark:text-slate-200">{money(getRouteTaxesValue(r))}</span>
@@ -511,17 +552,27 @@ export default function ControleFinanceiroPage() {
       case 'seguro':
         return editing ? (
           isStrictAdmin ? (
-            <select
-              value={editFields.seguroPercent}
-              onChange={(e) => setEditFields((p) => ({ ...p, seguroPercent: e.target.value }))}
-              className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-sm text-gray-900 dark:text-slate-100"
-            >
-              {SEGURO_PERCENT_CHOICES.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}%
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-end gap-1.5">
+              <select
+                value={editFields.seguroPercent}
+                onChange={(e) => setEditFields((p) => ({ ...p, seguroPercent: e.target.value }))}
+                className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-sm text-gray-900 dark:text-slate-100"
+              >
+                {SEGURO_PERCENT_CHOICES.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}%
+                  </option>
+                ))}
+              </select>
+              <input
+                inputMode="decimal"
+                value={editFields.seguroValueManual}
+                onChange={(e) => setEditFields((p) => ({ ...p, seguroValueManual: e.target.value }))}
+                placeholder={money(liveSeguroAuto ?? 0)}
+                title="Deixe em branco para calcular pelo %, ou digite o valor em R$ para sobrescrever"
+                className="w-24 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-right text-sm text-gray-900 dark:text-slate-100"
+              />
+            </div>
           ) : (
             <span className="text-xs text-gray-400 dark:text-slate-500" title="Somente admin edita o seguro">
               {money(calculateSeguroValue(r.nf_value, getRouteSeguroPercent(r)))}
