@@ -121,7 +121,7 @@ export default function ControleFinanceiroPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [commissionToggleId, setCommissionToggleId] = useState<string | null>(null)
-  const [editFields, setEditFields] = useState({ nfValue: '', cteValue: '', valePedagioValue: '', driverValue: '', taxesPercent: '18', taxesValueManual: '', seguroPercent: '0.2', seguroValueManual: '' })
+  const [editFields, setEditFields] = useState({ freightValue: '', nfValue: '', cteValue: '', valePedagioValue: '', driverValue: '', taxesPercent: '18', taxesValueManual: '', seguroPercent: '0.2', seguroValueManual: '' })
 
   const role = currentUser?.role ?? null
   const roleResolved = currentUser?.roleResolved ?? false
@@ -335,6 +335,7 @@ export default function ControleFinanceiroPage() {
   const startEdit = useCallback((route: Route) => {
     setEditingId(route.id)
     setEditFields({
+      freightValue: route.freight_value != null ? String(route.freight_value).replace('.', ',') : '',
       nfValue: route.nf_value != null ? String(route.nf_value).replace('.', ',') : '',
       cteValue: route.cte_value != null ? String(route.cte_value).replace('.', ',') : '',
       valePedagioValue: route.vale_pedagio != null ? String(route.vale_pedagio).replace('.', ',') : '',
@@ -359,12 +360,13 @@ export default function ControleFinanceiroPage() {
         const seguroPercent = isStrictAdmin
           ? normalizeSeguroPercent(Number(editFields.seguroPercent))
           : getRouteSeguroPercent(route)
+        const freightValue = parseCurrencyInput(editFields.freightValue)
         const nfValue = parseCurrencyInput(editFields.nfValue)
         const cteValue = parseCurrencyInput(editFields.cteValue)
         const valePedagioValue = parseCurrencyInput(editFields.valePedagioValue)
         const driverValue = parseCurrencyInput(editFields.driverValue)
         // Base do frete usa o valor lançado ou, na ausência, a NF editada.
-        const baseFreight = route.freight_value ?? nfValue
+        const baseFreight = freightValue ?? nfValue
         // Tributos: usa o valor digitado manualmente em R$; se em branco, calcula pelo %.
         const manualTaxes = parseCurrencyInput(editFields.taxesValueManual)
         const taxesValue = manualTaxes != null ? manualTaxes : calculateTaxesValue(baseFreight, taxesPercent)
@@ -381,6 +383,7 @@ export default function ControleFinanceiroPage() {
         const commissionValue = calculateCommissionValue(netFreightValue, sellerRate)
 
         await updateRoute(route.id, {
+          freight_value: freightValue,
           nf_value: nfValue,
           cte_value: cteValue,
           vale_pedagio: valePedagioValue,
@@ -425,8 +428,9 @@ export default function ControleFinanceiroPage() {
     editing: boolean,
   ) => {
     const { seller, baseFreight, pct } = ctx
+    const liveFreightValue = parseCurrencyInput(editFields.freightValue)
     const liveNfValue = parseCurrencyInput(editFields.nfValue)
-    const liveBaseFreight = r.freight_value ?? liveNfValue
+    const liveBaseFreight = liveFreightValue ?? liveNfValue
     const liveTaxesAuto = calculateTaxesValue(liveBaseFreight, normalizeTaxesPercent(Number(editFields.taxesPercent)))
     const liveTaxesManual = parseCurrencyInput(editFields.taxesValueManual)
     const liveTaxes = liveTaxesManual != null ? liveTaxesManual : liveTaxesAuto
@@ -465,7 +469,17 @@ export default function ControleFinanceiroPage() {
       case 'coleta':
         return <span className="text-gray-700 dark:text-slate-200">{formatDateDdMmYyyy(r.pickup_date) || '—'}</span>
       case 'valorFrete':
-        return <span className="text-gray-900 dark:text-slate-100">{money(baseFreight)}</span>
+        return editing ? (
+          <input
+            inputMode="decimal"
+            value={editFields.freightValue}
+            onChange={(e) => setEditFields((p) => ({ ...p, freightValue: e.target.value }))}
+            placeholder="0,00"
+            className="w-28 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-right text-sm text-gray-900 dark:text-slate-100"
+          />
+        ) : (
+          <span className="text-gray-900 dark:text-slate-100">{money(baseFreight)}</span>
+        )
       case 'nf':
         return editing ? (
           <input
