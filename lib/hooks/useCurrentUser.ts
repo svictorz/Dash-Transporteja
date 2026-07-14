@@ -9,6 +9,8 @@ export interface CurrentUser {
   email: string
   name: string | null
   role: DashboardUserRole | null
+  /** Alíquota de comissão do vendedor (%). `null` → usa o padrão (30%). */
+  commission_rate: number | null
   /**
    * Indica se a leitura do role em public.users foi conclusiva.
    *  - `true`  → resposta válida do banco (mesmo que role venha null por
@@ -96,7 +98,13 @@ export function useCurrentUser(): UseCurrentUserResult {
       const uid = session.user.id
       const sessionEmail = session.user.email ?? ''
 
-      type RoleRow = { id: string; email: string | null; name: string | null; role: string | null }
+      type RoleRow = {
+        id: string
+        email: string | null
+        name: string | null
+        role: string | null
+        commission_rate: number | null
+      }
       type RoleQueryResult = { data: RoleRow | null; error: { message: string } | null }
 
       /**
@@ -110,7 +118,7 @@ export function useCurrentUser(): UseCurrentUserResult {
       let transientFailure = false
       for (let attempt = 1; attempt <= ROLE_MAX_ATTEMPTS; attempt++) {
         const rolePromise: Promise<RoleQueryResult> = Promise.resolve(
-          supabase.from('users').select('id, email, name, role').eq('id', uid).single(),
+          supabase.from('users').select('id, email, name, role, commission_rate').eq('id', uid).single(),
         ).then(({ data, error }) => ({
           data: data as RoleRow | null,
           error: error ? { message: error.message } : null,
@@ -152,6 +160,7 @@ export function useCurrentUser(): UseCurrentUserResult {
             email: sessionEmail,
             name: null,
             role: null,
+            commission_rate: null,
             roleResolved: false,
           })
         } else {
@@ -161,6 +170,7 @@ export function useCurrentUser(): UseCurrentUserResult {
             email: sessionEmail,
             name: null,
             role: null,
+            commission_rate: null,
             roleResolved: true,
           })
         }
@@ -172,6 +182,7 @@ export function useCurrentUser(): UseCurrentUserResult {
         email: data.email ?? sessionEmail,
         name: data.name ?? null,
         role: (data.role as DashboardUserRole) ?? null,
+        commission_rate: data.commission_rate ?? null,
         roleResolved: true,
       })
     } catch (e: unknown) {

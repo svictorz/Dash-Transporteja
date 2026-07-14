@@ -23,6 +23,9 @@ export const TAXES_PERCENT_CHOICES = [18, 0] as const
  */
 export const SEGURO_PERCENT_CHOICES = [0.2, 0] as const
 
+/** Seguro padrão de todo frete novo: 0,2% sobre a NF (só o admin pode isentar). */
+export const SEGURO_PERCENT_DEFAULT = 0.2
+
 /** Comissão padrão (%) quando o vendedor não tem `commission_rate` definido. */
 export const DEFAULT_COMMISSION_RATE = 30
 

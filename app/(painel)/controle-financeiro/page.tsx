@@ -43,6 +43,7 @@ import {
   calculateTaxesValue,
   calculateSeguroValue,
   calculateCommissionValue,
+  SEGURO_PERCENT_DEFAULT,
 } from '@/lib/utils/freight-financials'
 
 interface SellerInfo {
@@ -121,7 +122,7 @@ export default function ControleFinanceiroPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [commissionToggleId, setCommissionToggleId] = useState<string | null>(null)
-  const [editFields, setEditFields] = useState({ freightValue: '', nfValue: '', cteValue: '', valePedagioValue: '', driverValue: '', taxesPercent: '18', taxesValueManual: '', seguroPercent: '0.2', seguroValueManual: '' })
+  const [editFields, setEditFields] = useState({ freightValue: '', nfValue: '', cteValue: '', valePedagioValue: '', driverValue: '', taxesPercent: '18', taxesValueManual: '', seguroPercent: String(SEGURO_PERCENT_DEFAULT), seguroValueManual: '' })
 
   const role = currentUser?.role ?? null
   const roleResolved = currentUser?.roleResolved ?? false

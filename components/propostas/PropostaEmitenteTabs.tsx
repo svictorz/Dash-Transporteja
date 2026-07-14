@@ -9,6 +9,8 @@ interface Props {
 }
 
 export default function PropostaEmitenteTabs({ active, onChange }: Props) {
+  if (PROPOSTA_EMITENTES.length < 2) return null
+
   return (
     <div
       className="inline-flex flex-wrap gap-1 rounded-xl border border-gray-200/80 bg-gray-100/90 p-1 shadow-inner dark:border-slate-600 dark:bg-slate-800/80"

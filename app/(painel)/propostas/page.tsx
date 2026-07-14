@@ -21,7 +21,7 @@ function createInitialForms(): Record<PropostaEmitente, ReturnType<typeof defaul
 }
 
 export default function PropostasPage() {
-  const [activeEmitente, setActiveEmitente] = useState<PropostaEmitente>('agape')
+  const [activeEmitente, setActiveEmitente] = useState<PropostaEmitente>('jcn')
   const [forms, setForms] = useState(createInitialForms)
   const [statusDistanciaByEmitente, setStatusDistanciaByEmitente] = useState<
     Record<PropostaEmitente, DistanciaStatus>

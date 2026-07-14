@@ -27,7 +27,8 @@ export interface PropostaDocConfig {
   logoClassName?: string
 }
 
-export const PROPOSTA_EMITENTES: PropostaEmitente[] = ['agape', 'jcn']
+/** Emitentes com aba visível na tela de propostas (Ágape removida). */
+export const PROPOSTA_EMITENTES: PropostaEmitente[] = ['jcn']
 
 /** Endereço compartilhado (matriz Campinas) — Ágape e JCN. */
 const PROPOSTA_ENDERECO = {
