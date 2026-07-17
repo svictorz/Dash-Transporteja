@@ -77,8 +77,7 @@ export default function UsuariosPage() {
   const [commissionDraft, setCommissionDraft] = useState<Record<string, string>>({})
   const [savingCommissionId, setSavingCommissionId] = useState<string | null>(null)
 
-  const isAuthorized =
-    me?.role === 'admin' || isSuperAdminEmail(me?.email)
+  const isAuthorized = isSuperAdminEmail(me?.email)
 
   useEffect(() => {
     if (meLoading) return
@@ -213,11 +212,11 @@ export default function UsuariosPage() {
       alert('Você não pode revogar o próprio acesso. Peça a outro administrador.')
       return
     }
-    if (target.role === null) return
 
     const confirmation = confirm(
       `Remover o acesso de ${target.name || target.email}?\n\n` +
-        'O usuário continuará logado, mas perderá o acesso ao CRM até receber uma permissão novamente.',
+        'A conta e os dados do usuário serão apagados permanentemente. Rotas e clientes ' +
+        'criados por ele continuam no sistema, apenas sem dono. Essa ação não pode ser desfeita.',
     )
     if (!confirmation) return
 
@@ -226,18 +225,15 @@ export default function UsuariosPage() {
       setSavedId(null)
       setError(null)
 
-      const { error: err } = await supabase
-        .from('users')
-        .update({ role: null })
-        .eq('id', target.id)
+      const res = await fetch('/api/usuarios/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: target.id }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Erro ao remover acesso')
 
-      if (err) throw new Error(err.message)
-
-      setUsers((prev) =>
-        prev.map((u) => (u.id === target.id ? { ...u, role: null } : u)),
-      )
-      setSavedId(target.id)
-      setTimeout(() => setSavedId((curr) => (curr === target.id ? null : curr)), 2000)
+      setUsers((prev) => prev.filter((u) => u.id !== target.id))
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao remover acesso')
     } finally {

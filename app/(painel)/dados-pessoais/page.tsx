@@ -12,10 +12,15 @@ import {
   Camera,
   Save,
   Loader2,
-  X
+  X,
+  Lock,
+  Eye,
+  EyeOff,
+  Check
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { uploadAvatar, base64ToBlob } from '@/lib/supabase/storage'
+import { validatePassword } from '@/lib/utils/validation'
 
 interface UserProfile {
   id: string
@@ -32,6 +37,15 @@ export default function DadosPessoaisPage() {
   const [showCropper, setShowCropper] = useState(false)
   const [cropperImage, setCropperImage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
 
   useEffect(() => {
     loadProfile()
@@ -195,6 +209,51 @@ export default function DadosPessoaisPage() {
     }
   }
 
+  const handleChangePassword = async () => {
+    if (!profile) return
+    setPasswordError('')
+    setPasswordSuccess(false)
+
+    const check = validatePassword(newPassword)
+    if (!check.valid) {
+      setPasswordError(check.error ?? 'Senha inválida')
+      return
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('As senhas não coincidem')
+      return
+    }
+
+    try {
+      setIsChangingPassword(true)
+
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password: currentPassword,
+      })
+      if (authError) {
+        setPasswordError('Senha atual incorreta')
+        return
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+      if (updateError) {
+        setPasswordError(updateError.message || 'Erro ao alterar senha')
+        return
+      }
+
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmNewPassword('')
+      setPasswordSuccess(true)
+      setTimeout(() => setPasswordSuccess(false), 3000)
+    } catch {
+      setPasswordError('Erro inesperado ao alterar senha')
+    } finally {
+      setIsChangingPassword(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -279,7 +338,7 @@ export default function DadosPessoaisPage() {
                   type="text"
                   value={profile.name || ''}
                   onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Seu nome completo"
                 />
               </div>
@@ -309,7 +368,7 @@ export default function DadosPessoaisPage() {
                   type="tel"
                   value={profile.phone || ''}
                   onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="(00) 00000-0000"
                 />
               </div>
@@ -337,6 +396,106 @@ export default function DadosPessoaisPage() {
                 </motion.button>
               </div>
             </div>
+          </div>
+        </div>
+      </FadeIn>
+
+      {/* Troca de Senha */}
+      <FadeIn delay={0.3}>
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Lock className="w-5 h-5 text-gray-700" />
+            <h2 className="text-lg font-semibold text-gray-900">Alterar senha</h2>
+          </div>
+
+          <div className="space-y-4 max-w-md">
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Senha atual</label>
+              <div className="relative">
+                <input
+                  type={showCurrentPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Digite sua senha atual"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  aria-label={showCurrentPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                >
+                  {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Nova senha</label>
+              <div className="relative">
+                <input
+                  type={showNewPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Mín. 8 caracteres, 1 letra e 1 número"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  aria-label={showNewPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                >
+                  {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">Confirmar nova senha</label>
+              <input
+                type={showNewPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Repita a nova senha"
+              />
+            </div>
+
+            {passwordError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-600">{passwordError}</p>
+              </div>
+            )}
+            {passwordSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600" />
+                <p className="text-sm text-emerald-700">Senha alterada com sucesso!</p>
+              </div>
+            )}
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleChangePassword}
+              disabled={isChangingPassword || !currentPassword || !newPassword || !confirmNewPassword}
+              className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 font-medium"
+            >
+              {isChangingPassword ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Alterando...
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4" />
+                  Alterar senha
+                </>
+              )}
+            </motion.button>
           </div>
         </div>
       </FadeIn>

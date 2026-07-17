@@ -4,7 +4,7 @@ import type { PropostaEmitente } from '@/lib/constants/proposta-emitentes'
 import { getPropostaDoc } from '@/lib/constants/proposta-emitentes'
 import type { PropostaFormState } from '@/lib/types/proposta'
 import type { PropostaCalculo } from '@/lib/utils/proposta-calculo'
-import { formatBRLProposta } from '@/lib/utils/proposta-calculo'
+import { formatBRLProposta, parseDecimalBR } from '@/lib/utils/proposta-calculo'
 import PropostaBrandLogo from '@/components/propostas/PropostaBrandLogo'
 
 interface Props {
@@ -22,8 +22,7 @@ export default function PropostaPdfPreview({ emitente, form, calc, dataEmissao, 
   const doc = getPropostaDoc(emitente)
   const fmtKg = (n: number) =>
     n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' KG'
-  const fmtM3 = (n: number) =>
-    n.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' M³'
+  const valorNf = parseDecimalBR(form.valorNf)
 
   const dist = form.distanciaKm.trim() ? `${form.distanciaKm.replace('.', ',')} KM` : '0 KM'
 
@@ -117,10 +116,10 @@ export default function PropostaPdfPreview({ emitente, form, calc, dataEmissao, 
               Peso real
             </th>
             <th className="border p-1.5 text-left font-semibold" style={{ borderColor: border }}>
-              Peso cubado
+              Volumes
             </th>
             <th className="border p-1.5 text-left font-semibold" style={{ borderColor: border }}>
-              Vol. m³
+              Valor NF
             </th>
           </tr>
         </thead>
@@ -130,10 +129,10 @@ export default function PropostaPdfPreview({ emitente, form, calc, dataEmissao, 
               {fmtKg(calc.pesoRealKg)}
             </td>
             <td className="border p-1.5" style={{ borderColor: border }}>
-              {fmtKg(calc.pesoCubadoKg)}
+              {form.volumes.trim() || '—'}
             </td>
             <td className="border p-1.5" style={{ borderColor: border }}>
-              {fmtM3(calc.volumeM3)}
+              {valorNf > 0 ? formatBRLProposta(valorNf) : '—'}
             </td>
           </tr>
         </tbody>
@@ -146,22 +145,19 @@ export default function PropostaPdfPreview({ emitente, form, calc, dataEmissao, 
         >
           Composição de preços
         </div>
-        {calc.modoFreteInclusivo && calc.freteBaseInformado != null ? (
-          <p className="text-[8.5pt] font-semibold text-gray-900 px-2 py-1.5 border border-t-0 bg-white" style={{ borderColor: border }}>
-            Frete base: <span className="tabular-nums">{formatBRLProposta(calc.freteBaseInformado)}</span>
-          </p>
-        ) : null}
         <div className="grid grid-cols-2 border border-t-0 text-[8.5pt]" style={{ borderColor: border }}>
           <div className="border-r p-2" style={{ borderColor: border }}>
-            <span className="font-semibold">
-              {calc.modoFreteInclusivo ? 'Frete líquido: ' : 'Frete base: '}
-            </span>
-            <strong>{formatBRLProposta(calc.freteBase)}</strong>
+            <span className="font-semibold">Frete base: </span>
+            <strong>{formatBRLProposta(calc.freteBaseInformado)}</strong>
           </div>
           <div className="p-2">
-            <span className="font-semibold">Taxas: </span>
+            <span className="font-semibold">Valores adicionais: </span>
             <strong>{formatBRLProposta(calc.taxas)}</strong>
           </div>
+        </div>
+        <div className="border border-t-0 p-2 text-[8pt] text-gray-600 italic" style={{ borderColor: border }}>
+          <span>Impostos e Seguro aproximado: </span>
+          <span>{formatBRLProposta(calc.impostosSeguroValor)}</span>
         </div>
         <div className="grid grid-cols-2 border border-t-0 min-h-[4.5rem]" style={{ borderColor: border }}>
           <div className="border-r p-2 text-[8pt] text-gray-700" style={{ borderColor: border }}>
@@ -196,9 +192,6 @@ export default function PropostaPdfPreview({ emitente, form, calc, dataEmissao, 
           Valores sujeitos a confirmação de disponibilidade de equipamento e janela de coleta.
         </p>
         <p className="mt-1">Não inclui ajudantes, pedágios e taxas de terminal, salvo negociação expressa.</p>
-        <p className="mt-1">
-          Cálculo: peso cubado = volume (m³) × 300 kg/m³; faturamento pelo maior entre peso real e cubado.
-        </p>
       </div>
 
       <p

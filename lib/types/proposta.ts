@@ -14,16 +14,11 @@ export interface PropostaFormState {
   cargaParam: string
   equipamento: string
   freteManual: string
-  descontoPct: string
   valorNf: string
   pesoKg: string
-  altM: string
-  largM: string
-  profM: string
-  seguroPct: string
+  volumes: string
   taxasFixas: string
-  valorKm: string
-  icmsPct: string
+  impostosSeguro: string
   /** Texto livre exibido na proposta (PDF) */
   observacao: string
 }
@@ -44,16 +39,11 @@ export function defaultPropostaFormState(codigoUnico: string): PropostaFormState
     cargaParam: '7',
     equipamento: 'Caminhão 3/4 (Baú)',
     freteManual: '',
-    descontoPct: '0',
     valorNf: '',
     pesoKg: '',
-    altM: '',
-    largM: '',
-    profM: '',
-    seguroPct: '0,50',
+    volumes: '',
     taxasFixas: '0',
-    valorKm: '',
-    icmsPct: '7',
+    impostosSeguro: '',
     observacao: '',
   }
 }

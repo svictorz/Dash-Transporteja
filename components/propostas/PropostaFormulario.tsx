@@ -164,32 +164,59 @@ export default function PropostaFormulario({ value, onChange, statusDistancia = 
           </div>
           <div className="space-y-2">
             <p className="text-sm font-semibold text-[#0f2847] dark:text-white">Frete base</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input
-                className={inputClass}
-                inputMode="decimal"
-                placeholder="R$"
-                value={value.freteManual}
-                onChange={(e) => set('freteManual', e.target.value)}
-                aria-label="Frete base em reais"
-              />
-              <input
-                className={inputClass}
-                inputMode="decimal"
-                placeholder="R$/km (opcional)"
-                value={value.valorKm}
-                onChange={(e) => set('valorKm', e.target.value)}
-                aria-label="Valor por quilômetro"
-              />
-            </div>
+            <input
+              className={inputClass}
+              inputMode="decimal"
+              placeholder="R$"
+              value={value.freteManual}
+              onChange={(e) => set('freteManual', e.target.value)}
+              aria-label="Frete base em reais"
+            />
           </div>
 
           <input
             className={inputClass}
             inputMode="decimal"
-            placeholder="Peso KG"
-            value={value.pesoKg}
-            onChange={(e) => set('pesoKg', e.target.value)}
+            placeholder="Valores adicionais (R$)"
+            value={value.taxasFixas}
+            onChange={(e) => set('taxasFixas', e.target.value)}
+            aria-label="Valores adicionais, exibidos como taxas na proposta"
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              className={inputClass}
+              inputMode="decimal"
+              placeholder="Peso KG"
+              value={value.pesoKg}
+              onChange={(e) => set('pesoKg', e.target.value)}
+            />
+            <input
+              className={inputClass}
+              inputMode="numeric"
+              placeholder="Volumes"
+              value={value.volumes}
+              onChange={(e) => set('volumes', e.target.value)}
+              aria-label="Quantidade de volumes"
+            />
+          </div>
+
+          <input
+            className={inputClass}
+            inputMode="decimal"
+            placeholder="Valor da Nota Fiscal (R$)"
+            value={value.valorNf}
+            onChange={(e) => set('valorNf', e.target.value)}
+            aria-label="Valor da nota fiscal"
+          />
+
+          <input
+            className={inputClass}
+            inputMode="decimal"
+            placeholder="Impostos e Seguro (R$ aproximado)"
+            value={value.impostosSeguro}
+            onChange={(e) => set('impostosSeguro', e.target.value)}
+            aria-label="Impostos e seguro, valor aproximado em reais"
           />
 
           <div>

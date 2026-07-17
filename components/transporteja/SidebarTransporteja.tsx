@@ -45,15 +45,10 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   /**
    * `isAdmin` controla a visibilidade da aba "Permissões".
    *
-   * Aceita duas formas:
-   *  - Role explícito 'admin' na tabela public.users (caminho normal); ou
-   *  - E-mail super admin (fallback de segurança) — garante que o dono do
-   *    sistema nunca perca acesso à gestão de permissões caso o role na
-   *    tabela `users` esteja faltando/desincronizado ou o hook tenha caído
-   *    em timeout ao ler o perfil.
+   * Restrito ao e-mail super admin — role 'admin' sozinho não dá mais
+   * acesso à gestão de permissões (só o dono do sistema pode alterar roles).
    */
-  const isAdmin =
-    currentUser?.role === 'admin' || isSuperAdminEmail(currentUser?.email)
+  const isAdmin = isSuperAdminEmail(currentUser?.email)
 
   /**
    * Acesso ao Controle Financeiro: admin e financeiro (que já têm visão
