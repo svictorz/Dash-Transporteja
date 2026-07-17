@@ -30,13 +30,15 @@ export default function CEPInput({
   const [isValid, setIsValid] = useState(false)
 
 
-  const handleSearchCEP = async () => {
-    if (!value || value.length !== 8) {
+  const handleSearchCEP = async (cepOverride?: string) => {
+    const cepToSearch = cepOverride ?? value
+
+    if (!cepToSearch || cepToSearch.length !== 8) {
       setSearchError('CEP deve ter 8 dígitos')
       return
     }
 
-    const validation = validateCEP(value)
+    const validation = validateCEP(cepToSearch)
     if (!validation.valid) {
       setSearchError(validation.error || 'CEP inválido')
       return
@@ -46,7 +48,7 @@ export default function CEPInput({
     setSearchError(null)
 
     try {
-      const result = await searchCEP(value)
+      const result = await searchCEP(cepToSearch)
       
       if (result.success && result.data) {
         setIsValid(true)
@@ -95,9 +97,11 @@ export default function CEPInput({
       
       // Auto-buscar quando completar 8 dígitos
       if (autoSearch && inputValue.length === 8) {
-        // Pequeno delay para permitir que o usuário termine de digitar
+        // Pequeno delay para permitir que o usuário termine de digitar.
+        // Passa o valor direto (não a prop `value`, que ainda não foi
+        // atualizada pelo re-render do pai neste ponto).
         setTimeout(() => {
-          handleSearchCEP()
+          handleSearchCEP(inputValue)
         }, 300)
       }
     }
@@ -138,7 +142,7 @@ export default function CEPInput({
         </div>
         <button
           type="button"
-          onClick={handleSearchCEP}
+          onClick={() => handleSearchCEP()}
           disabled={isSearching || value.length !== 8}
           className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >

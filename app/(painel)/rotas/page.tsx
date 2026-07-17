@@ -2048,8 +2048,7 @@ export default function RotasPage() {
                       originAddress: data.logradouro || formData.originAddress
                     })
                   }}
-                  autoSearch={false}
-                  label="CEP de Origem (opcional — clique em Buscar para preencher cidade e endereço)"
+                  label="CEP de Origem (opcional — preenche cidade e endereço automaticamente)"
                 />
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2132,8 +2131,7 @@ export default function RotasPage() {
                       destinationAddress: data.logradouro || formData.destinationAddress
                     })
                   }}
-                  autoSearch={false}
-                  label="CEP de Destino (opcional — clique em Buscar para preencher cidade e endereço)"
+                  label="CEP de Destino (opcional — preenche cidade e endereço automaticamente)"
                 />
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2637,8 +2635,7 @@ export default function RotasPage() {
                       originAddress: data.logradouro || formData.originAddress
                     })
                   }}
-                  autoSearch={false}
-                  label="CEP de Origem (opcional — clique em Buscar para preencher cidade e endereço)"
+                  label="CEP de Origem (opcional — preenche cidade e endereço automaticamente)"
                 />
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2721,8 +2718,7 @@ export default function RotasPage() {
                       destinationAddress: data.logradouro || formData.destinationAddress
                     })
                   }}
-                  autoSearch={false}
-                  label="CEP de Destino (opcional — clique em Buscar para preencher cidade e endereço)"
+                  label="CEP de Destino (opcional — preenche cidade e endereço automaticamente)"
                 />
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
