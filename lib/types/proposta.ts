@@ -18,7 +18,6 @@ export interface PropostaFormState {
   pesoKg: string
   volumes: string
   taxasFixas: string
-  impostosSeguro: string
   /** Texto livre exibido na proposta (PDF) */
   observacao: string
 }
@@ -43,7 +42,6 @@ export function defaultPropostaFormState(codigoUnico: string): PropostaFormState
     pesoKg: '',
     volumes: '',
     taxasFixas: '0',
-    impostosSeguro: '',
     observacao: '',
   }
 }

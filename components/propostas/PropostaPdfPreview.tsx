@@ -4,7 +4,7 @@ import type { PropostaEmitente } from '@/lib/constants/proposta-emitentes'
 import { getPropostaDoc } from '@/lib/constants/proposta-emitentes'
 import type { PropostaFormState } from '@/lib/types/proposta'
 import type { PropostaCalculo } from '@/lib/utils/proposta-calculo'
-import { formatBRLProposta, parseDecimalBR } from '@/lib/utils/proposta-calculo'
+import { formatBRLProposta, parseDecimalBR, IMPOSTOS_SEGURO_PERCENT } from '@/lib/utils/proposta-calculo'
 import PropostaBrandLogo from '@/components/propostas/PropostaBrandLogo'
 
 interface Props {
@@ -156,7 +156,7 @@ export default function PropostaPdfPreview({ emitente, form, calc, dataEmissao, 
           </div>
         </div>
         <div className="border border-t-0 p-2 text-[8pt] text-gray-600 italic" style={{ borderColor: border }}>
-          <span>Impostos e Seguro aproximado: </span>
+          <span>Impostos e Seguro ({IMPOSTOS_SEGURO_PERCENT}%) aproximado: </span>
           <span>{formatBRLProposta(calc.impostosSeguroValor)}</span>
         </div>
         <div className="grid grid-cols-2 border border-t-0 min-h-[4.5rem]" style={{ borderColor: border }}>

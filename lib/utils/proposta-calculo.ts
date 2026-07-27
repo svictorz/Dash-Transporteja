@@ -23,12 +23,15 @@ export function gerarCodigoPropostaAGT(): string {
   return gerarCodigoProposta('agape')
 }
 
+/** Alíquota informativa de impostos + seguro exibida na proposta. */
+export const IMPOSTOS_SEGURO_PERCENT = 23
+
 export interface PropostaCalculo {
   pesoRealKg: number
   freteBaseInformado: number
   /** Valores adicionais somados ao frete base (mesmo valor exibido como "Taxas"). */
   taxas: number
-  /** Impostos + seguro pagos na operação (valor aproximado digitado) — apenas informativo, não desconta do total líquido. */
+  /** Impostos + seguro: 23% do total líquido — apenas informativo, não desconta do total líquido. */
   impostosSeguroValor: number
   /** Valor final: frete base + valores adicionais (impostos/seguros não entram na conta). */
   totalLiquido: number
@@ -41,7 +44,7 @@ export function calcularProposta(s: PropostaFormState): PropostaCalculo {
   const taxas = parseDecimalBR(s.taxasFixas)
 
   const totalLiquido = Math.max(0, freteBaseInformado + taxas)
-  const impostosSeguroValor = parseDecimalBR(s.impostosSeguro)
+  const impostosSeguroValor = totalLiquido * (IMPOSTOS_SEGURO_PERCENT / 100)
 
   const o = [s.cidadeOrigem, s.ufOrigem].filter(Boolean).join(' / ')
   const de = [s.cidadeDestino, s.ufDestino].filter(Boolean).join(' / ')

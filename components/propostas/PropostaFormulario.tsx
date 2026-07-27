@@ -210,15 +210,6 @@ export default function PropostaFormulario({ value, onChange, statusDistancia = 
             aria-label="Valor da nota fiscal"
           />
 
-          <input
-            className={inputClass}
-            inputMode="decimal"
-            placeholder="Impostos e Seguro (R$ aproximado)"
-            value={value.impostosSeguro}
-            onChange={(e) => set('impostosSeguro', e.target.value)}
-            aria-label="Impostos e seguro, valor aproximado em reais"
-          />
-
           <div>
             <label htmlFor="proposta-obs" className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1.5">
               Observações
