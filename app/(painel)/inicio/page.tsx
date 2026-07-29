@@ -57,7 +57,7 @@ interface RoutePreview {
   estimatedDelivery: string
   pickupDate: string
   commissionPaid: boolean
-  status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
+  status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
 }
 
 type PeriodKey = 'today' | '7d' | '30d' | 'month' | 'year' | 'all'
@@ -359,6 +359,8 @@ export default function DashboardPage() {
         return { label: 'Em Trânsito', dotColor: 'bg-orange-500' }
       case 'delivered':
         return { label: 'Entregue', dotColor: 'bg-green-500' }
+      case 'documentation':
+        return { label: 'Documentação', dotColor: 'bg-blue-500' }
       case 'pickedUp':
         return { label: 'Coletado', dotColor: 'bg-gray-500' }
       case 'pending':

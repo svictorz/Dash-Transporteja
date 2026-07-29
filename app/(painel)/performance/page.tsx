@@ -348,6 +348,7 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     statusRaw === 'inTransit' ||
     statusRaw === 'pickedUp' ||
     statusRaw === 'delivered' ||
+    statusRaw === 'documentation' ||
     statusRaw === 'cancelled' ||
     statusRaw === 'pending'
       ? statusRaw
@@ -413,6 +414,8 @@ function perfDetailStatusLabel(s: Route['status']): string {
   switch (s) {
     case 'delivered':
       return 'Entregue'
+    case 'documentation':
+      return 'Documentação'
     case 'inTransit':
       return 'Em trânsito'
     case 'pickedUp':
@@ -432,6 +435,8 @@ function perfStatusDisplay(status: Route['status']): { label: string; dotColor: 
       return { label: 'Em Trânsito', dotColor: 'bg-orange-500' }
     case 'delivered':
       return { label: 'Entregue', dotColor: 'bg-green-500' }
+    case 'documentation':
+      return { label: 'Documentação', dotColor: 'bg-blue-500' }
     case 'pickedUp':
       return { label: 'Coletado', dotColor: 'bg-gray-500' }
     case 'pending':

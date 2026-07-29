@@ -111,7 +111,7 @@ export interface Database {
           weight: string
           estimated_delivery: string
           pickup_date: string
-          status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
+          status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
           company_name: string | null
           company_responsible: string | null
           company_phone: string | null
@@ -155,7 +155,7 @@ export interface Database {
           weight: string
           estimated_delivery: string
           pickup_date: string
-          status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
+          status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
           company_name?: string | null
           company_responsible?: string | null
           company_phone?: string | null
@@ -199,7 +199,7 @@ export interface Database {
           weight?: string
           estimated_delivery?: string
           pickup_date?: string
-          status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
+          status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
           company_name?: string | null
           company_responsible?: string | null
           company_phone?: string | null

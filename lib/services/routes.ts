@@ -19,7 +19,7 @@ export interface Route {
   weight: string
   estimated_delivery: string
   pickup_date: string
-  status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
+  status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
   company_name?: string | null
   company_responsible?: string | null
   company_phone?: string | null
@@ -73,7 +73,7 @@ export interface CreateRouteData {
   /** ISO yyyy-mm-dd ou vazio se ainda não definido */
   estimated_delivery?: string
   pickup_date?: string
-  status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
+  status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
   company_name?: string
   company_responsible?: string
   company_phone?: string
@@ -119,7 +119,7 @@ export interface UpdateRouteData {
   weight?: string
   estimated_delivery?: string
   pickup_date?: string
-  status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'
+  status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
   company_name?: string | null
   company_responsible?: string | null
   company_phone?: string | null
@@ -296,7 +296,7 @@ export async function deleteRoute(id: string): Promise<void> {
 /**
  * Buscar rotas por status
  */
-export async function getRoutesByStatus(status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'): Promise<Route[]> {
+export async function getRoutesByStatus(status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'): Promise<Route[]> {
   const { data, error } = await supabase
     .from('routes')
     .select('*')

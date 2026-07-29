@@ -153,7 +153,7 @@ async function compressImage(file: File): Promise<File> {
   return compressed.size < file.size ? compressed : file
 }
 
-const ROUTE_STATUS_OPTIONS: RouteStatus[] = ['pending', 'pickedUp', 'inTransit', 'delivered', 'cancelled']
+const ROUTE_STATUS_OPTIONS: RouteStatus[] = ['pending', 'pickedUp', 'inTransit', 'delivered', 'documentation', 'cancelled']
 const PAYMENT_STATUS_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
 const PAYMENT_TYPE_OPTIONS = ['Pix', 'Cartão de crédito', 'Transferencia', 'Boleto'] as const
 const DRIVER_PAYMENT_TYPE_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
@@ -187,7 +187,7 @@ export default function RotasPage() {
     return clients.filter((c) => c.created_by_user_id === uid)
   }, [clients, session?.user?.id])
 
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'cancelled'>('all')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'>('all')
   const [period, setPeriod] = useState<PeriodKey>('month')
   const [mounted, setMounted] = useState(false)
   const [customStart, setCustomStart] = useState('')
@@ -314,6 +314,7 @@ export default function RotasPage() {
     inTransit: periodFilteredRoutes.filter(r => r.status === 'inTransit').length,
     pickedUp: periodFilteredRoutes.filter(r => r.status === 'pickedUp').length,
     delivered: periodFilteredRoutes.filter(r => r.status === 'delivered').length,
+    documentation: periodFilteredRoutes.filter(r => r.status === 'documentation').length,
     cancelled: periodFilteredRoutes.filter(r => r.status === 'cancelled').length
   }), [periodFilteredRoutes])
 
@@ -336,6 +337,15 @@ export default function RotasPage() {
           bgColor: 'bg-green-100',
           textColor: 'text-green-700',
           borderColor: 'border-green-200'
+        }
+      case 'documentation':
+        return {
+          label: 'Documentação',
+          emoji: '🔵',
+          dotColor: 'bg-blue-500',
+          bgColor: 'bg-blue-100',
+          textColor: 'text-blue-700',
+          borderColor: 'border-blue-200'
         }
       case 'pickedUp':
         return {
@@ -1229,6 +1239,16 @@ export default function RotasPage() {
           }`}
         >
           Entregues {statusCounts.delivered}
+        </button>
+        <button
+          onClick={() => setFilterStatus('documentation')}
+          className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+            filterStatus === 'documentation'
+              ? 'bg-gray-800 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Documentação {statusCounts.documentation}
         </button>
       </div>
 
