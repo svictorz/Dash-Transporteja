@@ -1,6 +1,6 @@
 'use client'
 
-import Image from 'next/image'
+import { Truck } from 'lucide-react'
 
 interface BrandLoadingProps {
   /** Texto opcional abaixo do logo. Padrão: "Carregando…" */
@@ -46,16 +46,9 @@ export default function BrandLoading({
             style={{ animationDuration: '2.2s' }}
             aria-hidden
           />
-          {/* Logo */}
-          <div className="relative w-20 h-20 sm:w-24 sm:h-24 brand-logo-float">
-            <Image
-              src="/logo-header.png"
-              alt="OP TRANSPORTES"
-              fill
-              priority
-              sizes="96px"
-              className="object-contain drop-shadow-sm"
-            />
+          {/* Marca */}
+          <div className="relative w-20 h-20 sm:w-24 sm:h-24 brand-logo-float rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
+            <Truck className="h-10 w-10" aria-hidden />
           </div>
         </div>
 

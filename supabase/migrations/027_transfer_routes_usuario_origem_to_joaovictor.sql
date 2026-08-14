@@ -1,7 +1,7 @@
 -- ============================================================
 -- 027 - TRANSFERIR ROTAS ENTRE USUÁRIOS (POR E-MAIL)
 -- ============================================================
--- Origem:  agape.jcnlog@gmail.com
+-- Origem:  usuario-origem@suaempresaaqui.com.br
 -- Destino: joaovictorpaiva89@gmail.com
 -- Tarefa:  transferir ownership das rotas (created_by_user_id)
 
@@ -14,7 +14,7 @@ BEGIN
   SELECT id
     INTO source_user_id
     FROM public.users
-   WHERE lower(trim(email)) = lower('agape.jcnlog@gmail.com')
+   WHERE lower(trim(email)) = lower('usuario-origem@suaempresaaqui.com.br')
    LIMIT 1;
 
   SELECT id
@@ -24,7 +24,7 @@ BEGIN
    LIMIT 1;
 
   IF source_user_id IS NULL THEN
-    RAISE EXCEPTION 'Usuário de origem não encontrado: %', 'agape.jcnlog@gmail.com';
+    RAISE EXCEPTION 'Usuario de origem nao encontrado: %', 'usuario-origem@suaempresaaqui.com.br';
   END IF;
 
   IF target_user_id IS NULL THEN
@@ -42,7 +42,7 @@ BEGIN
   GET DIAGNOSTICS updated_count = ROW_COUNT;
 
   RAISE NOTICE 'Rotas transferidas de % para %: % registro(s).',
-    'agape.jcnlog@gmail.com',
+    'usuario-origem@suaempresaaqui.com.br',
     'joaovictorpaiva89@gmail.com',
     updated_count;
 END $$;

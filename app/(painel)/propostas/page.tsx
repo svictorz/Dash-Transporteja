@@ -15,17 +15,16 @@ type DistanciaStatus = 'idle' | 'loading' | 'ok' | 'erro'
 
 function createInitialForms(): Record<PropostaEmitente, ReturnType<typeof defaultPropostaFormState>> {
   return {
-    agape: defaultPropostaFormState(gerarCodigoProposta('agape')),
-    jcn: defaultPropostaFormState(gerarCodigoProposta('jcn')),
+    empresa: defaultPropostaFormState(gerarCodigoProposta('empresa')),
   }
 }
 
 export default function PropostasPage() {
-  const [activeEmitente, setActiveEmitente] = useState<PropostaEmitente>('jcn')
+  const [activeEmitente, setActiveEmitente] = useState<PropostaEmitente>('empresa')
   const [forms, setForms] = useState(createInitialForms)
   const [statusDistanciaByEmitente, setStatusDistanciaByEmitente] = useState<
     Record<PropostaEmitente, DistanciaStatus>
-  >({ agape: 'idle', jcn: 'idle' })
+  >({ empresa: 'idle' })
   const abortRef = useRef<Partial<Record<PropostaEmitente, AbortController>>>({})
 
   const form = forms[activeEmitente]

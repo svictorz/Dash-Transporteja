@@ -57,13 +57,9 @@ export default function RecuperarSenhaPage() {
       <div className="relative w-full max-w-md">
         <div className="bg-white rounded-lg shadow-lg p-6 md:p-8">
           <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center mb-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo-header.png"
-                alt={BRAND_NAME}
-                className="h-12 w-auto max-w-[220px] object-contain"
-              />
+            <div className="inline-flex flex-col items-center justify-center mb-3">
+              <p className="text-xl font-black uppercase tracking-wide text-gray-900">{BRAND_NAME}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-gray-500">Gestao Logistica</p>
             </div>
             <h2 className="text-lg font-bold text-gray-800 mb-1">Recuperar senha</h2>
             <p className="text-xs text-gray-500">

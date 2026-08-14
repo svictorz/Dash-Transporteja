@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard,
@@ -45,10 +44,10 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   /**
    * `isAdmin` controla a visibilidade da aba "Permissões".
    *
-   * Restrito ao e-mail super admin — role 'admin' sozinho não dá mais
-   * acesso à gestão de permissões (só o dono do sistema pode alterar roles).
+   * Super admin e admins veem a aba. A tela limita as acoes sensiveis
+   * que seguem exclusivas do super admin.
    */
-  const isAdmin = isSuperAdminEmail(currentUser?.email)
+  const isAdmin = currentUser?.role === 'admin' || isSuperAdminEmail(currentUser?.email)
 
   /**
    * Acesso ao Controle Financeiro: admin e financeiro (que já têm visão
@@ -117,16 +116,12 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
           {isOpen && (
             <div className="flex flex-col min-w-0 flex-1 pr-2">
               <div className="flex-shrink-0 w-fit">
-                <Image
-                  src="/logo-header.png"
-                  alt=""
-                  width={240}
-                  height={32}
-                  sizes="240px"
-                  priority
-                  className="h-8 w-auto max-w-[min(100%,240px)] object-contain opacity-90"
-                  aria-hidden
-                />
+                <p className="text-sm font-black uppercase tracking-wide leading-tight text-slate-900 dark:text-white">
+                  Sua Empresa Aqui
+                </p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-300">
+                  Gestao Logistica
+                </p>
               </div>
             </div>
           )}

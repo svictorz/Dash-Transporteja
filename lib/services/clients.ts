@@ -28,6 +28,7 @@ export interface CreateClientData {
   city?: string
   neighborhood?: string
   state?: string
+  created_by_user_id?: string
 }
 
 export interface UpdateClientData {
@@ -144,6 +145,7 @@ export async function deleteClient(id: string): Promise<void> {
  * captura erros internamente.
  */
 export interface EnsureClientFromRouteInput {
+  ownerUserId: string
   companyName: string
   responsible?: string | null
   phone?: string | null
@@ -156,7 +158,9 @@ export interface EnsureClientFromRouteInput {
 export async function ensureClientFromRoute(
   input: EnsureClientFromRouteInput,
 ): Promise<Client | null> {
+  const ownerUserId = input.ownerUserId?.trim()
   const companyName = input.companyName?.trim()
+  if (!ownerUserId) return null
   if (!companyName) return null
 
   try {
@@ -169,6 +173,7 @@ export async function ensureClientFromRoute(
       const { data } = await supabase
         .from('clients')
         .select('*')
+        .eq('created_by_user_id', ownerUserId)
         .or(
           [
             `company_name.ilike.${companyName.replace(/,/g, ' ')}`,
@@ -206,6 +211,7 @@ export async function ensureClientFromRoute(
       address: input.address ?? undefined,
       city: input.city ?? undefined,
       state: input.state ?? undefined,
+      created_by_user_id: ownerUserId,
     })
   } catch (err) {
     console.warn('ensureClientFromRoute falhou (ignorado):', err)

@@ -61,6 +61,16 @@ type UserRole = 'admin' | 'comercial' | 'financeiro' | 'driver' | 'operator' | n
 type DocumentKey = 'freteDocs'
 type RouteDocumentKind = 'image' | 'pdf'
 type RouteDocument = { path: string; url: string; name: string; kind: RouteDocumentKind }
+type RouteStatus = Route['status']
+
+const PERF_ROUTE_STATUS_OPTIONS: RouteStatus[] = [
+  'pending',
+  'pickedUp',
+  'inTransit',
+  'delivered',
+  'documentation',
+  'cancelled',
+]
 
 interface ComercialUser {
   id: string
@@ -771,6 +781,7 @@ export default function PerformancePage() {
   })
   const [editingDriver, setEditingDriver] = useState(false)
   const [savingDriver, setSavingDriver] = useState(false)
+  const [savingRouteStatus, setSavingRouteStatus] = useState(false)
   const [editingDriverFields, setEditingDriverFields] = useState({
     driverName: '',
     driverPhone: '',
@@ -1141,6 +1152,31 @@ export default function PerformancePage() {
       }
     },
     [isStrictAdmin],
+  )
+
+  const handleUpdateRouteStatus = useCallback(
+    async (status: RouteStatus) => {
+      if (!selectedPerfRoute || !canManagePerfModal || selectedPerfRoute.status === status) return
+      try {
+        setSavingRouteStatus(true)
+        const { data, error: updateError } = await supabase
+          .from('routes')
+          .update({ status })
+          .eq('id', selectedPerfRoute.id)
+          .select('*')
+          .single()
+
+        if (updateError) throw new Error(updateError.message)
+        const updatedRoute = normalizeRouteFromApi((data as Record<string, unknown>) || {})
+        setRows((prev) => prev.map((r) => (r.id === updatedRoute.id ? updatedRoute : r)))
+        setSelectedPerfRoute(updatedRoute)
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Erro ao atualizar status da rota.')
+      } finally {
+        setSavingRouteStatus(false)
+      }
+    },
+    [selectedPerfRoute, canManagePerfModal],
   )
 
   const handleSaveFinancialFields = useCallback(async () => {
@@ -1798,7 +1834,26 @@ export default function PerformancePage() {
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <div className={`w-2 h-2 rounded-full ${perfStatusDisplay(selectedPerfRoute.status).dotColor}`} />
-                    <span className="text-sm text-gray-600">{perfStatusDisplay(selectedPerfRoute.status).label}</span>
+                    {canManagePerfModal ? (
+                      <select
+                        aria-label="Status do frete"
+                        value={selectedPerfRoute.status}
+                        onChange={(e) => void handleUpdateRouteStatus(e.target.value as RouteStatus)}
+                        disabled={savingRouteStatus}
+                        className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-800 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {PERF_ROUTE_STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>
+                            {perfDetailStatusLabel(status)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-sm text-gray-600">{perfStatusDisplay(selectedPerfRoute.status).label}</span>
+                    )}
+                    {savingRouteStatus ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" aria-hidden />
+                    ) : null}
                     {selectedPerfRoute.distance_km != null && selectedPerfRoute.distance_km > 0 ? (
                       <span className="text-xs text-gray-500">• {formatNumber(selectedPerfRoute.distance_km)} km</span>
                     ) : null}
