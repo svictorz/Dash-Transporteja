@@ -1,12 +1,12 @@
--- 029_transfer_selected_routes_clients_to_agapeadm.sql
+-- 029_transfer_selected_routes_clients_to_empresa.sql
 -- Objetivo:
 -- - Transferir ownership (created_by_user_id) das rotas de freight_id 25, 14, 13, 10
---   para o usuário agapetransportes.adm@gmail.com.
+--   para o usuario administrativo@suaempresaaqui.com.br.
 -- - Transferir também os clientes vinculados a essas rotas (match por company_name).
 
 DO $$
 DECLARE
-  target_email TEXT := 'agapetransportes.adm@gmail.com';
+  target_email TEXT := 'administrativo@suaempresaaqui.com.br';
   target_user_id UUID;
   selected_freight_ids INT[] := ARRAY[25, 14, 13, 10];
   moved_routes_count INT := 0;

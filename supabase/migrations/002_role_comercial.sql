@@ -1,4 +1,4 @@
--- Migração: perfil "operator" → "comercial" e RLS alinhado ao painel JCN X ÁGAPE gestão.
+-- Migracao: perfil "operator" -> "comercial" e RLS alinhado ao painel Sua Empresa Aqui.
 -- Execute no SQL Editor do Supabase se o projeto foi criado antes da troca de papéis.
 
 ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_role_check;

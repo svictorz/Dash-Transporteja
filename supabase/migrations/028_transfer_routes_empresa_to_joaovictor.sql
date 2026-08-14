@@ -1,9 +1,9 @@
 -- ============================================================
--- 028 - TRANSFERIR ROTAS (AGAPE TRANSPORTES -> JOAO VICTOR)
+-- 028 - TRANSFERIR ROTAS (SUA EMPRESA AQUI -> JOAO VICTOR)
 -- ============================================================
 -- Corrige transferência considerando os e-mails de origem possíveis:
---   - agape.jcnlog@gmail.com
---   - agapetransportes.adm@gmail.com
+--   - usuario-origem@suaempresaaqui.com.br
+--   - administrativo@suaempresaaqui.com.br
 -- Destino:
 --   - joaovictorpaiva89@gmail.com
 
@@ -26,8 +26,8 @@ BEGIN
   END IF;
 
   FOREACH source_email IN ARRAY ARRAY[
-    'agape.jcnlog@gmail.com',
-    'agapetransportes.adm@gmail.com'
+    'usuario-origem@suaempresaaqui.com.br',
+    'administrativo@suaempresaaqui.com.br'
   ]
   LOOP
     SELECT id
