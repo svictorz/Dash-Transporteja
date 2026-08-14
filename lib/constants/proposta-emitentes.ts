@@ -45,7 +45,7 @@ export const PROPOSTA_DOC_BY_EMITENTE: Record<PropostaEmitente, PropostaDocConfi
     nomeFantasia: 'JCN Logistica',
     razaoSocial: 'JCN LOGISTICA',
     nomeMaiusculo: 'JCN LOGISTICA',
-    cnpj: 'CNPJ: 00.000.000/0000-00',
+    cnpj: 'CNPJ: 61.800.528/0001-30',
     matriz: PROPOSTA_ENDERECO.matriz,
     enderecoLogradouro: PROPOSTA_ENDERECO.logradouro,
     enderecoBairroCepCidade: PROPOSTA_ENDERECO.bairroCepCidade,
@@ -71,5 +71,3 @@ export function propostaDocEnderecoUmaLinha(emitente: PropostaEmitente): string 
   const e = getPropostaDoc(emitente)
   return `${e.enderecoLogradouro} - ${e.enderecoBairroCepCidade}`
 }
-
-
