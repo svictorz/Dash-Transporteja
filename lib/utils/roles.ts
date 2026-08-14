@@ -5,8 +5,15 @@ export type DashboardUserRole = 'admin' | 'comercial' | 'financeiro' | 'driver'
 export const PANEL_ROLES = ['admin', 'comercial', 'financeiro'] as const
 export type PanelRole = typeof PANEL_ROLES[number]
 
-/** E-mail único com poderes de gerenciamento de permissões. */
-export const SUPER_ADMIN_EMAIL = 'transporteja00@gmail.com'
+/** E-mails com poderes totais de gerenciamento de permissões. */
+export const SUPER_ADMIN_EMAILS = [
+  'transporteja00@gmail.com',
+  'jcnlogtransportes@gmail.com',
+  'joaovictorpaiva89@gmail.com',
+] as const
+
+/** @deprecated Use SUPER_ADMIN_EMAILS. Mantido por compatibilidade. */
+export const SUPER_ADMIN_EMAIL = SUPER_ADMIN_EMAILS[0]
 
 export function dashboardRoleLabel(role: string | null | undefined): string {
   switch (role) {
@@ -35,5 +42,6 @@ export function isComercial(role: string | null | undefined): boolean {
 
 export function isSuperAdminEmail(email: string | null | undefined): boolean {
   if (!email) return false
-  return email.trim().toLowerCase() === SUPER_ADMIN_EMAIL
+  const normalized = email.trim().toLowerCase()
+  return SUPER_ADMIN_EMAILS.includes(normalized as (typeof SUPER_ADMIN_EMAILS)[number])
 }

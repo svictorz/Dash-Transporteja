@@ -1,7 +1,5 @@
 'use client'
 
-import { Truck } from 'lucide-react'
-
 interface BrandLoadingProps {
   /** Texto opcional abaixo do logo. Padrão: "Carregando…" */
   message?: string
@@ -47,8 +45,12 @@ export default function BrandLoading({
             aria-hidden
           />
           {/* Marca */}
-          <div className="relative w-20 h-20 sm:w-24 sm:h-24 brand-logo-float rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
-            <Truck className="h-10 w-10" aria-hidden />
+          <div className="relative w-24 h-24 sm:w-28 sm:h-28 brand-logo-float rounded-2xl bg-white flex items-center justify-center shadow-sm p-3 ring-1 ring-slate-200/80 dark:ring-slate-700">
+            <img
+              src="/logo-jcn-preto.png"
+              alt="JCN Logistica"
+              className="h-full w-full object-contain"
+            />
           </div>
         </div>
 

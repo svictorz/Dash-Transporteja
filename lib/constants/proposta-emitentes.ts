@@ -23,8 +23,11 @@ export interface PropostaDocConfig {
   codigoPrefix: string
   logoSrc: string
   logoFallbackText: string
-  /** Classes Tailwind extras no wordmark da proposta. */
+  /** Classes extras no wordmark da proposta. */
   logoClassName?: string
+  /** Tamanho visual do logo no PDF/preview. */
+  logoWidth?: string
+  logoHeight?: string
 }
 
 export const PROPOSTA_EMITENTES: PropostaEmitente[] = ['empresa']
@@ -38,10 +41,10 @@ const PROPOSTA_ENDERECO = {
 export const PROPOSTA_DOC_BY_EMITENTE: Record<PropostaEmitente, PropostaDocConfig> = {
   empresa: {
     id: 'empresa',
-    tabLabel: 'Sua Empresa Aqui',
-    nomeFantasia: 'Sua Empresa Aqui',
-    razaoSocial: 'SUA EMPRESA AQUI LTDA',
-    nomeMaiusculo: 'SUA EMPRESA AQUI',
+    tabLabel: 'JCN Logistica',
+    nomeFantasia: 'JCN Logistica',
+    razaoSocial: 'JCN LOGISTICA',
+    nomeMaiusculo: 'JCN LOGISTICA',
     cnpj: 'CNPJ: 00.000.000/0000-00',
     matriz: PROPOSTA_ENDERECO.matriz,
     enderecoLogradouro: PROPOSTA_ENDERECO.logradouro,
@@ -49,12 +52,14 @@ export const PROPOSTA_DOC_BY_EMITENTE: Record<PropostaEmitente, PropostaDocConfi
     inscricaoEstadual: '',
     telefone: '',
     slogan: 'QUALIDADE E SEGURANCA LOGISTICA.',
-    rodape: 'DOCUMENTO DIGITAL ORIGINAL - SUA EMPRESA AQUI LTDA',
+    rodape: 'DOCUMENTO DIGITAL ORIGINAL - JCN LOGISTICA',
     validadeDias: 7,
-    codigoPrefix: 'SEA',
-    logoSrc: '',
-    logoFallbackText: 'SUA EMPRESA AQUI',
-    logoClassName: 'max-h-[16mm] max-w-[48mm]',
+    codigoPrefix: 'JCN',
+    logoSrc: '/logo-jcn-preto.png',
+    logoFallbackText: 'JCN LOGISTICA',
+    logoClassName: '',
+    logoWidth: '29mm',
+    logoHeight: '9mm',
   },
 }
 
@@ -66,3 +71,5 @@ export function propostaDocEnderecoUmaLinha(emitente: PropostaEmitente): string 
   const e = getPropostaDoc(emitente)
   return `${e.enderecoLogradouro} - ${e.enderecoBairroCepCidade}`
 }
+
+

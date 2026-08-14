@@ -188,13 +188,13 @@ export default function UsuariosPage() {
       setSavedId(null)
       setError(null)
 
-      const { error: err } = await supabase
-        .from('users')
-        .update({ role: newRole })
-        .eq('id', target.id)
-
-      if (err) throw new Error(err.message)
-
+      const res = await fetch('/api/usuarios/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: target.id, role: newRole }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Erro ao salvar permissão')
       setUsers((prev) =>
         prev.map((u) => (u.id === target.id ? { ...u, role: newRole } : u)),
       )
@@ -225,11 +225,13 @@ export default function UsuariosPage() {
 
     try {
       setSavingCommissionId(target.id)
-      const { error: err } = await supabase
-        .from('users')
-        .update({ commission_rate: rounded })
-        .eq('id', target.id)
-      if (err) throw new Error(err.message)
+      const res = await fetch('/api/usuarios/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: target.id, commissionRate: rounded }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Erro ao salvar comissão')
       setUsers((prev) =>
         prev.map((u) => (u.id === target.id ? { ...u, commission_rate: rounded } : u)),
       )
@@ -818,3 +820,4 @@ function SummaryCard({ label, value, icon: Icon, tone }: SummaryCardProps) {
     </div>
   )
 }
+

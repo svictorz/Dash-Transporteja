@@ -20,7 +20,6 @@ import {
   Wallet
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import Logo from './Logo'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { isSuperAdminEmail } from '@/lib/utils/roles'
 
@@ -115,19 +114,18 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
         <div className="flex items-center justify-between">
           {isOpen && (
             <div className="flex flex-col min-w-0 flex-1 pr-2">
-              <div className="flex-shrink-0 w-fit">
-                <p className="text-sm font-black uppercase tracking-wide leading-tight text-slate-900 dark:text-white">
-                  Sua Empresa Aqui
-                </p>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-300">
-                  Gestao Logistica
-                </p>
+              <div className="flex-shrink-0 w-full max-w-[170px]">
+                <img
+                  src="/logo-jcn-preto.png"
+                  alt="JCN Logistica"
+                  className="h-12 w-full object-contain object-left dark:invert"
+                />
               </div>
             </div>
           )}
           {!isOpen && (
-            <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center mx-auto p-1">
-              <Logo size={20} />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto p-1 bg-white shadow-sm">
+              <img src="/logo-jcn-preto.png" alt="JCN" className="h-7 w-8 object-contain" />
             </div>
           )}
           <div className="flex items-center gap-2">
