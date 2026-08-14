@@ -8,7 +8,7 @@ export function parseDecimalBR(value: string): number {
 }
 
 /** Prefixo do emitente + YYYYMMDD + 2 dígitos aleatórios */
-export function gerarCodigoProposta(emitente: PropostaEmitente = 'empresa'): string {
+export function gerarCodigoProposta(emitente: PropostaEmitente = 'agape'): string {
   const prefix = getPropostaDoc(emitente).codigoPrefix
   const d = new Date()
   const y = d.getFullYear()
@@ -18,9 +18,9 @@ export function gerarCodigoProposta(emitente: PropostaEmitente = 'empresa'): str
   return `${prefix}${y}${m}${day}${r}`
 }
 
-/** @deprecated Use gerarCodigoProposta('empresa') */
+/** @deprecated Use gerarCodigoProposta('agape') */
 export function gerarCodigoPropostaAGT(): string {
-  return gerarCodigoProposta('empresa')
+  return gerarCodigoProposta('agape')
 }
 
 /** Alíquota informativa de impostos + seguro exibida na proposta. */

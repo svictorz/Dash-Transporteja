@@ -11,7 +11,7 @@ SECURITY DEFINER
 SET search_path = public
 STABLE
 AS $$
-  SELECT lower(trim(auth.jwt() ->> 'email')) = 'transporteja00@gmail.com';
+  SELECT lower(trim(auth.jwt() ->> 'email')) = 'agape.jcnlog@gmail.com';
 $$;
 
 REVOKE ALL ON FUNCTION public.is_super_admin() FROM PUBLIC;

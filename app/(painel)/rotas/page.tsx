@@ -166,8 +166,6 @@ export default function RotasPage() {
   const searchParams = useSearchParams()
   const processedRouteQueryId = useRef<string | null>(null)
   const isAdminUser = currentUser?.role === 'admin'
-  const isFinanceiroUser = currentUser?.role === 'financeiro'
-  const canSeeAllRoutes = isAdminUser || isFinanceiroUser
   /** Motorista vê a rota mas não envia/remove comprovantes (anexos são do escritório). */
   const canManageFreightDocuments = currentUser?.role !== 'driver'
   const { routes, loading: routesLoading, error: routesError, createRoute, updateRoute, deleteRoute } = useRoutes()
@@ -180,9 +178,8 @@ export default function RotasPage() {
   const myRoutes = useMemo(() => {
     const uid = session?.user?.id
     if (!uid) return []
-    if (canSeeAllRoutes) return routes
     return routes.filter((r) => r.created_by_user_id === uid)
-  }, [routes, session?.user?.id, canSeeAllRoutes])
+  }, [routes, session?.user?.id])
 
   const myClients = useMemo(() => {
     const uid = session?.user?.id
@@ -823,12 +820,6 @@ export default function RotasPage() {
     setIsSubmitting(true)
 
     try {
-      const ownerUserId = session?.user?.id
-      if (!ownerUserId) {
-        alert('Sessao expirada. Faca login novamente para criar a rota.')
-        return
-      }
-
       const freightValue = parseCurrencyInput(formData.freightValue)
       const driverValue = parseCurrencyInput(formData.driverValue)
       const nfValueParsed = parseCurrencyInput(formData.nfValue)
@@ -883,13 +874,12 @@ export default function RotasPage() {
         distance_km:
           routeDistance.distanciaKm ??
           null,
-        created_by_user_id: ownerUserId,
+        created_by_user_id: session?.user?.id,
       }
 
       await createRoute(routeData)
 
       await ensureClientFromRoute({
-        ownerUserId,
         companyName: companyResolved.company_name,
         responsible: companyResolved.company_responsible,
         phone: routeData.company_phone ?? null,
@@ -945,12 +935,6 @@ export default function RotasPage() {
     setIsSubmitting(true)
 
     try {
-      const ownerUserId = session?.user?.id
-      if (!ownerUserId) {
-        alert('Sessao expirada. Faca login novamente para atualizar a rota.')
-        return
-      }
-
       const freightValue = parseCurrencyInput(formData.freightValue)
       const driverValue = parseCurrencyInput(formData.driverValue)
       const nfValueParsed = parseCurrencyInput(formData.nfValue)
@@ -1032,7 +1016,6 @@ export default function RotasPage() {
       })
 
       await ensureClientFromRoute({
-        ownerUserId,
         companyName: companyResolved.company_name,
         responsible: companyResolved.company_responsible,
         phone: formData.companyPhone.trim() || companyResolved.company_phone,

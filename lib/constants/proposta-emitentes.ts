@@ -1,8 +1,8 @@
 /**
- * Configuracao por emitente da proposta.
+ * Configuração por emitente da proposta (Ágape Transportes × JCN).
  */
 
-export type PropostaEmitente = 'empresa'
+export type PropostaEmitente = 'agape' | 'jcn'
 
 export interface PropostaDocConfig {
   id: PropostaEmitente
@@ -19,42 +19,64 @@ export interface PropostaDocConfig {
   slogan: string
   rodape: string
   validadeDias: number
-  /** Prefixo do codigo unico da proposta. */
+  /** Prefixo do código único (ex.: AGT, JCN). */
   codigoPrefix: string
   logoSrc: string
   logoFallbackText: string
-  /** Classes Tailwind extras no wordmark da proposta. */
+  /** Classes Tailwind extras no `<img>` do logo (proporção vertical, etc.). */
   logoClassName?: string
 }
 
-export const PROPOSTA_EMITENTES: PropostaEmitente[] = ['empresa']
+/** Emitentes com aba visível na tela de propostas (Ágape removida). */
+export const PROPOSTA_EMITENTES: PropostaEmitente[] = ['jcn']
 
+/** Endereço compartilhado (matriz Campinas) — Ágape e JCN. */
 const PROPOSTA_ENDERECO = {
-  matriz: 'MATRIZ - CAMPINAS / SP',
-  logradouro: 'R. Alcides Modesto de Camargo, no 390, Sala C',
-  bairroCepCidade: 'Parque Santa Barbara - CEP 13.064-030 - Campinas / SP',
+  matriz: 'MATRIZ — CAMPINAS / SP',
+  logradouro: 'R. Alcides Modesto de Camargo, nº 390, Sala C',
+  bairroCepCidade: 'Parque Santa Bárbara — CEP 13.064-030 — Campinas / SP',
 } as const
 
 export const PROPOSTA_DOC_BY_EMITENTE: Record<PropostaEmitente, PropostaDocConfig> = {
-  empresa: {
-    id: 'empresa',
-    tabLabel: 'Sua Empresa Aqui',
-    nomeFantasia: 'Sua Empresa Aqui',
-    razaoSocial: 'SUA EMPRESA AQUI LTDA',
-    nomeMaiusculo: 'SUA EMPRESA AQUI',
-    cnpj: 'CNPJ: 00.000.000/0000-00',
+  agape: {
+    id: 'agape',
+    tabLabel: 'Ágape Transportes',
+    nomeFantasia: 'Ágape Transportes',
+    razaoSocial: 'AGAPE TRANSPORTES LTDA',
+    nomeMaiusculo: 'ÁGAPE TRANSPORTES',
+    cnpj: 'CNPJ: 40.189.703/0001-24',
     matriz: PROPOSTA_ENDERECO.matriz,
     enderecoLogradouro: PROPOSTA_ENDERECO.logradouro,
     enderecoBairroCepCidade: PROPOSTA_ENDERECO.bairroCepCidade,
     inscricaoEstadual: '',
     telefone: '',
-    slogan: 'QUALIDADE E SEGURANCA LOGISTICA.',
-    rodape: 'DOCUMENTO DIGITAL ORIGINAL - SUA EMPRESA AQUI LTDA',
+    slogan: 'QUALIDADE E SEGURANÇA LOGÍSTICA.',
+    rodape: 'DOCUMENTO DIGITAL ORIGINAL — AGAPE TRANSPORTES LTDA',
     validadeDias: 7,
-    codigoPrefix: 'SEA',
-    logoSrc: '',
-    logoFallbackText: 'SUA EMPRESA AQUI',
-    logoClassName: 'max-h-[16mm] max-w-[48mm]',
+    codigoPrefix: 'AGT',
+    logoSrc: '/logo-proposta-agape.png',
+    logoFallbackText: 'ÁGAPE',
+    logoClassName: 'max-h-[16mm] max-w-[42mm]',
+  },
+  jcn: {
+    id: 'jcn',
+    tabLabel: 'JCN',
+    nomeFantasia: 'JCN Logística',
+    razaoSocial: 'JCN LOGÍSTICA',
+    nomeMaiusculo: 'JCN LOG',
+    cnpj: 'CNPJ: 61.800.528/0001-30',
+    matriz: PROPOSTA_ENDERECO.matriz,
+    enderecoLogradouro: PROPOSTA_ENDERECO.logradouro,
+    enderecoBairroCepCidade: PROPOSTA_ENDERECO.bairroCepCidade,
+    inscricaoEstadual: '',
+    telefone: '',
+    slogan: 'QUALIDADE E SEGURANÇA LOGÍSTICA.',
+    rodape: 'DOCUMENTO DIGITAL ORIGINAL — JCN LOGÍSTICA',
+    validadeDias: 7,
+    codigoPrefix: 'JCN',
+    logoSrc: '/logo-proposta-jcn.png',
+    logoFallbackText: 'JCN',
+    logoClassName: 'max-h-[14mm] max-w-[52mm]',
   },
 }
 
@@ -64,5 +86,5 @@ export function getPropostaDoc(emitente: PropostaEmitente): PropostaDocConfig {
 
 export function propostaDocEnderecoUmaLinha(emitente: PropostaEmitente): string {
   const e = getPropostaDoc(emitente)
-  return `${e.enderecoLogradouro} - ${e.enderecoBairroCepCidade}`
+  return `${e.enderecoLogradouro} — ${e.enderecoBairroCepCidade}`
 }

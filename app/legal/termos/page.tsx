@@ -163,7 +163,7 @@ export default function TermosUsoPage() {
                 </p>
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                   <p className="text-gray-700">
-                    <strong>E-mail:</strong> suporte@suaempresaaqui.com.br
+                    <strong>E-mail:</strong> suporte@jcntransportes.com
                   </p>
                 </div>
               </section>

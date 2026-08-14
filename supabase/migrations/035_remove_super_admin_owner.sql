@@ -1,4 +1,4 @@
--- Remove o super admin anterior. Nenhum e-mail assume o
+-- Remove agape.jcnlog@gmail.com como super admin. Nenhum e-mail assume o
 -- posto por enquanto: is_super_admin() passa a retornar sempre falso, então
 -- a policy "Users - admin update" (migration 033) bloqueia qualquer alteração
 -- de role via client até um novo dono ser configurado (SUPER_ADMIN_EMAIL em

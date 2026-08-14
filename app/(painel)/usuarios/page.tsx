@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Users,
@@ -15,8 +14,6 @@ import {
   Mail,
   UserMinus,
   Percent,
-  Plus,
-  X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
@@ -35,14 +32,6 @@ interface ManagedUser {
   role: DashboardUserRole | null
   commission_rate: number | null
   created_at: string | null
-}
-
-interface CreateUserForm {
-  name: string
-  email: string
-  password: string
-  role: AssignableRole
-  commissionRate: string
 }
 
 const ROLE_OPTIONS: { value: AssignableRole; label: string; description: string; icon: typeof Shield }[] = [
@@ -87,25 +76,8 @@ export default function UsuariosPage() {
   const [filter, setFilter] = useState<'all' | AssignableRole>('all')
   const [commissionDraft, setCommissionDraft] = useState<Record<string, string>>({})
   const [savingCommissionId, setSavingCommissionId] = useState<string | null>(null)
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [creatingUser, setCreatingUser] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [createForm, setCreateForm] = useState<CreateUserForm>({
-    name: '',
-    email: '',
-    password: '',
-    role: 'comercial',
-    commissionRate: '0',
-  })
 
-  const isSuperAdmin = isSuperAdminEmail(me?.email)
-  const isAdmin = me?.role === 'admin'
-  const isAuthorized = isSuperAdmin || isAdmin
-  const canManageExistingUsers = isSuperAdmin
-  const createRoleOptions = useMemo(
-    () => ROLE_OPTIONS.filter((opt) => isSuperAdmin || opt.value !== 'admin'),
-    [isSuperAdmin],
-  )
+  const isAuthorized = isSuperAdminEmail(me?.email)
 
   useEffect(() => {
     if (meLoading) return
@@ -173,10 +145,6 @@ export default function UsuariosPage() {
   }, [users])
 
   const handleChangeRole = async (target: ManagedUser, newRole: AssignableRole) => {
-    if (!canManageExistingUsers) {
-      alert('Apenas o super admin pode alterar permissoes existentes.')
-      return
-    }
     if (target.role === newRole) return
     if (target.email && isSuperAdminEmail(target.email) && newRole !== 'admin') {
       alert('O proprietário do sistema não pode deixar de ser administrador.')
@@ -208,14 +176,6 @@ export default function UsuariosPage() {
   }
 
   const handleSaveCommissionRate = async (target: ManagedUser) => {
-    if (!canManageExistingUsers) {
-      setCommissionDraft((prev) => {
-        const next = { ...prev }
-        delete next[target.id]
-        return next
-      })
-      return
-    }
     const raw = commissionDraft[target.id]
     if (raw === undefined) return
     const parsed = parseFloat(raw.replace(',', '.'))
@@ -244,10 +204,6 @@ export default function UsuariosPage() {
   }
 
   const handleRevokeAccess = async (target: ManagedUser) => {
-    if (!canManageExistingUsers) {
-      alert('Apenas o super admin pode remover acessos existentes.')
-      return
-    }
     if (target.email && isSuperAdminEmail(target.email)) {
       alert('O proprietário do sistema não pode ter o acesso revogado.')
       return
@@ -285,55 +241,6 @@ export default function UsuariosPage() {
     }
   }
 
-  const resetCreateForm = () => {
-    setCreateForm({
-      name: '',
-      email: '',
-      password: '',
-      role: isSuperAdmin ? 'admin' : 'comercial',
-      commissionRate: '0',
-    })
-    setCreateError(null)
-  }
-
-  const handleOpenCreateModal = () => {
-    resetCreateForm()
-    setShowCreateModal(true)
-  }
-
-  const handleCreateUser = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setCreatingUser(true)
-    setCreateError(null)
-
-    try {
-      const res = await fetch('/api/usuarios/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: createForm.name,
-          email: createForm.email,
-          password: createForm.password,
-          role: createForm.role,
-          commissionRate: createForm.role === 'comercial' ? createForm.commissionRate : 0,
-        }),
-      })
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.error || 'Erro ao criar usuario')
-
-      const created = body.user as ManagedUser
-      setUsers((prev) => [created, ...prev])
-      setShowCreateModal(false)
-      resetCreateForm()
-      setSavedId(created.id)
-      setTimeout(() => setSavedId((curr) => (curr === created.id ? null : curr)), 2000)
-    } catch (e: unknown) {
-      setCreateError(e instanceof Error ? e.message : 'Erro ao criar usuario')
-    } finally {
-      setCreatingUser(false)
-    }
-  }
-
   if (meLoading || (!isAuthorized && !meLoading)) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -356,20 +263,9 @@ export default function UsuariosPage() {
             <strong> Administrador</strong> veem tudo.
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-3">
-          <button
-            type="button"
-            onClick={handleOpenCreateModal}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800"
-          >
-            <Plus className="w-4 h-4" aria-hidden />
-            Novo usuario
-          </button>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 max-w-md">
-            {canManageExistingUsers
-              ? 'Super admin cria usuarios, altera permissoes e remove acessos existentes.'
-              : 'Admins podem criar novos usuarios. Alterar/remover usuarios existentes fica restrito ao super admin.'}
-          </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 max-w-md">
+          Apenas administradores podem alterar permissões. As mudanças entram em vigor no
+          próximo carregamento da página do usuário afetado.
         </div>
       </header>
 
@@ -525,14 +421,13 @@ export default function UsuariosPage() {
                                   min={0}
                                   max={100}
                                   step={0.5}
-                                  disabled={!canManageExistingUsers}
                                   value={commissionDraft[u.id] ?? String(u.commission_rate ?? 30)}
                                   onChange={(e) =>
                                     setCommissionDraft((prev) => ({ ...prev, [u.id]: e.target.value }))
                                   }
                                   onBlur={() => void handleSaveCommissionRate(u)}
                                   onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveCommissionRate(u) }}
-                                  className="w-full pr-5 pl-2 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/40 text-right disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                                  className="w-full pr-5 pl-2 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/40 text-right"
                                 />
                                 <Percent className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
                               </div>
@@ -554,7 +449,6 @@ export default function UsuariosPage() {
                                     roleKey
                                   const disabled =
                                     savingId === u.id ||
-                                    !canManageExistingUsers ||
                                     (isOwner && roleKey !== 'admin')
                                   return (
                                     <button
@@ -567,7 +461,6 @@ export default function UsuariosPage() {
                                           ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900'
                                           : 'text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800'
                                       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                      title={!canManageExistingUsers ? 'Apenas o super admin pode alterar permissoes existentes' : undefined}
                                       aria-pressed={isActive}
                                     >
                                       {roleKey === 'admin'
@@ -584,7 +477,6 @@ export default function UsuariosPage() {
                               type="button"
                               disabled={
                                 savingId === u.id ||
-                                !canManageExistingUsers ||
                                 isOwner ||
                                 me?.id === u.id ||
                                 u.role === null
@@ -592,9 +484,7 @@ export default function UsuariosPage() {
                               onClick={() => handleRevokeAccess(u)}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 transition-colors dark:border-red-400/60 dark:bg-red-500/20 dark:text-red-200 dark:hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                               title={
-                                !canManageExistingUsers
-                                  ? 'Apenas o super admin pode remover acessos existentes'
-                                  : isOwner
+                                isOwner
                                   ? 'O proprietário não pode ser revogado'
                                   : me?.id === u.id
                                   ? 'Você não pode revogar o próprio acesso'
@@ -623,170 +513,6 @@ export default function UsuariosPage() {
             </table>
           </div>
         </div>
-      </div>
-
-      {showCreateModal && (
-        <CreateUserModal
-          form={createForm}
-          roleOptions={createRoleOptions}
-          creating={creatingUser}
-          error={createError}
-          onClose={() => {
-            if (!creatingUser) setShowCreateModal(false)
-          }}
-          onSubmit={handleCreateUser}
-          onChange={setCreateForm}
-        />
-      )}
-    </div>
-  )
-}
-
-function CreateUserModal({
-  form,
-  roleOptions,
-  creating,
-  error,
-  onClose,
-  onSubmit,
-  onChange,
-}: {
-  form: CreateUserForm
-  roleOptions: typeof ROLE_OPTIONS
-  creating: boolean
-  error: string | null
-  onClose: () => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
-  onChange: (form: CreateUserForm) => void
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-gray-200 overflow-hidden dark:bg-slate-900 dark:border-slate-700">
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-slate-700">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Criar novo usuario</h2>
-            <p className="text-xs text-gray-500 dark:text-slate-300">A conta ja fica liberada para acessar o painel.</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={creating}
-            className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
-            aria-label="Fechar"
-          >
-            <X className="h-5 w-5" aria-hidden />
-          </button>
-        </div>
-
-        <form onSubmit={onSubmit} className="space-y-4 px-5 py-5">
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden />
-              {error}
-            </div>
-          )}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-1.5 text-sm font-medium text-gray-700 dark:text-slate-200">
-              Nome
-              <input
-                type="text"
-                required
-                value={form.name}
-                onChange={(e) => onChange({ ...form, name: e.target.value })}
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800/40 dark:bg-slate-950 dark:text-white dark:border-slate-600"
-              />
-            </label>
-
-            <label className="space-y-1.5 text-sm font-medium text-gray-700 dark:text-slate-200">
-              E-mail
-              <input
-                type="email"
-                required
-                value={form.email}
-                onChange={(e) => onChange({ ...form, email: e.target.value })}
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800/40 dark:bg-slate-950 dark:text-white dark:border-slate-600"
-              />
-            </label>
-          </div>
-
-          <label className="block space-y-1.5 text-sm font-medium text-gray-700 dark:text-slate-200">
-            Senha inicial
-            <input
-              type="text"
-              required
-              minLength={6}
-              value={form.password}
-              onChange={(e) => onChange({ ...form, password: e.target.value })}
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800/40 dark:bg-slate-950 dark:text-white dark:border-slate-600"
-            />
-          </label>
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-gray-700 dark:text-slate-200">Funcao</p>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {roleOptions.map((option) => {
-                const Icon = option.icon
-                const active = form.role === option.value
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => onChange({ ...form, role: option.value })}
-                    className={`rounded-xl border px-3 py-3 text-left transition-colors ${
-                      active
-                        ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200'
-                    }`}
-                  >
-                    <Icon className="mb-2 h-4 w-4" aria-hidden />
-                    <span className="block text-xs font-semibold">
-                      {option.value === 'admin'
-                        ? 'Admin'
-                        : option.value === 'financeiro'
-                        ? 'Financeiro'
-                        : 'Comercial'}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {form.role === 'comercial' && (
-            <label className="block space-y-1.5 text-sm font-medium text-gray-700 dark:text-slate-200">
-              Comissao (%)
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={0.5}
-                value={form.commissionRate}
-                onChange={(e) => onChange({ ...form, commissionRate: e.target.value })}
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800/40 dark:bg-slate-950 dark:text-white dark:border-slate-600"
-              />
-            </label>
-          )}
-
-          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={creating}
-              className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:bg-slate-950 dark:text-slate-200 dark:border-slate-600"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={creating}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
-            >
-              {creating && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-              Criar usuario
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   )

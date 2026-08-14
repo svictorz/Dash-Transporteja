@@ -6,7 +6,7 @@ export const PANEL_ROLES = ['admin', 'comercial', 'financeiro'] as const
 export type PanelRole = typeof PANEL_ROLES[number]
 
 /** E-mail único com poderes de gerenciamento de permissões. */
-export const SUPER_ADMIN_EMAIL = 'transporteja00@gmail.com'
+export const SUPER_ADMIN_EMAIL = 'jcnlogtransportes@gmail.com'
 
 export function dashboardRoleLabel(role: string | null | undefined): string {
   switch (role) {

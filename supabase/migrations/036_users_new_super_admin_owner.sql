@@ -1,4 +1,4 @@
--- Define transporteja00@gmail.com como novo super admin (dono do sistema),
+-- Define jcnlogtransportes@gmail.com como novo super admin (dono do sistema),
 -- substituindo o estado "sem dono" da migration 035.
 
 CREATE OR REPLACE FUNCTION public.is_super_admin()
@@ -8,5 +8,5 @@ SECURITY DEFINER
 SET search_path = public
 STABLE
 AS $$
-  SELECT lower(trim(auth.jwt() ->> 'email')) = 'transporteja00@gmail.com';
+  SELECT lower(trim(auth.jwt() ->> 'email')) = 'jcnlogtransportes@gmail.com';
 $$;
