@@ -118,14 +118,14 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
                 <img
                   src="/logo-jcn-preto.png"
                   alt="JCN Logistica"
-                  className="h-12 w-full object-contain object-left dark:invert"
+                  className="h-12 w-full object-contain object-left dark:brightness-0 dark:invert"
                 />
               </div>
             </div>
           )}
           {!isOpen && (
             <div className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto p-1 bg-white shadow-sm">
-              <img src="/logo-jcn-preto.png" alt="JCN" className="h-7 w-8 object-contain" />
+              <img src="/logo-jcn-preto.png" alt="JCN" className="h-7 w-8 object-contain dark:brightness-0 dark:invert" />
             </div>
           )}
           <div className="flex items-center gap-2">
@@ -143,7 +143,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
               type="button"
               onClick={toggleSidebar}
               className={`p-2 rounded-lg hover:bg-gray-100 transition-colors hidden md:block dark:hover:bg-slate-800 ${
-                isOpen ? 'text-orange-500' : 'text-gray-600 dark:text-slate-400'
+                isOpen ? 'text-slate-700 dark:text-white' : 'text-gray-600 dark:text-slate-400'
               }`}
               aria-label={isOpen ? 'Recolher menu' : 'Expandir menu'}
             >

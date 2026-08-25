@@ -56,7 +56,8 @@ export async function uploadAvatar(file: File | Blob, userId: string): Promise<s
     .from(AVATAR_BUCKET_NAME)
     .upload(path, file, {
       cacheControl: '3600',
-      upsert: true // Sobrescrever se já existir
+      contentType: 'image/jpeg',
+      upsert: true // Sobrescrever se ja existir
     })
 
   if (error) {
@@ -68,7 +69,7 @@ export async function uploadAvatar(file: File | Blob, userId: string): Promise<s
     .from(AVATAR_BUCKET_NAME)
     .getPublicUrl(data.path)
 
-  return publicUrl
+  return `${publicUrl}?v=${Date.now()}`
 }
 
 /**
@@ -102,4 +103,3 @@ export function base64ToBlob(base64: string, mimeType: string = 'image/jpeg'): B
   const byteArray = new Uint8Array(byteNumbers)
   return new Blob([byteArray], { type: mimeType })
 }
-

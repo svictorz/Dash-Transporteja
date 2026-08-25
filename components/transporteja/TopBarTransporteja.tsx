@@ -13,6 +13,7 @@ interface UserInfo {
   name?: string | null
   email?: string | null
   role?: string | null
+  avatar_url?: string | null
   [key: string]: unknown
 }
 
@@ -46,7 +47,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
           try {
             const { data: userData, error } = await supabase
               .from('users')
-              .select('id, email, name, role')
+              .select('id, email, name, role, avatar_url')
               .eq('id', session.user.id)
               .single()
 
@@ -91,6 +92,14 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
       }
     })
 
+    const handleProfileUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<Partial<UserInfo>>).detail
+      if (!detail) return
+      setUser((current) => ({ ...(current ?? {}), ...detail }))
+    }
+
+    window.addEventListener('transporteja:profile-updated', handleProfileUpdated)
+
     // Fechar dropdown ao clicar fora
     const handleClickOutside = (event: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
@@ -103,6 +112,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
     return () => {
       isMounted = false
       subscription.unsubscribe()
+      window.removeEventListener('transporteja:profile-updated', handleProfileUpdated)
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [])
@@ -140,7 +150,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
       if (session?.user) {
         const { data: userData } = await supabase
           .from('users')
-          .select('id, email, name, role')
+          .select('id, email, name, role, avatar_url')
           .eq('id', session.user.id)
           .single()
         if (userData) setUser(userData)
@@ -250,9 +260,18 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
               >
                 <motion.div
                   whileHover={{ scale: 1.1 }}
-                  className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-white text-sm font-medium shadow-lg uppercase"
+                  className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-white text-sm font-medium shadow-lg uppercase overflow-hidden"
                 >
-                  {(user?.name?.trim().charAt(0) || 'U').toUpperCase()}
+                  {user?.avatar_url ? (
+                    <img
+                      src={user.avatar_url}
+                      alt="Foto de perfil"
+                      className="h-full w-full object-cover"
+                      onError={() => setUser((current) => current ? { ...current, avatar_url: null } : current)}
+                    />
+                  ) : (
+                    (user?.name?.trim().charAt(0) || 'U').toUpperCase()
+                  )}
                 </motion.div>
                 <div className="text-left hidden md:block">
                   <div className="text-sm font-medium text-gray-900">

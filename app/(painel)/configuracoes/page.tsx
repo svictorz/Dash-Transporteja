@@ -136,7 +136,7 @@ export default function ConfiguracoesPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
             <div className="flex items-center gap-3 min-w-0">
-              <Sun className="w-6 h-6 text-amber-500 shrink-0" aria-hidden />
+              <Sun className="w-6 h-6 text-slate-600 dark:text-white shrink-0" aria-hidden />
               <div>
                 <p className="font-medium text-gray-900">Claro</p>
                 <p className="text-xs text-gray-500">Sol — fundo claro</p>
@@ -150,7 +150,7 @@ export default function ConfiguracoesPage() {
               aria-label={theme === 'dark' ? 'Alternar para modo claro' : 'Alternar para modo escuro'}
               disabled={!themeReady}
               onClick={toggleTheme}
-              className="relative h-8 w-14 shrink-0 rounded-full bg-gray-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 dark:bg-slate-600 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50"
+              className="relative h-8 w-14 shrink-0 rounded-full bg-gray-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-800 dark:focus-visible:ring-white focus-visible:ring-offset-2 dark:bg-slate-600 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50"
             >
               <span
                 className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform duration-200 ease-out ${
@@ -177,8 +177,8 @@ export default function ConfiguracoesPage() {
         {/* Segurança */}
         <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-              <Shield className="w-5 h-5 text-orange-600" />
+            <div className="w-10 h-10 bg-slate-100 dark:bg-white rounded-lg flex items-center justify-center">
+              <Shield className="w-5 h-5 text-slate-900" />
             </div>
             <h2 className="text-lg font-bold text-gray-900">Segurança</h2>
           </div>
@@ -193,11 +193,11 @@ export default function ConfiguracoesPage() {
               <button
                 onClick={() => handleSecurityChange('twoFactor', !security.twoFactor)}
                 className={`relative w-12 h-6 rounded-full transition-colors ${
-                  security.twoFactor ? 'bg-orange-600' : 'bg-gray-300'
+                  security.twoFactor ? 'bg-slate-800 dark:bg-white' : 'bg-gray-300 dark:bg-slate-600'
                 }`}
               >
                 <span
-                  className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                  className={`absolute top-1 left-1 w-4 h-4 bg-white dark:bg-slate-900 rounded-full transition-transform ${
                     security.twoFactor ? 'translate-x-6' : 'translate-x-0'
                   }`}
                 />
@@ -219,7 +219,7 @@ export default function ConfiguracoesPage() {
                       type={showPasswords.current ? 'text' : 'password'}
                       value={passwordForm.currentPassword}
                       onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 pr-10"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 dark:focus:ring-white dark:focus:border-white bg-white text-slate-900 placeholder:text-slate-500 pr-10"
                       placeholder="Digite sua senha atual"
                     />
                     <button
@@ -242,7 +242,7 @@ export default function ConfiguracoesPage() {
                       type={showPasswords.new ? 'text' : 'password'}
                       value={passwordForm.newPassword}
                       onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 pr-10"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 dark:focus:ring-white dark:focus:border-white bg-white text-slate-900 placeholder:text-slate-500 pr-10"
                       placeholder="Mínimo 6 caracteres"
                     />
                     <button
@@ -265,7 +265,7 @@ export default function ConfiguracoesPage() {
                       type={showPasswords.confirm ? 'text' : 'password'}
                       value={passwordForm.confirmPassword}
                       onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 pr-10"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 dark:focus:ring-white dark:focus:border-white bg-white text-slate-900 placeholder:text-slate-500 pr-10"
                       placeholder="Confirme sua nova senha"
                     />
                     <button
@@ -297,7 +297,7 @@ export default function ConfiguracoesPage() {
                 <button
                   type="submit"
                   disabled={isChangingPassword}
-                  className="w-full px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full px-4 py-2 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-lg hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isChangingPassword ? (
                     <>

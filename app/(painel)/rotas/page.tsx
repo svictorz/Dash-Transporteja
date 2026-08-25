@@ -1573,11 +1573,11 @@ export default function RotasPage() {
                       <MapPin className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                       <div className="flex-1">
                         <p className="text-xs text-blue-600 font-semibold mb-2 uppercase tracking-wide">De onde foi coletado</p>
-                        <p className="text-sm font-bold text-gray-900 mb-1">
+                        <p className="text-sm font-bold text-gray-900 !text-slate-900 mb-1">
                           {selectedRoute.origin}, {selectedRoute.origin_state}
                         </p>
                         {selectedRoute.origin_address && (
-                          <p className="text-xs text-gray-600 mt-1">
+                          <p className="text-xs text-gray-600 !text-slate-700 mt-1">
                             {selectedRoute.origin_address}
                           </p>
                         )}
@@ -1591,11 +1591,11 @@ export default function RotasPage() {
                       <MapPin className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
                       <div className="flex-1">
                         <p className="text-xs text-green-600 font-semibold mb-2 uppercase tracking-wide">Lugar de entrega</p>
-                        <p className="text-sm font-bold text-gray-900 mb-1">
+                        <p className="text-sm font-bold text-gray-900 !text-slate-900 mb-1">
                           {selectedRoute.destination}, {selectedRoute.destination_state}
                         </p>
                         {selectedRoute.destination_address && (
-                          <p className="text-xs text-gray-600 mt-1">
+                          <p className="text-xs text-gray-600 !text-slate-700 mt-1">
                             {selectedRoute.destination_address}
                           </p>
                         )}

@@ -34,6 +34,7 @@ export default function DadosPessoaisPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [showCropper, setShowCropper] = useState(false)
   const [cropperImage, setCropperImage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -145,7 +146,7 @@ export default function DadosPessoaisPage() {
 
   const handleCropComplete = async (croppedImage: string) => {
     try {
-      setIsSaving(true)
+      setIsUploadingAvatar(true)
       const { data: { session } } = await supabase.auth.getSession()
       
       if (!session?.user || !profile) return
@@ -166,8 +167,16 @@ export default function DadosPessoaisPage() {
         throw error
       }
 
-      // Atualizar estado local
-      setProfile({ ...profile, avatar_url: avatarUrl })
+      // Atualizar estado local e avisar o header para trocar a foto sem reload.
+      const nextProfile = { ...profile, avatar_url: avatarUrl }
+      setProfile(nextProfile)
+      window.dispatchEvent(new CustomEvent('transporteja:profile-updated', {
+        detail: {
+          name: nextProfile.name,
+          email: nextProfile.email,
+          avatar_url: avatarUrl
+        }
+      }))
       setShowCropper(false)
       setCropperImage('')
       
@@ -178,7 +187,7 @@ export default function DadosPessoaisPage() {
       console.error('Erro ao salvar foto:', error)
       alert(`Erro ao salvar foto: ${error.message}`)
     } finally {
-      setIsSaving(false)
+      setIsUploadingAvatar(false)
     }
   }
 
@@ -200,6 +209,13 @@ export default function DadosPessoaisPage() {
         throw error
       }
 
+      window.dispatchEvent(new CustomEvent('transporteja:profile-updated', {
+        detail: {
+          name: profile.name,
+          email: profile.email,
+          avatar_url: profile.avatar_url
+        }
+      }))
       alert('Perfil atualizado com sucesso!')
     } catch (error: any) {
       console.error('Erro ao salvar perfil:', error)
@@ -307,22 +323,33 @@ export default function DadosPessoaisPage() {
                   )}
                 </div>
                 <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="absolute bottom-0 right-0 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
+                  disabled={isUploadingAvatar}
+                  className="absolute bottom-0 right-0 p-2 bg-slate-900 text-white rounded-full hover:bg-slate-800 transition-colors shadow-lg disabled:opacity-60 disabled:cursor-not-allowed dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                   title="Alterar foto"
+                  aria-label="Alterar foto de perfil"
                 >
-                  <Camera className="w-4 h-4" />
+                  {isUploadingAvatar ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
                 </button>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   onChange={handleFileSelect}
                   className="hidden"
                 />
               </div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+                className="mt-4 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+              >
+                {isUploadingAvatar ? 'Salvando foto...' : profile.avatar_url ? 'Trocar foto' : 'Carregar foto'}
+              </button>
               <p className="text-xs text-gray-500 mt-2 text-center">
-                Máximo 2MB
+                JPG, PNG ou WEBP ate 2MB
               </p>
             </div>
 
