@@ -57,7 +57,7 @@ const PERF_LABEL_BY_KEY = new Map(PERF_LIST_COLUMNS.map((c) => [c.key, c.label])
 const PERF_LIST_COLUMNS_STORAGE_KEY = 'performance:listColumns'
 
 type Periodo = 'tudo' | 'essaSemana' | 'mesAtual' | '30d' | 'mesPassado' | 'custom'
-type UserRole = 'admin' | 'comercial' | 'financeiro' | 'driver' | 'operator' | null
+type UserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'driver' | 'operator' | null
 type DocumentKey = 'freteDocs'
 type RouteDocumentKind = 'image' | 'pdf'
 type RouteDocument = { path: string; url: string; name: string; kind: RouteDocumentKind }
@@ -770,6 +770,9 @@ export default function PerformancePage() {
   const [documents, setDocuments] = useState<Record<DocumentKey, RouteDocument[]>>(EMPTY_DOCUMENTS)
   const [uploadingDocument, setUploadingDocument] = useState<DocumentKey | null>(null)
   const [removingDocumentPath, setRemovingDocumentPath] = useState<string | null>(null)
+  const [editingObservation, setEditingObservation] = useState(false)
+  const [savingObservation, setSavingObservation] = useState(false)
+  const [editingObservationValue, setEditingObservationValue] = useState('')
   const [editingFinancial, setEditingFinancial] = useState(false)
   const [savingFinancial, setSavingFinancial] = useState(false)
   const [editingFields, setEditingFields] = useState({
@@ -845,6 +848,8 @@ export default function PerformancePage() {
       vehicle: selectedPerfRoute.vehicle ?? '',
       plate: selectedPerfRoute.plate ?? '',
     })
+    setEditingObservationValue(selectedPerfRoute.observation ?? '')
+    setEditingObservation(false)
     setEditingDriver(false)
 
     let cancelled = false
@@ -908,9 +913,9 @@ export default function PerformancePage() {
         setRole(userRole)
         setCurrentUserName(me?.name || me?.email || sessionEmail || 'Usuário')
 
-        const isAdmin = userRole === 'admin' || userRole === 'financeiro'
+        const isAdmin = userRole === 'admin' || userRole === 'financeiro' || userRole === 'fiscal'
 
-        // Default do filtro de vendedor: admin/financeiro abrem com o time
+        // Default do filtro de vendedor: admin/financeiro/fiscal abrem com o time
         // inteiro (senão a tela zera quando a conta do gestor não criou fretes
         // próprios); demais perfis abrem com os próprios registros.
         if (!didInitSelectedComercial) {
@@ -923,7 +928,7 @@ export default function PerformancePage() {
           .select('*')
           .order('pickup_date', { ascending: false })
 
-        // Para admins/financeiro carregamos TODOS os usuários (não só comerciais),
+        // Para admins/financeiro/fiscal carregamos TODOS os usuários (não só comerciais),
         // para conseguir resolver o nome do vendedor mesmo quando o frete foi criado
         // por outro perfil (admin, etc.). O dropdown de filtro continua focado em
         // vendedores (comercial/operator) porque é o caso de uso principal.
@@ -1104,10 +1109,10 @@ export default function PerformancePage() {
     [periodRows],
   )
 
-  const isAdmin = role === 'admin' || role === 'financeiro'
+  const isAdmin = role === 'admin' || role === 'financeiro' || role === 'fiscal'
   const isStrictAdmin = role === 'admin'
-  const canManagePerfModal = role === 'admin' || role === 'financeiro'
-  /** Coluna Rotas: admin/financeiro (detalhe na própria página) ou link para fretes próprios. */
+  const canManagePerfModal = role === 'admin' || role === 'financeiro' || role === 'fiscal'
+  /** Coluna Rotas: admin/financeiro/fiscal (detalhe na própria página) ou link para fretes próprios. */
   const showRotasColumn = useMemo(
     () =>
       Boolean(
@@ -1178,6 +1183,27 @@ export default function PerformancePage() {
     },
     [selectedPerfRoute, canManagePerfModal],
   )
+
+  const handleSaveObservation = useCallback(async () => {
+    if (!selectedPerfRoute || !canManagePerfModal) return
+    try {
+      setSavingObservation(true)
+      const { data, error: updateError } = await supabase.rpc('update_route_observation', {
+        p_route_id: selectedPerfRoute.id,
+        p_observation: editingObservationValue,
+      })
+
+      if (updateError) throw new Error(updateError.message)
+      const updatedRoute = normalizeRouteFromApi((data as Record<string, unknown>) || {})
+      setRows((prev) => prev.map((r) => (r.id === updatedRoute.id ? updatedRoute : r)))
+      setSelectedPerfRoute(updatedRoute)
+      setEditingObservation(false)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao salvar observações.')
+    } finally {
+      setSavingObservation(false)
+    }
+  }, [selectedPerfRoute, canManagePerfModal, editingObservationValue])
 
   const handleSaveFinancialFields = useCallback(async () => {
     if (!selectedPerfRoute || !canManagePerfModal) return
@@ -1423,7 +1449,7 @@ export default function PerformancePage() {
           <p className="text-sm text-gray-600 mt-1">
             {isAdmin
               ? selectedComercial === 'all'
-                ? role === 'financeiro'
+                ? role === 'financeiro' || role === 'fiscal'
                   ? 'Visão financeira: performance de todos os comerciais'
                   : 'Visão da performance de todo o time comercial'
                 : `Performance de ${selectedComercialLabel}`
@@ -1873,6 +1899,51 @@ export default function PerformancePage() {
               <PerfFreightDetailPanel route={selectedPerfRoute} visibleMoney={visibleMoney} />
               {canManagePerfModal ? (
                 <div className="mt-6 space-y-6">
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <h3 className="text-sm font-semibold text-gray-900">Observações</h3>
+                      {editingObservation ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingObservation(false)
+                              setEditingObservationValue(selectedPerfRoute.observation ?? '')
+                            }}
+                            className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
+                            disabled={savingObservation}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveObservation}
+                            className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-60"
+                            disabled={savingObservation}
+                          >
+                            {savingObservation ? 'Salvando...' : 'Salvar'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setEditingObservation(true)}
+                          className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
+                        >
+                          Editar
+                        </button>
+                      )}
+                    </div>
+                    <textarea
+                      value={editingObservationValue}
+                      onChange={(e) => setEditingObservationValue(e.target.value)}
+                      disabled={!editingObservation || savingObservation}
+                      rows={4}
+                      placeholder="Observações do frete"
+                      className="mt-4 w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                  </div>
+
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <h3 className="text-sm font-semibold text-gray-900">Campos financeiros</h3>
