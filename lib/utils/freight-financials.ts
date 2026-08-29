@@ -100,10 +100,13 @@ export function calculateNetFreightValue(
   driverValue?: number | null,
   taxesPercent?: number | null,
   seguroValue?: number | null,
+  valePedagioValue?: number | null,
+  valePedagioIncluso?: boolean | null,
 ): number | null {
   if (freightValue == null) return null
   const taxesValue = calculateTaxesValue(freightValue, taxesPercent) ?? 0
-  return Math.round((freightValue - taxesValue - (driverValue ?? 0) - (seguroValue ?? 0)) * 100) / 100
+  const includedValePedagio = valePedagioIncluso ? valePedagioValue ?? 0 : 0
+  return Math.round((freightValue - taxesValue - (driverValue ?? 0) - (seguroValue ?? 0) - includedValePedagio) * 100) / 100
 }
 
 export function calculateCommissionValue(
@@ -121,7 +124,14 @@ export function getRouteNetFreightValue(route: Route): number {
   const pct = getRouteTaxesPercent(route)
   return (
     route.net_freight_value ??
-    calculateNetFreightValue(baseFreight, route.driver_value, pct, getRouteSeguroValue(route)) ??
+    calculateNetFreightValue(
+      baseFreight,
+      route.driver_value,
+      pct,
+      getRouteSeguroValue(route),
+      route.vale_pedagio,
+      route.vale_pedagio_incluso,
+    ) ??
     0
   )
 }

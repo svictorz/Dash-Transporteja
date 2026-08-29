@@ -122,7 +122,18 @@ export default function ControleFinanceiroPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [commissionToggleId, setCommissionToggleId] = useState<string | null>(null)
-  const [editFields, setEditFields] = useState({ freightValue: '', nfValue: '', cteValue: '', valePedagioValue: '', driverValue: '', taxesPercent: '18', taxesValueManual: '', seguroPercent: String(SEGURO_PERCENT_DEFAULT), seguroValueManual: '' })
+  const [editFields, setEditFields] = useState({
+    freightValue: '',
+    nfValue: '',
+    cteValue: '',
+    valePedagioValue: '',
+    valePedagioIncluso: 'false',
+    driverValue: '',
+    taxesPercent: '18',
+    taxesValueManual: '',
+    seguroPercent: String(SEGURO_PERCENT_DEFAULT),
+    seguroValueManual: '',
+  })
 
   const role = currentUser?.role ?? null
   const roleResolved = currentUser?.roleResolved ?? false
@@ -277,6 +288,7 @@ export default function ControleFinanceiroPage() {
       'NF',
       'CTE',
       'Vale pedágio',
+      'Vale pedágio incluso',
       'Motorista (R$)',
       'Motorista (nome)',
       'Tributos',
@@ -304,6 +316,7 @@ export default function ControleFinanceiroPage() {
         num(r.nf_value),
         num(r.cte_value),
         num(r.vale_pedagio),
+        r.vale_pedagio_incluso ? 'Incluso' : 'Não incluso',
         num(r.driver_value),
         r.driver_name?.trim() || '',
         num(getRouteTaxesValue(r)),
@@ -340,6 +353,7 @@ export default function ControleFinanceiroPage() {
       nfValue: route.nf_value != null ? String(route.nf_value).replace('.', ',') : '',
       cteValue: route.cte_value != null ? String(route.cte_value).replace('.', ',') : '',
       valePedagioValue: route.vale_pedagio != null ? String(route.vale_pedagio).replace('.', ',') : '',
+      valePedagioIncluso: route.vale_pedagio_incluso ? 'true' : 'false',
       driverValue: route.driver_value != null ? String(route.driver_value).replace('.', ',') : '',
       taxesPercent: String(getRouteTaxesPercent(route)),
       taxesValueManual: '',
@@ -365,6 +379,7 @@ export default function ControleFinanceiroPage() {
         const nfValue = parseCurrencyInput(editFields.nfValue)
         const cteValue = parseCurrencyInput(editFields.cteValue)
         const valePedagioValue = parseCurrencyInput(editFields.valePedagioValue)
+        const valePedagioIncluso = editFields.valePedagioIncluso === 'true'
         const driverValue = parseCurrencyInput(editFields.driverValue)
         // Base do frete usa o valor lançado ou, na ausência, a NF editada.
         const baseFreight = freightValue ?? nfValue
@@ -374,10 +389,11 @@ export default function ControleFinanceiroPage() {
         // Seguro: admin pode digitar o valor em R$; se em branco, calcula pelo %.
         const manualSeguro = isStrictAdmin ? parseCurrencyInput(editFields.seguroValueManual) : null
         const seguroValue = manualSeguro != null ? manualSeguro : calculateSeguroValue(nfValue, seguroPercent)
+        const valePedagioDiscount = valePedagioIncluso ? valePedagioValue ?? 0 : 0
         const netFreightValue =
           baseFreight == null
             ? null
-            : Math.round((baseFreight - (taxesValue ?? 0) - (driverValue ?? 0) - (seguroValue ?? 0)) * 100) / 100
+            : Math.round((baseFreight - (taxesValue ?? 0) - (driverValue ?? 0) - (seguroValue ?? 0) - valePedagioDiscount) * 100) / 100
         const sellerRate = route.created_by_user_id
           ? sellerById.get(route.created_by_user_id)?.commission_rate ?? null
           : null
@@ -388,6 +404,7 @@ export default function ControleFinanceiroPage() {
           nf_value: nfValue,
           cte_value: cteValue,
           vale_pedagio: valePedagioValue,
+          vale_pedagio_incluso: valePedagioIncluso,
           driver_value: driverValue,
           taxes_percent: taxesPercent,
           taxes_value: taxesValue,
@@ -441,12 +458,19 @@ export default function ControleFinanceiroPage() {
     const liveSeguroAuto = calculateSeguroValue(liveNfValue, liveSeguroPct)
     const liveSeguroManual = isStrictAdmin ? parseCurrencyInput(editFields.seguroValueManual) : null
     const liveSeguro = liveSeguroManual != null ? liveSeguroManual : liveSeguroAuto
+    const liveValePedagio = parseCurrencyInput(editFields.valePedagioValue)
+    const liveValePedagioDiscount = editFields.valePedagioIncluso === 'true' ? liveValePedagio ?? 0 : 0
     const liveNet =
       liveBaseFreight == null
         ? null
         : Math.round(
-            (liveBaseFreight - (liveTaxes ?? 0) - (parseCurrencyInput(editFields.driverValue) ?? 0) - (liveSeguro ?? 0)) *
-              100,
+            (
+              liveBaseFreight -
+              (liveTaxes ?? 0) -
+              (parseCurrencyInput(editFields.driverValue) ?? 0) -
+              (liveSeguro ?? 0) -
+              liveValePedagioDiscount
+            ) * 100,
           ) / 100
 
     switch (key) {
@@ -507,15 +531,32 @@ export default function ControleFinanceiroPage() {
         )
       case 'pedagio':
         return editing ? (
-          <input
-            inputMode="decimal"
-            value={editFields.valePedagioValue}
-            onChange={(e) => setEditFields((p) => ({ ...p, valePedagioValue: e.target.value }))}
-            placeholder="0,00"
-            className="w-24 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-right text-sm text-gray-900 dark:text-slate-100"
-          />
+          <div className="flex items-end justify-end gap-2">
+            <input
+              inputMode="decimal"
+              value={editFields.valePedagioValue}
+              onChange={(e) => setEditFields((p) => ({ ...p, valePedagioValue: e.target.value }))}
+              placeholder="0,00"
+              className="w-24 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-right text-sm text-gray-900 dark:text-slate-100"
+            />
+            <label className="flex flex-col items-start gap-1 text-[11px] font-medium text-gray-500 dark:text-slate-400">
+              Incluso
+              <select
+                value={editFields.valePedagioIncluso}
+                onChange={(e) => setEditFields((p) => ({ ...p, valePedagioIncluso: e.target.value }))}
+                className="h-8 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 text-sm text-gray-900 dark:text-slate-100"
+                aria-label="Vale pedágio incluso"
+              >
+                <option value="true">✅</option>
+                <option value="false">❌</option>
+              </select>
+            </label>
+          </div>
         ) : (
-          <span className="text-gray-700 dark:text-slate-200">{money(r.vale_pedagio)}</span>
+          <div className="flex flex-col items-end">
+            <span className="text-gray-700 dark:text-slate-200">{money(r.vale_pedagio)}</span>
+            <span className="text-xs text-gray-400 dark:text-slate-400">Incluso {r.vale_pedagio_incluso ? '✅' : '❌'}</span>
+          </div>
         )
       case 'motorista':
         return editing ? (
