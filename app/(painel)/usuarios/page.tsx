@@ -8,6 +8,7 @@ import {
   Shield,
   Wallet,
   Briefcase,
+  FileText,
   Search,
   Loader2,
   Check,
@@ -26,7 +27,7 @@ import {
   type DashboardUserRole,
 } from '@/lib/utils/roles'
 
-type AssignableRole = 'admin' | 'comercial' | 'financeiro'
+type AssignableRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal'
 
 interface ManagedUser {
   id: string
@@ -59,6 +60,12 @@ const ROLE_OPTIONS: { value: AssignableRole; label: string; description: string;
     icon: Wallet,
   },
   {
+    value: 'fiscal',
+    label: 'Fiscal',
+    description: 'Mesmo acesso de administrador e financeiro na Performance, rotas e dados fiscais.',
+    icon: FileText,
+  },
+  {
     value: 'comercial',
     label: 'Comercial',
     description: 'Vê apenas os fretes, rotas e performance que ele mesmo cadastrou.',
@@ -71,6 +78,8 @@ const ROLE_BADGE: Record<AssignableRole, string> = {
     'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-500/25 dark:text-rose-200 dark:border-rose-400/50',
   financeiro:
     'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/25 dark:text-amber-200 dark:border-amber-400/50',
+  fiscal:
+    'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-500/25 dark:text-emerald-200 dark:border-emerald-400/50',
   comercial:
     'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-500/25 dark:text-sky-200 dark:border-sky-400/50',
 }
@@ -162,14 +171,16 @@ export default function UsuariosPage() {
   const counts = useMemo(() => {
     let admin = 0
     let financeiro = 0
+    let fiscal = 0
     let comercial = 0
     users.forEach((u) => {
       const r = (u.role as string | null) === 'operator' ? 'comercial' : u.role
       if (r === 'admin') admin += 1
       else if (r === 'financeiro') financeiro += 1
+      else if (r === 'fiscal') fiscal += 1
       else if (r === 'comercial') comercial += 1
     })
-    return { admin, financeiro, comercial, total: users.length }
+    return { admin, financeiro, fiscal, comercial, total: users.length }
   }, [users])
 
   const handleChangeRole = async (target: ManagedUser, newRole: AssignableRole) => {
@@ -375,14 +386,15 @@ export default function UsuariosPage() {
         </div>
       </header>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <SummaryCard label="Total" value={counts.total} icon={Users} tone="slate" />
         <SummaryCard label="Administradores" value={counts.admin} icon={Shield} tone="rose" />
         <SummaryCard label="Financeiro" value={counts.financeiro} icon={Wallet} tone="amber" />
+        <SummaryCard label="Fiscal" value={counts.fiscal} icon={FileText} tone="emerald" />
         <SummaryCard label="Comerciais" value={counts.comercial} icon={Briefcase} tone="sky" />
       </div>
 
-      <section className="grid sm:grid-cols-3 gap-3">
+      <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {ROLE_OPTIONS.map((opt) => {
           const Icon = opt.icon
           return (
@@ -415,7 +427,7 @@ export default function UsuariosPage() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            {(['all', 'admin', 'financeiro', 'comercial'] as const).map((key) => {
+            {(['all', 'admin', 'financeiro', 'fiscal', 'comercial'] as const).map((key) => {
               const active = filter === key
               const label =
                 key === 'all'
@@ -424,6 +436,8 @@ export default function UsuariosPage() {
                   ? 'Admin'
                   : key === 'financeiro'
                   ? 'Financeiro'
+                  : key === 'fiscal'
+                  ? 'Fiscal'
                   : 'Comercial'
               return (
                 <button
@@ -549,7 +563,7 @@ export default function UsuariosPage() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <div className="inline-flex rounded-xl border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-900 overflow-hidden">
-                              {(['admin', 'financeiro', 'comercial'] as AssignableRole[]).map(
+                              {(['admin', 'financeiro', 'fiscal', 'comercial'] as AssignableRole[]).map(
                                 (roleKey) => {
                                   const isActive =
                                     ((currentRole as string | null) === 'operator' ? 'comercial' : currentRole) ===
@@ -576,6 +590,8 @@ export default function UsuariosPage() {
                                         ? 'Admin'
                                         : roleKey === 'financeiro'
                                         ? 'Financeiro'
+                                        : roleKey === 'fiscal'
+                                        ? 'Fiscal'
                                         : 'Comercial'}
                                     </button>
                                   )
@@ -726,7 +742,7 @@ function CreateUserModal({
 
           <div className="space-y-2">
             <p className="text-sm font-medium text-gray-700 dark:text-slate-200">Funcao</p>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-4">
               {roleOptions.map((option) => {
                 const Icon = option.icon
                 const active = form.role === option.value
@@ -747,6 +763,8 @@ function CreateUserModal({
                         ? 'Admin'
                         : option.value === 'financeiro'
                         ? 'Financeiro'
+                        : option.value === 'fiscal'
+                        ? 'Fiscal'
                         : 'Comercial'}
                     </span>
                   </button>
@@ -798,7 +816,7 @@ interface SummaryCardProps {
   label: string
   value: number
   icon: typeof Shield
-  tone: 'slate' | 'rose' | 'amber' | 'sky'
+  tone: 'slate' | 'rose' | 'amber' | 'emerald' | 'sky'
 }
 
 function SummaryCard({ label, value, icon: Icon, tone }: SummaryCardProps) {
@@ -806,6 +824,7 @@ function SummaryCard({ label, value, icon: Icon, tone }: SummaryCardProps) {
     slate: 'bg-slate-100 text-slate-700',
     rose: 'bg-rose-100 text-rose-700',
     amber: 'bg-amber-100 text-amber-700',
+    emerald: 'bg-emerald-100 text-emerald-700',
     sky: 'bg-sky-100 text-sky-700',
   }
   return (
@@ -820,4 +839,6 @@ function SummaryCard({ label, value, icon: Icon, tone }: SummaryCardProps) {
     </div>
   )
 }
+
+
 

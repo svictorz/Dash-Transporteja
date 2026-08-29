@@ -33,7 +33,6 @@ import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import {
   ROUTE_PERIOD_FILTER_HINT,
   filterRoutesByDateRange,
-  isDeliveryInDateRange,
 } from '@/lib/utils/route-period-filter'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 import { useColumnPrefs, type ColumnDef } from '@/lib/hooks/useColumnPrefs'
@@ -62,6 +61,25 @@ type DocumentKey = 'freteDocs'
 type RouteDocumentKind = 'image' | 'pdf'
 type RouteDocument = { path: string; url: string; name: string; kind: RouteDocumentKind }
 type RouteStatus = Route['status']
+type PaymentStatusFilter = 'all' | 'Pendente' | '50%' | '70%' | '100%'
+
+const PAYMENT_STATUS_FILTER_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
+
+function paymentStatusFilterValue(status?: string | null): Exclude<PaymentStatusFilter, 'all'> {
+  const normalized = status?.trim()
+  switch (normalized) {
+    case 'pending':
+      return 'Pendente'
+    case 'paid':
+      return '100%'
+    case 'partial':
+      return '50%'
+    default:
+      return PAYMENT_STATUS_FILTER_OPTIONS.includes(normalized as Exclude<PaymentStatusFilter, 'all'>)
+        ? (normalized as Exclude<PaymentStatusFilter, 'all'>)
+        : 'Pendente'
+  }
+}
 
 const PERF_ROUTE_STATUS_OPTIONS: RouteStatus[] = [
   'pending',
@@ -762,7 +780,9 @@ export default function PerformancePage() {
   const [rows, setRows] = useState<Route[]>([])
   const [comerciais, setComerciais] = useState<ComercialUser[]>([])
   const [selectedComercial, setSelectedComercial] = useState<'all' | string>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pickedUp' | 'delivered'>('all')
+  const [clientPaymentStatusFilter, setClientPaymentStatusFilter] = useState<PaymentStatusFilter>('all')
+  const [freightStatusFilter, setFreightStatusFilter] = useState<'all' | RouteStatus>('all')
+  const [driverPaymentStatusFilter, setDriverPaymentStatusFilter] = useState<PaymentStatusFilter>('all')
   const [didInitSelectedComercial, setDidInitSelectedComercial] = useState(false)
   const [visibleMoney, setVisibleMoney] = useState<Record<MoneyFieldKey, boolean>>(ALL_MONEY_VISIBLE)
   const [selectedPerfRoute, setSelectedPerfRoute] = useState<Route | null>(null)
@@ -781,6 +801,27 @@ export default function PerformancePage() {
     driverValue: '',
     taxesPercent: '18',
     seguroPercent: '0.2',
+  })
+  const [editingFreightInfo, setEditingFreightInfo] = useState(false)
+  const [savingFreightInfo, setSavingFreightInfo] = useState(false)
+  const [editingFreightInfoFields, setEditingFreightInfoFields] = useState({
+    companyName: '',
+    companyResponsible: '',
+    companyPhone: '',
+    companyEmail: '',
+    origin: '',
+    originState: '',
+    originAddress: '',
+    destination: '',
+    destinationState: '',
+    destinationAddress: '',
+    weight: '',
+    pickupDate: '',
+    estimatedDelivery: '',
+    paymentStatus: '',
+    paymentType: '',
+    nfValue: '',
+    freightValue: '',
   })
   const [editingDriver, setEditingDriver] = useState(false)
   const [savingDriver, setSavingDriver] = useState(false)
@@ -817,7 +858,7 @@ export default function PerformancePage() {
     setUploadingDocument(null)
     setRemovingDocumentPath(null)
     setEditingFinancial(false)
-  }, [periodo, customStart, customEnd, selectedComercial])
+  }, [periodo, customStart, customEnd, selectedComercial, clientPaymentStatusFilter, freightStatusFilter, driverPaymentStatusFilter])
 
   useEffect(() => {
     if (!selectedPerfRoute) {
@@ -826,6 +867,7 @@ export default function PerformancePage() {
       setUploadingDocument(null)
       setRemovingDocumentPath(null)
       setEditingFinancial(false)
+      setEditingFreightInfo(false)
       setEditingDriver(false)
       return
     }
@@ -848,8 +890,28 @@ export default function PerformancePage() {
       vehicle: selectedPerfRoute.vehicle ?? '',
       plate: selectedPerfRoute.plate ?? '',
     })
+    setEditingFreightInfoFields({
+      companyName: selectedPerfRoute.company_name ?? '',
+      companyResponsible: selectedPerfRoute.company_responsible ?? '',
+      companyPhone: selectedPerfRoute.company_phone ?? '',
+      companyEmail: selectedPerfRoute.company_email ?? '',
+      origin: selectedPerfRoute.origin ?? '',
+      originState: selectedPerfRoute.origin_state ?? '',
+      originAddress: selectedPerfRoute.origin_address ?? '',
+      destination: selectedPerfRoute.destination ?? '',
+      destinationState: selectedPerfRoute.destination_state ?? '',
+      destinationAddress: selectedPerfRoute.destination_address ?? '',
+      weight: selectedPerfRoute.weight ?? '',
+      pickupDate: selectedPerfRoute.pickup_date ?? '',
+      estimatedDelivery: selectedPerfRoute.estimated_delivery ?? '',
+      paymentStatus: selectedPerfRoute.payment_status ?? '',
+      paymentType: selectedPerfRoute.payment_type ?? '',
+      nfValue: selectedPerfRoute.nf_value != null ? String(selectedPerfRoute.nf_value).replace('.', ',') : '',
+      freightValue: selectedPerfRoute.freight_value != null ? String(selectedPerfRoute.freight_value).replace('.', ',') : '',
+    })
     setEditingObservationValue(selectedPerfRoute.observation ?? '')
     setEditingObservation(false)
+    setEditingFreightInfo(false)
     setEditingDriver(false)
 
     let cancelled = false
@@ -984,12 +1046,23 @@ export default function PerformancePage() {
   )
 
   const filteredRows = useMemo(() => {
-    if (selectedComercial === 'all') return periodRows
-    if (selectedComercial === '__sem_responsavel__') {
-      return periodRows.filter((r) => !r.created_by_user_id)
-    }
-    return periodRows.filter((r) => r.created_by_user_id === selectedComercial)
-  }, [periodRows, selectedComercial])
+    const sellerRows =
+      selectedComercial === 'all'
+        ? periodRows
+        : selectedComercial === '__sem_responsavel__'
+          ? periodRows.filter((r) => !r.created_by_user_id)
+          : periodRows.filter((r) => r.created_by_user_id === selectedComercial)
+
+    return sellerRows.filter((r) => {
+      const matchesClientPayment =
+        clientPaymentStatusFilter === 'all' || paymentStatusFilterValue(r.payment_status) === clientPaymentStatusFilter
+      const matchesFreightStatus = freightStatusFilter === 'all' || r.status === freightStatusFilter
+      const matchesDriverPayment =
+        driverPaymentStatusFilter === 'all' || paymentStatusFilterValue(r.driver_payment_status) === driverPaymentStatusFilter
+
+      return matchesClientPayment && matchesFreightStatus && matchesDriverPayment
+    })
+  }, [periodRows, selectedComercial, clientPaymentStatusFilter, freightStatusFilter, driverPaymentStatusFilter])
 
   const byUser = useMemo(() => {
     const map = new Map<string, UserPerfAgg>()
@@ -1075,22 +1148,7 @@ export default function PerformancePage() {
     return map
   }, [comerciais])
 
-  // Rows filtradas pelo comercial selecionado (sem filtro de data)
-  const comercialRows = useMemo(() => {
-    if (selectedComercial === 'all') return rows
-    if (selectedComercial === '__sem_responsavel__') return rows.filter((r) => !r.created_by_user_id)
-    return rows.filter((r) => r.created_by_user_id === selectedComercial)
-  }, [rows, selectedComercial])
-
-  const statusFilteredRows = useMemo(() => {
-    if (statusFilter === 'all') return filteredRows
-    // "Entregues": fretes do comercial selecionado com estimated_delivery no período
-    if (statusFilter === 'delivered') {
-      return comercialRows.filter((r) => isDeliveryInDateRange(r, periodBounds.start, periodBounds.end))
-    }
-    // "Coletados": fretes do comercial selecionado com pickup_date no período (qualquer status)
-    return filteredRows
-  }, [filteredRows, periodRows, comercialRows, statusFilter, periodBounds])
+  const statusFilteredRows = filteredRows
 
   const detailedRows = useMemo(() => {
     return statusFilteredRows.map((r) => {
@@ -1112,6 +1170,7 @@ export default function PerformancePage() {
   const isAdmin = role === 'admin' || role === 'financeiro' || role === 'fiscal'
   const isStrictAdmin = role === 'admin'
   const canManagePerfModal = role === 'admin' || role === 'financeiro' || role === 'fiscal'
+  const canEditPerfSeguro = canManagePerfModal
   /** Coluna Rotas: admin/financeiro/fiscal (detalhe na própria página) ou link para fretes próprios. */
   const showRotasColumn = useMemo(
     () =>
@@ -1205,13 +1264,100 @@ export default function PerformancePage() {
     }
   }, [selectedPerfRoute, canManagePerfModal, editingObservationValue])
 
+  const handleSaveFreightInfoFields = useCallback(async () => {
+    if (!selectedPerfRoute || !canManagePerfModal) return
+
+    const originState = editingFreightInfoFields.originState.trim().toUpperCase()
+    const destinationState = editingFreightInfoFields.destinationState.trim().toUpperCase()
+
+    if (!editingFreightInfoFields.companyName.trim()) {
+      alert('Informe o nome da empresa.')
+      return
+    }
+    if (!editingFreightInfoFields.origin.trim() || !originState) {
+      alert('Preencha cidade e UF de origem.')
+      return
+    }
+    if (originState.length !== 2) {
+      alert('UF de origem deve ter 2 letras (ex.: SP).')
+      return
+    }
+    if (!editingFreightInfoFields.destination.trim() || !destinationState) {
+      alert('Preencha cidade e UF de destino.')
+      return
+    }
+    if (destinationState.length !== 2) {
+      alert('UF de destino deve ter 2 letras (ex.: RJ).')
+      return
+    }
+    if (!editingFreightInfoFields.weight.trim()) {
+      alert('Preencha o peso do frete.')
+      return
+    }
+
+    try {
+      setSavingFreightInfo(true)
+      const nfValue = parseCurrencyInput(editingFreightInfoFields.nfValue)
+      const freightValue = parseCurrencyInput(editingFreightInfoFields.freightValue)
+      const baseFreight = freightValue ?? nfValue
+      const taxesPercent = getPerfRouteTaxesPercent(selectedPerfRoute)
+      const seguroPercent = getPerfRouteSeguroPercent(selectedPerfRoute)
+      const seguroValue = calculatePerfSeguroValue(nfValue, seguroPercent)
+      const taxesValue = calculatePerfTaxesValue(baseFreight, taxesPercent)
+      const netFreightValue = calculatePerfNetFreightValue(baseFreight, selectedPerfRoute.driver_value, taxesPercent, seguroValue)
+      const sellerRate = selectedPerfRoute.created_by_user_id
+        ? (comerciais.find((u) => u.id === selectedPerfRoute.created_by_user_id)?.commission_rate ?? null)
+        : null
+      const commissionValue = calculatePerfCommissionValue(netFreightValue, sellerRate)
+
+      const updatePayload: Partial<Route> = {
+        company_name: editingFreightInfoFields.companyName.trim(),
+        company_responsible: editingFreightInfoFields.companyResponsible.trim() || null,
+        company_phone: editingFreightInfoFields.companyPhone.trim() || null,
+        company_email: editingFreightInfoFields.companyEmail.trim() || null,
+        origin: editingFreightInfoFields.origin.trim(),
+        origin_state: originState,
+        origin_address: editingFreightInfoFields.originAddress.trim() || null,
+        destination: editingFreightInfoFields.destination.trim(),
+        destination_state: destinationState,
+        destination_address: editingFreightInfoFields.destinationAddress.trim() || null,
+        weight: editingFreightInfoFields.weight.trim(),
+        pickup_date: editingFreightInfoFields.pickupDate.trim(),
+        estimated_delivery: editingFreightInfoFields.estimatedDelivery.trim(),
+        payment_status: editingFreightInfoFields.paymentStatus.trim() || null,
+        payment_type: editingFreightInfoFields.paymentType.trim() || null,
+        nf_value: nfValue,
+        freight_value: freightValue,
+        taxes_value: taxesValue,
+        seguro_value: seguroValue,
+        net_freight_value: netFreightValue,
+        commission_value: commissionValue,
+      }
+
+      const { data, error: updateError } = await supabase
+        .from('routes')
+        .update(updatePayload)
+        .eq('id', selectedPerfRoute.id)
+        .select('*')
+        .single()
+
+      if (updateError) throw new Error(updateError.message)
+      const updatedRoute = normalizeRouteFromApi((data as Record<string, unknown>) || {})
+      setRows((prev) => prev.map((r) => (r.id === updatedRoute.id ? updatedRoute : r)))
+      setSelectedPerfRoute(updatedRoute)
+      setEditingFreightInfo(false)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao salvar informações do frete.')
+    } finally {
+      setSavingFreightInfo(false)
+    }
+  }, [selectedPerfRoute, canManagePerfModal, editingFreightInfoFields, parseCurrencyInput, comerciais])
   const handleSaveFinancialFields = useCallback(async () => {
     if (!selectedPerfRoute || !canManagePerfModal) return
     try {
       setSavingFinancial(true)
       const taxesPercent = normalizeTaxesPercentPerf(Number(editingFields.taxesPercent))
-      // Seguro só pode ser alterado por admin; demais perfis mantêm o valor atual.
-      const seguroPercent = isStrictAdmin
+      const seguroPercent = canEditPerfSeguro
         ? normalizeSeguroPercentPerf(Number(editingFields.seguroPercent))
         : getPerfRouteSeguroPercent(selectedPerfRoute)
       const cteValue = parseCurrencyInput(editingFields.cteValue)
@@ -1256,7 +1402,7 @@ export default function PerformancePage() {
     } finally {
       setSavingFinancial(false)
     }
-  }, [selectedPerfRoute, canManagePerfModal, editingFields, parseCurrencyInput, isStrictAdmin, comerciais])
+  }, [selectedPerfRoute, canManagePerfModal, editingFields, parseCurrencyInput, canEditPerfSeguro, comerciais])
 
   const handleSaveDriverFields = useCallback(async () => {
     if (!selectedPerfRoute || !canManagePerfModal) return
@@ -1515,24 +1661,50 @@ export default function PerformancePage() {
               <option value="custom" className={selectOptionClass}>Personalizado</option>
             </select>
           </div>
-          <div className="flex items-center gap-1 p-1 bg-white/80 dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700">
-            {([
-              { value: 'all', label: 'Todos' },
-              { value: 'pickedUp', label: 'Coletados' },
-              { value: 'delivered', label: 'Entregues' },
-            ] as const).map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setStatusFilter(opt.value)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  statusFilter === opt.value
-                    ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900'
-                    : 'text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden />
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-slate-300 pointer-events-none" aria-hidden />
+            <select
+              value={clientPaymentStatusFilter}
+              onChange={(e) => setClientPaymentStatusFilter(e.target.value as PaymentStatusFilter)}
+              className="appearance-none rounded-xl border border-gray-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900 pl-9 pr-8 py-2 text-xs text-gray-700 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-800/20 cursor-pointer"
+              aria-label="Filtrar por status de pagamento do cliente"
+            >
+              <option value="all" className={selectOptionClass}>Pgto. cliente: todos</option>
+              {PAYMENT_STATUS_FILTER_OPTIONS.map((status) => (
+                <option key={status} value={status} className={selectOptionClass}>Pgto. cliente: {status}</option>
+              ))}
+            </select>
+          </div>
+          <div className="relative">
+            <RouteIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden />
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-slate-300 pointer-events-none" aria-hidden />
+            <select
+              value={freightStatusFilter}
+              onChange={(e) => setFreightStatusFilter(e.target.value as 'all' | RouteStatus)}
+              className="appearance-none rounded-xl border border-gray-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900 pl-9 pr-8 py-2 text-xs text-gray-700 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-800/20 cursor-pointer"
+              aria-label="Filtrar por status do frete"
+            >
+              <option value="all" className={selectOptionClass}>Status frete: todos</option>
+              {PERF_ROUTE_STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status} className={selectOptionClass}>Status frete: {perfDetailStatusLabel(status)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="relative">
+            <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden />
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-slate-300 pointer-events-none" aria-hidden />
+            <select
+              value={driverPaymentStatusFilter}
+              onChange={(e) => setDriverPaymentStatusFilter(e.target.value as PaymentStatusFilter)}
+              className="appearance-none rounded-xl border border-gray-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900 pl-9 pr-8 py-2 text-xs text-gray-700 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-800/20 cursor-pointer"
+              aria-label="Filtrar por status de pagamento do motorista"
+            >
+              <option value="all" className={selectOptionClass}>Pgto. motorista: todos</option>
+              {PAYMENT_STATUS_FILTER_OPTIONS.map((status) => (
+                <option key={status} value={status} className={selectOptionClass}>Pgto. motorista: {status}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
@@ -1946,6 +2118,60 @@ export default function PerformancePage() {
 
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <h3 className="text-sm font-semibold text-gray-900">Informações do frete</h3>
+                      {editingFreightInfo ? (
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => {
+                            setEditingFreightInfo(false)
+                            setEditingFreightInfoFields({
+                              companyName: selectedPerfRoute.company_name ?? '',
+                              companyResponsible: selectedPerfRoute.company_responsible ?? '',
+                              companyPhone: selectedPerfRoute.company_phone ?? '',
+                              companyEmail: selectedPerfRoute.company_email ?? '',
+                              origin: selectedPerfRoute.origin ?? '',
+                              originState: selectedPerfRoute.origin_state ?? '',
+                              originAddress: selectedPerfRoute.origin_address ?? '',
+                              destination: selectedPerfRoute.destination ?? '',
+                              destinationState: selectedPerfRoute.destination_state ?? '',
+                              destinationAddress: selectedPerfRoute.destination_address ?? '',
+                              weight: selectedPerfRoute.weight ?? '',
+                              pickupDate: selectedPerfRoute.pickup_date ?? '',
+                              estimatedDelivery: selectedPerfRoute.estimated_delivery ?? '',
+                              paymentStatus: selectedPerfRoute.payment_status ?? '',
+                              paymentType: selectedPerfRoute.payment_type ?? '',
+                              nfValue: selectedPerfRoute.nf_value != null ? String(selectedPerfRoute.nf_value).replace('.', ',') : '',
+                              freightValue: selectedPerfRoute.freight_value != null ? String(selectedPerfRoute.freight_value).replace('.', ',') : '',
+                            })
+                          }} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100" disabled={savingFreightInfo}>Cancelar</button>
+                          <button type="button" onClick={handleSaveFreightInfoFields} className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-60" disabled={savingFreightInfo}>{savingFreightInfo ? 'Salvando...' : 'Salvar'}</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => setEditingFreightInfo(true)} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100">Editar</button>
+                      )}
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <div><label className="block text-xs text-gray-600 mb-1">Nome da empresa</label><input type="text" value={editingFreightInfoFields.companyName} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, companyName: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Responsável</label><input type="text" value={editingFreightInfoFields.companyResponsible} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, companyResponsible: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Telefone / WhatsApp</label><input type="text" value={editingFreightInfoFields.companyPhone} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, companyPhone: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">E-mail</label><input type="email" value={editingFreightInfoFields.companyEmail} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, companyEmail: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Origem</label><input type="text" value={editingFreightInfoFields.origin} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, origin: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">UF origem</label><input type="text" value={editingFreightInfoFields.originState} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, originState: e.target.value.toUpperCase().slice(0, 2) }))} disabled={!editingFreightInfo || savingFreightInfo} maxLength={2} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Endereço origem</label><input type="text" value={editingFreightInfoFields.originAddress} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, originAddress: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Destino</label><input type="text" value={editingFreightInfoFields.destination} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, destination: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">UF destino</label><input type="text" value={editingFreightInfoFields.destinationState} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, destinationState: e.target.value.toUpperCase().slice(0, 2) }))} disabled={!editingFreightInfo || savingFreightInfo} maxLength={2} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Endereço destino</label><input type="text" value={editingFreightInfoFields.destinationAddress} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, destinationAddress: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Peso</label><input type="text" value={editingFreightInfoFields.weight} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, weight: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Coleta</label><input type="date" value={editingFreightInfoFields.pickupDate} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, pickupDate: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Previsão entrega</label><input type="date" value={editingFreightInfoFields.estimatedDelivery} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, estimatedDelivery: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Status pagamento cliente</label><select value={editingFreightInfoFields.paymentStatus} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, paymentStatus: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"><option value="">-</option>{PAYMENT_STATUS_FILTER_OPTIONS.map((status) => (<option key={status} value={status}>{status}</option>))}</select></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Tipo pagamento cliente</label><input type="text" value={editingFreightInfoFields.paymentType} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, paymentType: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">NF</label><input type="text" value={editingFreightInfoFields.nfValue} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, nfValue: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} placeholder="Ex.: 1234,56" className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                      <div><label className="block text-xs text-gray-600 mb-1">Valor frete</label><input type="text" value={editingFreightInfoFields.freightValue} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, freightValue: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} placeholder="Ex.: 1234,56" className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
                       <h3 className="text-sm font-semibold text-gray-900">Campos financeiros</h3>
                       {editingFinancial ? (
                         <div className="flex items-center gap-2">
@@ -2045,12 +2271,12 @@ export default function PerformancePage() {
                       </div>
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">
-                          Seguro (%) {!isStrictAdmin && <span className="text-gray-400">· só admin</span>}
+                          Seguro (%)
                         </label>
                         <select
                           value={editingFields.seguroPercent}
                           onChange={(e) => setEditingFields((prev) => ({ ...prev, seguroPercent: e.target.value }))}
-                          disabled={!editingFinancial || savingFinancial || !isStrictAdmin}
+                          disabled={!editingFinancial || savingFinancial || !canEditPerfSeguro}
                           className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                         >
                           {SEGURO_PERCENT_CHOICES.map((pct) => (
@@ -2137,9 +2363,9 @@ export default function PerformancePage() {
                           className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                         >
                           <option value="">—</option>
-                          <option value="pending">Pendente</option>
-                          <option value="paid">Pago</option>
-                          <option value="partial">Parcial</option>
+                          {PAYMENT_STATUS_FILTER_OPTIONS.map((status) => (
+                            <option key={status} value={status}>{status}</option>
+                          ))}
                         </select>
                       </div>
                       <div>

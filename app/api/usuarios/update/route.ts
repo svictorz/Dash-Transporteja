@@ -3,9 +3,9 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { isSuperAdminEmail, type DashboardUserRole } from '@/lib/utils/roles'
 
-type AssignableRole = 'admin' | 'financeiro' | 'comercial'
+type AssignableRole = 'admin' | 'financeiro' | 'fiscal' | 'comercial'
 
-const ASSIGNABLE_ROLES: AssignableRole[] = ['admin', 'financeiro', 'comercial']
+const ASSIGNABLE_ROLES: AssignableRole[] = ['admin', 'financeiro', 'fiscal', 'comercial']
 
 function normalizeRole(value: unknown): AssignableRole | undefined | null {
   if (value === undefined) return undefined
@@ -97,3 +97,4 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ user: savedProfile })
 }
+

@@ -6,7 +6,7 @@ export interface Database {
           id: string
           email: string
           name: string | null
-          role: 'admin' | 'comercial' | 'driver'
+          role: 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'driver'
           credits_balance?: number
           phone?: string | null
           avatar_url?: string | null
@@ -21,7 +21,7 @@ export interface Database {
           id?: string
           email: string
           name?: string | null
-          role?: 'admin' | 'comercial' | 'driver'
+          role?: 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'driver'
           credits_balance?: number
           phone?: string | null
           avatar_url?: string | null
@@ -36,7 +36,7 @@ export interface Database {
           id?: string
           email?: string
           name?: string | null
-          role?: 'admin' | 'comercial' | 'driver'
+          role?: 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'driver'
           credits_balance?: number
           phone?: string | null
           avatar_url?: string | null
@@ -136,6 +136,8 @@ export interface Database {
           driver_payment_type?: string | null
           nf_value?: number | null
           cte_value?: number | null
+          vale_pedagio?: number | null
+          vale_pedagio_incluso?: boolean | null
           observation?: string | null
           created_at: string
           updated_at: string
@@ -180,6 +182,8 @@ export interface Database {
           driver_payment_type?: string | null
           nf_value?: number | null
           cte_value?: number | null
+          vale_pedagio?: number | null
+          vale_pedagio_incluso?: boolean | null
           observation?: string | null
           created_at?: string
           updated_at?: string
@@ -224,6 +228,8 @@ export interface Database {
           driver_payment_type?: string | null
           nf_value?: number | null
           cte_value?: number | null
+          vale_pedagio?: number | null
+          vale_pedagio_incluso?: boolean | null
           observation?: string | null
           created_at?: string
           updated_at?: string
@@ -352,4 +358,5 @@ export interface Database {
     }
   }
 }
+
 
