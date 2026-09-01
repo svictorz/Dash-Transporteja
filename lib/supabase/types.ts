@@ -6,7 +6,7 @@ export interface Database {
           id: string
           email: string
           name: string | null
-          role: 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'driver'
+          role: 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'driver'
           credits_balance?: number
           phone?: string | null
           avatar_url?: string | null
@@ -21,7 +21,7 @@ export interface Database {
           id?: string
           email: string
           name?: string | null
-          role?: 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'driver'
+          role?: 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'driver'
           credits_balance?: number
           phone?: string | null
           avatar_url?: string | null
@@ -36,7 +36,7 @@ export interface Database {
           id?: string
           email?: string
           name?: string | null
-          role?: 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'driver'
+          role?: 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'driver'
           credits_balance?: number
           phone?: string | null
           avatar_url?: string | null
@@ -358,5 +358,3 @@ export interface Database {
     }
   }
 }
-
-

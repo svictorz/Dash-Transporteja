@@ -1,8 +1,8 @@
 /** Perfis com acesso ao dashboard web (motorista é app). */
-export type DashboardUserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'driver'
+export type DashboardUserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'driver'
 
 /** Perfis que podem operar o dashboard (excluindo motorista). */
-export const PANEL_ROLES = ['admin', 'comercial', 'financeiro', 'fiscal'] as const
+export const PANEL_ROLES = ['admin', 'comercial', 'financeiro', 'fiscal', 'supervisor'] as const
 export type PanelRole = typeof PANEL_ROLES[number]
 
 /** E-mails com poderes totais de gerenciamento de permissões. */
@@ -23,6 +23,8 @@ export function dashboardRoleLabel(role: string | null | undefined): string {
       return 'Financeiro'
     case 'fiscal':
       return 'Fiscal'
+    case 'supervisor':
+      return 'Supervisor'
     case 'comercial':
     case 'operator':
       return 'Comercial'
@@ -33,9 +35,27 @@ export function dashboardRoleLabel(role: string | null | undefined): string {
   }
 }
 
-/** Vê dados de todos os comerciais (admin, financeiro e fiscal têm o mesmo escopo de visão). */
-export function isAdminOrFinanceiro(role: string | null | undefined): boolean {
+/** Vê dados de todos os comerciais na Performance. */
+export function isGlobalPerformanceViewer(role: string | null | undefined): boolean {
+  return role === 'admin' || role === 'financeiro' || role === 'fiscal' || role === 'supervisor'
+}
+
+/** Pode editar dados operacionais/financeiros dentro da Performance. */
+export function canEditPerformance(role: string | null | undefined): boolean {
   return role === 'admin' || role === 'financeiro' || role === 'fiscal'
+}
+
+/** @deprecated Use isGlobalPerformanceViewer or canEditPerformance for new checks. */
+export function isAdminOrFinanceiro(role: string | null | undefined): boolean {
+  return canEditPerformance(role)
+}
+
+export function canViewRouteInRoutesPage(
+  _role: string | null | undefined,
+  currentUserId: string | null | undefined,
+  routeOwnerId: string | null | undefined,
+): boolean {
+  return Boolean(currentUserId && routeOwnerId && currentUserId === routeOwnerId)
 }
 
 export function isComercial(role: string | null | undefined): boolean {
@@ -47,4 +67,3 @@ export function isSuperAdminEmail(email: string | null | undefined): boolean {
   const normalized = email.trim().toLowerCase()
   return SUPER_ADMIN_EMAILS.includes(normalized as (typeof SUPER_ADMIN_EMAILS)[number])
 }
-

@@ -95,6 +95,10 @@ export function calculateTaxesValue(
   return Math.round(freightValue * p * 100) / 100
 }
 
+export function isValePedagioIncluso(value?: boolean | null): boolean {
+  return value !== false
+}
+
 export function calculateNetFreightValue(
   freightValue?: number | null,
   driverValue?: number | null,
@@ -105,7 +109,7 @@ export function calculateNetFreightValue(
 ): number | null {
   if (freightValue == null) return null
   const taxesValue = calculateTaxesValue(freightValue, taxesPercent) ?? 0
-  const includedValePedagio = valePedagioIncluso ? valePedagioValue ?? 0 : 0
+  const includedValePedagio = isValePedagioIncluso(valePedagioIncluso) ? valePedagioValue ?? 0 : 0
   return Math.round((freightValue - taxesValue - (driverValue ?? 0) - (seguroValue ?? 0) - includedValePedagio) * 100) / 100
 }
 

@@ -8,6 +8,7 @@ import {
   Shield,
   Wallet,
   Briefcase,
+  BarChart3,
   FileText,
   Search,
   Loader2,
@@ -27,7 +28,7 @@ import {
   type DashboardUserRole,
 } from '@/lib/utils/roles'
 
-type AssignableRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal'
+type AssignableRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor'
 
 interface ManagedUser {
   id: string
@@ -66,6 +67,12 @@ const ROLE_OPTIONS: { value: AssignableRole; label: string; description: string;
     icon: FileText,
   },
   {
+    value: 'supervisor',
+    label: 'Supervisor',
+    description: 'Vê Performance de todo o time com filtros globais, sem editar dados nem acessar financeiro/permissões.',
+    icon: BarChart3,
+  },
+  {
     value: 'comercial',
     label: 'Comercial',
     description: 'Vê apenas os fretes, rotas e performance que ele mesmo cadastrou.',
@@ -80,6 +87,8 @@ const ROLE_BADGE: Record<AssignableRole, string> = {
     'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/25 dark:text-amber-200 dark:border-amber-400/50',
   fiscal:
     'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-500/25 dark:text-emerald-200 dark:border-emerald-400/50',
+  supervisor:
+    'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-500/25 dark:text-indigo-200 dark:border-indigo-400/50',
   comercial:
     'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-500/25 dark:text-sky-200 dark:border-sky-400/50',
 }
@@ -172,15 +181,17 @@ export default function UsuariosPage() {
     let admin = 0
     let financeiro = 0
     let fiscal = 0
+    let supervisor = 0
     let comercial = 0
     users.forEach((u) => {
       const r = (u.role as string | null) === 'operator' ? 'comercial' : u.role
       if (r === 'admin') admin += 1
       else if (r === 'financeiro') financeiro += 1
       else if (r === 'fiscal') fiscal += 1
+      else if (r === 'supervisor') supervisor += 1
       else if (r === 'comercial') comercial += 1
     })
-    return { admin, financeiro, fiscal, comercial, total: users.length }
+    return { admin, financeiro, fiscal, supervisor, comercial, total: users.length }
   }, [users])
 
   const handleChangeRole = async (target: ManagedUser, newRole: AssignableRole) => {
@@ -366,7 +377,7 @@ export default function UsuariosPage() {
           <p className="text-sm text-gray-600 mt-1 max-w-2xl">
             Defina o nível de acesso de cada conta. <strong>Comercial</strong> vê apenas os
             próprios fretes, rotas e performance. <strong>Financeiro</strong> e
-            <strong> Administrador</strong> veem tudo.
+            <strong> Administrador</strong> veem tudo. <strong>Supervisor</strong> vê Performance global sem editar.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-3">
@@ -386,11 +397,12 @@ export default function UsuariosPage() {
         </div>
       </header>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
         <SummaryCard label="Total" value={counts.total} icon={Users} tone="slate" />
         <SummaryCard label="Administradores" value={counts.admin} icon={Shield} tone="rose" />
         <SummaryCard label="Financeiro" value={counts.financeiro} icon={Wallet} tone="amber" />
         <SummaryCard label="Fiscal" value={counts.fiscal} icon={FileText} tone="emerald" />
+        <SummaryCard label="Supervisores" value={counts.supervisor} icon={BarChart3} tone="slate" />
         <SummaryCard label="Comerciais" value={counts.comercial} icon={Briefcase} tone="sky" />
       </div>
 
@@ -427,7 +439,7 @@ export default function UsuariosPage() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            {(['all', 'admin', 'financeiro', 'fiscal', 'comercial'] as const).map((key) => {
+            {(['all', 'admin', 'financeiro', 'fiscal', 'supervisor', 'comercial'] as const).map((key) => {
               const active = filter === key
               const label =
                 key === 'all'
@@ -438,6 +450,8 @@ export default function UsuariosPage() {
                   ? 'Financeiro'
                   : key === 'fiscal'
                   ? 'Fiscal'
+                  : key === 'supervisor'
+                  ? 'Supervisor'
                   : 'Comercial'
               return (
                 <button
@@ -563,7 +577,7 @@ export default function UsuariosPage() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <div className="inline-flex rounded-xl border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-900 overflow-hidden">
-                              {(['admin', 'financeiro', 'fiscal', 'comercial'] as AssignableRole[]).map(
+                              {(['admin', 'financeiro', 'fiscal', 'supervisor', 'comercial'] as AssignableRole[]).map(
                                 (roleKey) => {
                                   const isActive =
                                     ((currentRole as string | null) === 'operator' ? 'comercial' : currentRole) ===
@@ -592,6 +606,8 @@ export default function UsuariosPage() {
                                         ? 'Financeiro'
                                         : roleKey === 'fiscal'
                                         ? 'Fiscal'
+                                        : roleKey === 'supervisor'
+                                        ? 'Supervisor'
                                         : 'Comercial'}
                                     </button>
                                   )

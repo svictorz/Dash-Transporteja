@@ -40,6 +40,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(true)
   const { user: currentUser } = useCurrentUser()
+  const isSupervisor = currentUser?.role === 'supervisor'
   /**
    * `isAdmin` controla a visibilidade da aba "Permissões".
    *
@@ -78,7 +79,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
     })
   }
 
-  const menuItems: MenuItem[] = [
+  const defaultMenuItems: MenuItem[] = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/inicio' },
     { icon: Users, label: 'Clientes', path: '/clientes' },
     { icon: Route, label: 'Rotas', path: '/rotas' },
@@ -92,6 +93,10 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
       ? [{ icon: UserCog, label: 'Permissões', path: '/usuarios' } as MenuItem]
       : []),
   ]
+
+  const menuItems: MenuItem[] = isSupervisor
+    ? [{ icon: BarChart3, label: 'Performance', path: '/performance' }]
+    : defaultMenuItems
 
   const handleLogout = async () => {
     try {

@@ -40,6 +40,7 @@ import {
   getRouteSeguroValue,
   normalizeTaxesPercent,
   normalizeSeguroPercent,
+  isValePedagioIncluso,
   calculateTaxesValue,
   calculateSeguroValue,
   calculateCommissionValue,
@@ -127,7 +128,7 @@ export default function ControleFinanceiroPage() {
     nfValue: '',
     cteValue: '',
     valePedagioValue: '',
-    valePedagioIncluso: 'false',
+    valePedagioIncluso: 'true',
     driverValue: '',
     taxesPercent: '18',
     taxesValueManual: '',
@@ -316,7 +317,7 @@ export default function ControleFinanceiroPage() {
         num(r.nf_value),
         num(r.cte_value),
         num(r.vale_pedagio),
-        r.vale_pedagio_incluso ? 'Incluso' : 'Não incluso',
+        isValePedagioIncluso(r.vale_pedagio_incluso) ? 'Incluso' : 'Não incluso',
         num(r.driver_value),
         r.driver_name?.trim() || '',
         num(getRouteTaxesValue(r)),
@@ -353,7 +354,7 @@ export default function ControleFinanceiroPage() {
       nfValue: route.nf_value != null ? String(route.nf_value).replace('.', ',') : '',
       cteValue: route.cte_value != null ? String(route.cte_value).replace('.', ',') : '',
       valePedagioValue: route.vale_pedagio != null ? String(route.vale_pedagio).replace('.', ',') : '',
-      valePedagioIncluso: route.vale_pedagio_incluso ? 'true' : 'false',
+      valePedagioIncluso: isValePedagioIncluso(route.vale_pedagio_incluso) ? 'true' : 'false',
       driverValue: route.driver_value != null ? String(route.driver_value).replace('.', ',') : '',
       taxesPercent: String(getRouteTaxesPercent(route)),
       taxesValueManual: '',
@@ -547,15 +548,15 @@ export default function ControleFinanceiroPage() {
                 className="h-8 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 text-sm text-gray-900 dark:text-slate-100"
                 aria-label="Vale pedágio incluso"
               >
-                <option value="true">✅</option>
-                <option value="false">❌</option>
+                <option value="true">❌ Incluso</option>
+                <option value="false">✅ Não incluso</option>
               </select>
             </label>
           </div>
         ) : (
           <div className="flex flex-col items-end">
             <span className="text-gray-700 dark:text-slate-200">{money(r.vale_pedagio)}</span>
-            <span className="text-xs text-gray-400 dark:text-slate-400">Incluso {r.vale_pedagio_incluso ? '✅' : '❌'}</span>
+            <span className="text-xs text-gray-400 dark:text-slate-400">{isValePedagioIncluso(r.vale_pedagio_incluso) ? 'Incluso ❌' : 'Não incluso ✅'}</span>
           </div>
         )
       case 'motorista':

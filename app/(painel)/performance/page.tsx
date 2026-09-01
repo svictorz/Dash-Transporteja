@@ -34,6 +34,7 @@ import {
   ROUTE_PERIOD_FILTER_HINT,
   filterRoutesByDateRange,
 } from '@/lib/utils/route-period-filter'
+import { canEditPerformance, isGlobalPerformanceViewer } from '@/lib/utils/roles'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 import { useColumnPrefs, type ColumnDef } from '@/lib/hooks/useColumnPrefs'
 import ColumnManager from '@/components/transporteja/ColumnManager'
@@ -56,7 +57,7 @@ const PERF_LABEL_BY_KEY = new Map(PERF_LIST_COLUMNS.map((c) => [c.key, c.label])
 const PERF_LIST_COLUMNS_STORAGE_KEY = 'performance:listColumns'
 
 type Periodo = 'tudo' | 'essaSemana' | 'mesAtual' | '30d' | 'mesPassado' | 'custom'
-type UserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'driver' | 'operator' | null
+type UserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'driver' | 'operator' | null
 type DocumentKey = 'freteDocs'
 type RouteDocumentKind = 'image' | 'pdf'
 type RouteDocument = { path: string; url: string; name: string; kind: RouteDocumentKind }
@@ -975,13 +976,13 @@ export default function PerformancePage() {
         setRole(userRole)
         setCurrentUserName(me?.name || me?.email || sessionEmail || 'Usuário')
 
-        const isAdmin = userRole === 'admin' || userRole === 'financeiro' || userRole === 'fiscal'
+        const canViewGlobalPerformance = isGlobalPerformanceViewer(userRole)
 
         // Default do filtro de vendedor: admin/financeiro/fiscal abrem com o time
         // inteiro (senão a tela zera quando a conta do gestor não criou fretes
         // próprios); demais perfis abrem com os próprios registros.
         if (!didInitSelectedComercial) {
-          setSelectedComercial(isAdmin ? 'all' : uid)
+          setSelectedComercial(canViewGlobalPerformance ? 'all' : uid)
           setDidInitSelectedComercial(true)
         }
 
@@ -994,7 +995,7 @@ export default function PerformancePage() {
         // para conseguir resolver o nome do vendedor mesmo quando o frete foi criado
         // por outro perfil (admin, etc.). O dropdown de filtro continua focado em
         // vendedores (comercial/operator) porque é o caso de uso principal.
-        const usersQuery = isAdmin
+        const usersQuery = canViewGlobalPerformance
           ? supabase
               .from('users')
               .select('id, name, email, role, commission_rate')
@@ -1015,7 +1016,7 @@ export default function PerformancePage() {
          * Demais perfis do painel: mesmos fretes retornados pela query — o RLS já limita o que o usuário pode ver.
          * Antes filtrávamos só por created_by_user_id; fretes antigos ou sem responsável zeravam a tela.
          */
-        const scopedRows = isAdmin ? normalizedRows : normalizedRows
+        const scopedRows = canViewGlobalPerformance ? normalizedRows : normalizedRows
 
         if (cancelled) return
         setRows(scopedRows)
@@ -1167,20 +1168,21 @@ export default function PerformancePage() {
     [periodRows],
   )
 
-  const isAdmin = role === 'admin' || role === 'financeiro' || role === 'fiscal'
+  const canViewGlobalPerformance = isGlobalPerformanceViewer(role)
   const isStrictAdmin = role === 'admin'
-  const canManagePerfModal = role === 'admin' || role === 'financeiro' || role === 'fiscal'
+  const canManagePerfModal = canEditPerformance(role)
+  const canViewPerfModalDetails = canManagePerfModal || role === 'supervisor'
   const canEditPerfSeguro = canManagePerfModal
-  /** Coluna Rotas: admin/financeiro/fiscal (detalhe na própria página) ou link para fretes próprios. */
+  /** Coluna Rotas: gestores/supervisor veem detalhe na própria página; demais veem os próprios fretes. */
   const showRotasColumn = useMemo(
     () =>
       Boolean(
         currentUserId &&
           detailedRows.length > 0 &&
-          (isAdmin ||
+          (canViewGlobalPerformance ||
             detailedRows.some(({ route: r }) => r.created_by_user_id && r.created_by_user_id === currentUserId)),
       ),
-    [currentUserId, detailedRows, isAdmin],
+    [currentUserId, detailedRows, canViewGlobalPerformance],
   )
 
   const parseCurrencyInput = useCallback((value: string) => {
@@ -1593,10 +1595,14 @@ export default function PerformancePage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Performance</h1>
           <p className="text-sm text-gray-600 mt-1">
-            {isAdmin
+            {canViewGlobalPerformance
               ? selectedComercial === 'all'
-                ? role === 'financeiro' || role === 'fiscal'
+                ? role === 'financeiro'
                   ? 'Visão financeira: performance de todos os comerciais'
+                  : role === 'fiscal'
+                  ? 'Visão fiscal: performance de todos os comerciais'
+                  : role === 'supervisor'
+                  ? 'Visão de supervisão: performance de todos os comerciais'
                   : 'Visão da performance de todo o time comercial'
                 : `Performance de ${selectedComercialLabel}`
               : `Métricas dos fretes no período — ${currentUserName}`}
@@ -1607,14 +1613,14 @@ export default function PerformancePage() {
             ) : null}
           </p>
           <p className="text-xs text-gray-500 mt-1 max-w-2xl">{ROUTE_PERIOD_FILTER_HINT}</p>
-          {!isAdmin && (
+          {!canViewGlobalPerformance && (
             <p className="text-xs text-gray-500 mt-2 max-w-xl">
               Os totais refletem os fretes disponíveis para sua conta no período, incluindo registros antigos sem responsável definido.
             </p>
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {isAdmin && (
+          {canViewGlobalPerformance && (
             <div className="relative">
               <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden />
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-slate-300 pointer-events-none" aria-hidden />
@@ -1810,7 +1816,7 @@ export default function PerformancePage() {
         </div>
       </div>
 
-      {isAdmin ? (
+      {canViewGlobalPerformance ? (
         <div className="rounded-2xl border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-900 overflow-hidden">
           <div className="px-4 md:px-5 py-4 border-b border-gray-100 dark:border-slate-500 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
@@ -1975,7 +1981,7 @@ export default function PerformancePage() {
                         ))}
                         {showRotasColumn ? (
                           <td className="px-4 py-3 align-top text-right whitespace-nowrap">
-                            {isAdmin || (r.created_by_user_id && r.created_by_user_id === currentUserId) ? (
+                            {canViewGlobalPerformance || (r.created_by_user_id && r.created_by_user_id === currentUserId) ? (
                               <button
                                 type="button"
                                 onClick={() => setSelectedPerfRoute(r)}
@@ -2069,7 +2075,7 @@ export default function PerformancePage() {
             </div>
             <div className="p-6">
               <PerfFreightDetailPanel route={selectedPerfRoute} visibleMoney={visibleMoney} />
-              {canManagePerfModal ? (
+              {canViewPerfModalDetails ? (
                 <div className="mt-6 space-y-6">
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -2096,7 +2102,7 @@ export default function PerformancePage() {
                             {savingObservation ? 'Salvando...' : 'Salvar'}
                           </button>
                         </div>
-                      ) : (
+                      ) : canManagePerfModal ? (
                         <button
                           type="button"
                           onClick={() => setEditingObservation(true)}
@@ -2104,7 +2110,7 @@ export default function PerformancePage() {
                         >
                           Editar
                         </button>
-                      )}
+                      ) : null}
                     </div>
                     <textarea
                       value={editingObservationValue}
@@ -2145,9 +2151,9 @@ export default function PerformancePage() {
                           }} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100" disabled={savingFreightInfo}>Cancelar</button>
                           <button type="button" onClick={handleSaveFreightInfoFields} className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-60" disabled={savingFreightInfo}>{savingFreightInfo ? 'Salvando...' : 'Salvar'}</button>
                         </div>
-                      ) : (
+                      ) : canManagePerfModal ? (
                         <button type="button" onClick={() => setEditingFreightInfo(true)} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100">Editar</button>
-                      )}
+                      ) : null}
                     </div>
                     <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       <div><label className="block text-xs text-gray-600 mb-1">Nome da empresa</label><input type="text" value={editingFreightInfoFields.companyName} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, companyName: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
@@ -2210,7 +2216,7 @@ export default function PerformancePage() {
                             {savingFinancial ? 'Salvando...' : 'Salvar'}
                           </button>
                         </div>
-                      ) : (
+                      ) : canManagePerfModal ? (
                         <button
                           type="button"
                           onClick={() => setEditingFinancial(true)}
@@ -2218,7 +2224,7 @@ export default function PerformancePage() {
                         >
                           Editar
                         </button>
-                      )}
+                      ) : null}
                     </div>
                     <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                       <div>
@@ -2321,7 +2327,7 @@ export default function PerformancePage() {
                             {savingDriver ? 'Salvando...' : 'Salvar'}
                           </button>
                         </div>
-                      ) : (
+                      ) : canManagePerfModal ? (
                         <button
                           type="button"
                           onClick={() => setEditingDriver(true)}
@@ -2329,7 +2335,7 @@ export default function PerformancePage() {
                         >
                           Editar
                         </button>
-                      )}
+                      ) : null}
                     </div>
                     <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       <div>
@@ -2411,10 +2417,14 @@ export default function PerformancePage() {
                         {documents.freteDocs.length} {documents.freteDocs.length === 1 ? 'arquivo' : 'arquivos'}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 mb-3">
-                      Adicione imagens ou PDF (até 20 MB por PDF) sem sair da tela de performance.
-                    </p>
-                    <input
+                    {canManagePerfModal ? (
+                      <p className="text-sm text-gray-600 mb-3">
+                        Adicione imagens ou PDF (até 20 MB por PDF) sem sair da tela de performance.
+                      </p>
+                    ) : null}
+                    {canManagePerfModal ? (
+                      <>
+                        <input
                       id="perf-upload-frete-docs"
                       type="file"
                       accept="image/*,application/pdf"
@@ -2427,8 +2437,8 @@ export default function PerformancePage() {
                         e.target.value = ''
                       }}
                     />
-                    <label
-                      htmlFor="perf-upload-frete-docs"
+                      <label
+                        htmlFor="perf-upload-frete-docs"
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg text-gray-700 ${
                         uploadingDocument === 'freteDocs' ? 'cursor-wait opacity-60' : 'hover:bg-gray-100 cursor-pointer'
                       }`}
@@ -2439,7 +2449,9 @@ export default function PerformancePage() {
                         <Upload className="w-3.5 h-3.5" />
                       )}
                       {uploadingDocument === 'freteDocs' ? 'Enviando...' : 'Adicionar arquivos'}
-                    </label>
+                        </label>
+                      </>
+                    ) : null}
 
                     {documents.freteDocs.length > 0 ? (
                       <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -2479,9 +2491,10 @@ export default function PerformancePage() {
                                   />
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveDocument('freteDocs', doc)}
+                              {canManagePerfModal ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDocument('freteDocs', doc)}
                                 disabled={isRemoving}
                                 className="absolute top-1.5 right-1.5 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/90 text-red-600 shadow border border-gray-200 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-wait"
                                 title="Remover arquivo"
@@ -2493,6 +2506,7 @@ export default function PerformancePage() {
                                   <Trash2 className="w-3.5 h-3.5" />
                                 )}
                               </button>
+                              ) : null}
                             </div>
                           )
                         })}

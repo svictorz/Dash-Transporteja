@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { ShieldAlert, LogOut } from 'lucide-react'
 import SidebarTransporteja from '@/components/transporteja/SidebarTransporteja'
 import TopBarTransporteja from '@/components/transporteja/TopBarTransporteja'
@@ -10,12 +10,20 @@ import { useAuthState } from '@/lib/hooks/useAuthState'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { PANEL_ROLES, isSuperAdminEmail } from '@/lib/utils/roles'
 
+const SUPERVISOR_ALLOWED_ROUTES = ['/performance', '/configuracoes', '/dados-pessoais'] as const
+
+function isSupervisorAllowedPath(pathname: string | null): boolean {
+  if (!pathname) return false
+  return SUPERVISOR_ALLOWED_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))
+}
+
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { session, loading: authLoading } = useAuthState()
   const { user: currentUser, loading: userLoading } = useCurrentUser()
   const [mounted, setMounted] = useState(false)
@@ -30,6 +38,13 @@ export default function DashboardLayout({
     if (!mounted || authLoading) return
     if (!session) router.replace('/login')
   }, [mounted, authLoading, session, router])
+
+  useEffect(() => {
+    if (!mounted || authLoading || userLoading) return
+    if ((currentUser?.role ?? null) === 'supervisor' && !isSupervisorAllowedPath(pathname)) {
+      router.replace('/performance')
+    }
+  }, [mounted, authLoading, userLoading, currentUser?.role, pathname, router])
 
   // Fechar menu mobile ao redimensionar para desktop
   useEffect(() => {

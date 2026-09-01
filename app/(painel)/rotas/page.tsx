@@ -42,6 +42,7 @@ import {
   normalizeTaxesPercent,
 } from '@/lib/utils/freight-financials'
 import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
+import { canViewRouteInRoutesPage } from '@/lib/utils/roles'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 import {
   ROUTE_PERIOD_FILTER_HINT,
@@ -166,8 +167,6 @@ export default function RotasPage() {
   const searchParams = useSearchParams()
   const processedRouteQueryId = useRef<string | null>(null)
   const isAdminUser = currentUser?.role === 'admin'
-  const isFinanceiroUser = currentUser?.role === 'financeiro'
-  const canSeeAllRoutes = isAdminUser || isFinanceiroUser
   /** Motorista vê a rota mas não envia/remove comprovantes (anexos são do escritório). */
   const canManageFreightDocuments = currentUser?.role !== 'driver'
   const { routes, loading: routesLoading, error: routesError, createRoute, updateRoute, deleteRoute } = useRoutes()
@@ -175,14 +174,13 @@ export default function RotasPage() {
   const { drivers, loading: driversLoading } = useDrivers()
 
   /**
-   * Cada usuário vê apenas os fretes que ele criou.
+   * Na aba Rotas, cada usuário vê apenas os fretes que ele mesmo adicionou.
    */
   const myRoutes = useMemo(() => {
     const uid = session?.user?.id
     if (!uid) return []
-    if (canSeeAllRoutes) return routes
-    return routes.filter((r) => r.created_by_user_id === uid)
-  }, [routes, session?.user?.id, canSeeAllRoutes])
+    return routes.filter((r) => canViewRouteInRoutesPage(currentUser?.role, uid, r.created_by_user_id ?? null))
+  }, [routes, session?.user?.id, currentUser?.role])
 
   const myClients = useMemo(() => {
     const uid = session?.user?.id
