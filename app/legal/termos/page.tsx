@@ -120,7 +120,7 @@ export default function TermosUsoPage() {
               <section className="mb-8">
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">7. Limitação de Responsabilidade</h2>
                 <p className="text-gray-700 leading-relaxed mb-4">
-                  O TransporteJá é fornecido "como está", sem garantias de qualquer tipo. Não nos 
+                  O TransporteJá é fornecido &quot;como está&quot;, sem garantias de qualquer tipo. Não nos
                   responsabilizamos por:
                 </p>
                 <ul className="list-disc list-inside text-gray-700 space-y-2 ml-4">

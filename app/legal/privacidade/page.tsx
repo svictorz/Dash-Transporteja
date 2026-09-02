@@ -40,7 +40,7 @@ export default function PoliticaPrivacidadePage() {
                   1. Introdução
                 </h2>
                 <p className="text-gray-700 leading-relaxed">
-                  A TransporteJá ("nós", "nosso" ou "empresa") está comprometida em proteger a privacidade 
+                  A TransporteJá (&quot;nós&quot;, &quot;nosso&quot; ou &quot;empresa&quot;) está comprometida em proteger a privacidade
                   e os dados pessoais de nossos usuários. Esta Política de Privacidade descreve como 
                   coletamos, usamos, armazenamos e protegemos suas informações pessoais em conformidade 
                   com a Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018).
