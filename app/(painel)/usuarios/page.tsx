@@ -220,6 +220,14 @@ export default function UsuariosPage() {
       setUsers((prev) =>
         prev.map((u) => (u.id === target.id ? { ...u, role: newRole } : u)),
       )
+      if (me?.id === target.id) {
+        window.dispatchEvent(new CustomEvent('transporteja:profile-updated', { detail: { role: newRole } }))
+        if (newRole === 'supervisor') {
+          router.replace('/performance')
+        } else {
+          router.refresh()
+        }
+      }
       setSavedId(target.id)
       setTimeout(() => setSavedId((curr) => (curr === target.id ? null : curr)), 2000)
     } catch (e: unknown) {
@@ -781,6 +789,8 @@ function CreateUserModal({
                         ? 'Financeiro'
                         : option.value === 'fiscal'
                         ? 'Fiscal'
+                        : option.value === 'supervisor'
+                        ? 'Supervisor'
                         : 'Comercial'}
                     </span>
                   </button>

@@ -28,7 +28,7 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
   const [currentDate, setCurrentDate] = useState<string>('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
-  const userLoadAttemptedRef = useRef(false)
+  const loadingUserRef = useRef(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -36,8 +36,8 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
     let isMounted = true
     
     const loadUser = async () => {
-      if (userLoadAttemptedRef.current) return
-      userLoadAttemptedRef.current = true
+      if (loadingUserRef.current) return
+      loadingUserRef.current = true
       
       try {
         const { data: { session } } = await supabase.auth.getSession()
@@ -74,6 +74,8 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
         }
       } catch {
         /* silently fail */
+      } finally {
+        loadingUserRef.current = false
       }
     }
 
@@ -81,14 +83,12 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return
-      if (event === 'TOKEN_REFRESHED') return
-      
       if (event === 'SIGNED_IN' && session?.user) {
-        userLoadAttemptedRef.current = false
         loadUser()
       } else if (event === 'SIGNED_OUT') {
         setUser(null)
-        userLoadAttemptedRef.current = false
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        loadUser()
       }
     })
 
@@ -99,6 +99,19 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
     }
 
     window.addEventListener('transporteja:profile-updated', handleProfileUpdated)
+
+    const handleFocus = () => {
+      void loadUser()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadUser()
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     // Fechar dropdown ao clicar fora
     const handleClickOutside = (event: MouseEvent) => {
