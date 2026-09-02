@@ -62,6 +62,11 @@ export function isComercial(role: string | null | undefined): boolean {
   return role === 'comercial' || role === 'operator'
 }
 
+/** Perfis exibidos como responsáveis no filtro de vendedores da Performance. */
+export function isPerformanceSellerRole(role: string | null | undefined): boolean {
+  return role === 'comercial' || role === 'operator' || role === 'admin' || role === 'supervisor'
+}
+
 export function isSuperAdminEmail(email: string | null | undefined): boolean {
   if (!email) return false
   const normalized = email.trim().toLowerCase()

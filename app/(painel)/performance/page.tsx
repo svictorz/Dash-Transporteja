@@ -34,7 +34,11 @@ import {
   ROUTE_PERIOD_FILTER_HINT,
   filterRoutesByDateRange,
 } from '@/lib/utils/route-period-filter'
-import { canEditPerformance, isGlobalPerformanceViewer } from '@/lib/utils/roles'
+import {
+  canEditPerformance,
+  isGlobalPerformanceViewer,
+  isPerformanceSellerRole,
+} from '@/lib/utils/roles'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 import { useColumnPrefs, type ColumnDef } from '@/lib/hooks/useColumnPrefs'
 import ColumnManager from '@/components/transporteja/ColumnManager'
@@ -1632,7 +1636,7 @@ export default function PerformancePage() {
               >
                 <option value="all" className={selectOptionClass}>Todos os vendedores ({periodRows.length})</option>
                 {comerciais
-                  .filter((u) => u.role === 'comercial' || u.role === 'operator' || u.role === 'admin')
+                  .filter((u) => isPerformanceSellerRole(u.role))
                   .map((u) => {
                     const count = periodRows.filter((r) => r.created_by_user_id === u.id).length
                     const label = u.name || u.email
