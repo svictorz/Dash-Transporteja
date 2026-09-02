@@ -57,7 +57,8 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
               if (isMounted) {
                 setUser({
                   name: session.user.email?.split('@')[0] || 'Usuário',
-                  email: session.user.email || ''
+                  email: session.user.email || '',
+                  role: (session.user.app_metadata?.role as string | undefined) || (session.user.user_metadata?.role as string | undefined) || null
                 })
               }
             }
@@ -65,7 +66,8 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
             if (isMounted) {
               setUser({
                 name: session.user.email?.split('@')[0] || 'Usuário',
-                email: session.user.email || ''
+                email: session.user.email || '',
+                role: (session.user.app_metadata?.role as string | undefined) || (session.user.user_metadata?.role as string | undefined) || null
               })
             }
           }
@@ -126,6 +128,8 @@ export default function TopBarTransporteja({ onMenuClick }: TopBarTransportejaPr
       isMounted = false
       subscription.unsubscribe()
       window.removeEventListener('transporteja:profile-updated', handleProfileUpdated)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [])

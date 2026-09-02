@@ -200,7 +200,6 @@ export function useCurrentUser(): UseCurrentUserResult {
     load()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'TOKEN_REFRESHED') return
       if (event === 'SIGNED_OUT') {
         setUser(null)
         return
