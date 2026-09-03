@@ -67,6 +67,24 @@ export function isPerformanceSellerRole(role: string | null | undefined): boolea
   return role === 'comercial' || role === 'operator' || role === 'admin' || role === 'supervisor'
 }
 
+const SUPERVISOR_ALLOWED_PANEL_PATHS = [
+  '/inicio',
+  '/clientes',
+  '/rotas',
+  '/propostas',
+  '/calendario',
+  '/performance',
+  '/configuracoes',
+  '/dados-pessoais',
+] as const
+
+export function canSupervisorAccessPanelPath(pathname: string | null): boolean {
+  if (!pathname) return false
+  return SUPERVISOR_ALLOWED_PANEL_PATHS.some(
+    (route) => pathname === route || pathname.startsWith(route + '/'),
+  )
+}
+
 export function isSuperAdminEmail(email: string | null | undefined): boolean {
   if (!email) return false
   const normalized = email.trim().toLowerCase()

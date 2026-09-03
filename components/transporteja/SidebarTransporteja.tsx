@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
-import { isSuperAdminEmail } from '@/lib/utils/roles'
+import { canSupervisorAccessPanelPath, isSuperAdminEmail } from '@/lib/utils/roles'
 
 interface MenuItem {
   icon: LucideIcon
@@ -95,7 +95,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
   ]
 
   const menuItems: MenuItem[] = isSupervisor
-    ? [{ icon: BarChart3, label: 'Performance', path: '/performance' }]
+    ? defaultMenuItems.filter((item) => canSupervisorAccessPanelPath(item.path))
     : defaultMenuItems
 
   const handleLogout = async () => {

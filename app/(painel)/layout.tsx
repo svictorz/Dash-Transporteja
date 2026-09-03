@@ -8,14 +8,7 @@ import TopBarTransporteja from '@/components/transporteja/TopBarTransporteja'
 import BrandLoading from '@/components/transporteja/BrandLoading'
 import { useAuthState } from '@/lib/hooks/useAuthState'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
-import { PANEL_ROLES, isSuperAdminEmail } from '@/lib/utils/roles'
-
-const SUPERVISOR_ALLOWED_ROUTES = ['/performance', '/configuracoes', '/dados-pessoais'] as const
-
-function isSupervisorAllowedPath(pathname: string | null): boolean {
-  if (!pathname) return false
-  return SUPERVISOR_ALLOWED_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))
-}
+import { canSupervisorAccessPanelPath, PANEL_ROLES, isSuperAdminEmail } from '@/lib/utils/roles'
 
 export default function DashboardLayout({
   children,
@@ -41,7 +34,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!mounted || authLoading || userLoading) return
-    if ((currentUser?.role ?? null) === 'supervisor' && !isSupervisorAllowedPath(pathname)) {
+    if ((currentUser?.role ?? null) === 'supervisor' && !canSupervisorAccessPanelPath(pathname)) {
       router.replace('/performance')
     }
   }, [mounted, authLoading, userLoading, currentUser?.role, pathname, router])
@@ -145,4 +138,3 @@ export default function DashboardLayout({
     </div>
   )
 }
-
