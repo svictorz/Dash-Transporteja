@@ -62,6 +62,31 @@ export function isComercial(role: string | null | undefined): boolean {
   return role === 'comercial' || role === 'operator'
 }
 
+/**
+ * Perfis cujo acesso a dados operacionais (fretes, clientes, compromissos)
+ * é limitado aos próprios registros.
+ *
+ * Espelha `public.is_owner_scoped_writer()` (migration 044). Ao mudar um,
+ * mude o outro — quem manda é o RLS; isto aqui só evita oferecer na tela
+ * uma ação que o banco vai recusar.
+ */
+export function shouldScopeOperationalDataToOwner(role: string | null | undefined): boolean {
+  return isComercial(role) || role === 'supervisor'
+}
+
+/**
+ * Espelha a policy "Clients - insert isolated" (migration 044):
+ * fiscal enxerga clientes mas não cria.
+ */
+export function canCreateClients(role: string | null | undefined): boolean {
+  return (
+    role === 'admin' ||
+    role === 'financeiro' ||
+    role === 'supervisor' ||
+    isComercial(role)
+  )
+}
+
 /** Perfis exibidos como responsáveis no filtro de vendedores da Performance. */
 export function isPerformanceSellerRole(role: string | null | undefined): boolean {
   return role === 'comercial' || role === 'operator' || role === 'admin' || role === 'supervisor'

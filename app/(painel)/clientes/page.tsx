@@ -12,9 +12,15 @@ import { CEPData } from '@/lib/services/cep'
 import { searchCNPJ } from '@/lib/services/cnpj'
 import { findCityMatch, prefetchCityIndex } from '@/lib/services/ibge'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
+import { canCreateClients } from '@/lib/utils/roles'
 
 export default function ClientesPage() {
   const { clients, loading, error, createClient, updateClient, deleteClient } = useClients()
+  const { user: currentUser } = useCurrentUser()
+  // Espelha a policy "Clients - insert isolated" (migration 044):
+  // não oferece um botão que o RLS vai recusar.
+  const canCreate = canCreateClients(currentUser?.role)
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingClient, setEditingClient] = useState<Client | null>(null)
@@ -338,15 +344,17 @@ export default function ClientesPage() {
               {filteredClients.length}
             </span>
           </div>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => handleOpenModal()}
-            className="px-4 py-2 bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 rounded-lg hover:bg-slate-700 dark:hover:bg-slate-300 transition-colors font-medium flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Adicionar Cliente
-          </motion.button>
+          {canCreate && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => handleOpenModal()}
+              className="px-4 py-2 bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 rounded-lg hover:bg-slate-700 dark:hover:bg-slate-300 transition-colors font-medium flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Adicionar Cliente
+            </motion.button>
+          )}
         </div>
       </FadeIn>
 
@@ -389,7 +397,7 @@ export default function ClientesPage() {
               <p className="mb-2">
                 {searchTerm ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado'}
               </p>
-              {!searchTerm && (
+              {!searchTerm && canCreate && (
                 <button
                   onClick={() => handleOpenModal()}
                   className="text-sm text-slate-800 dark:text-slate-200 hover:text-slate-600 dark:hover:text-slate-100 font-medium"
