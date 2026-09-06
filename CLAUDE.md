@@ -18,7 +18,9 @@ npm run build        # build de produção
 npm run lint         # ESLint via next lint
 ```
 
-Não há testes automatizados neste projeto.
+Testes: arquivos `lib/utils/*.test.mjs` rodam com `node <arquivo>` (usam `node:test`,
+sem framework). Não há script npm que rode todos. `npm run lint` **não está
+configurado** — abre o wizard de setup do ESLint.
 
 ## Arquitetura
 
@@ -63,7 +65,7 @@ Camada de serviço em `lib/services/` faz queries ao Supabase e retorna dados ti
 
 `middleware.ts` cobre três responsabilidades:
 1. Redirect 308 de URLs legadas `/dashboard/*` → `/` (via `legacyDashboardRewrite`).
-2. Rate limiting por IP em endpoints sensíveis (`/api/cotacao/rota`, `/api/rotas/distancia`, `/api/geocode/reverse`).
+2. Rate limiting por IP em `/api/rotas/distancia`.
 3. `updateSession` para renovação de cookie de sessão Supabase (apenas produção).
 
 ### Variáveis de Ambiente
@@ -71,10 +73,7 @@ Camada de serviço em `lib/services/` faz queries ao Supabase e retorna dados ti
 ```
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
-# Opcionais — cotação de frete:
-COTACAO_DIESEL_PRECO_LITRO=
-COTACAO_KM_POR_LITRO=
-COTACAO_PEDAGIO_R_POR_KM=
+# Opcional — identifica a aplicação no Nominatim:
 COTACAO_NOMINATIM_USER_AGENT=
 ```
 
@@ -88,6 +87,10 @@ A tabela `routes` é a entidade central — representa um frete com `freight_id`
 
 O módulo `app/(painel)/propostas/` + `components/propostas/` gera propostas em PDF diretamente no browser (sem backend). Os dados de emitente ficam em `lib/constants/proposta-emitentes.ts` e os cálculos em `lib/utils/proposta-calculo.ts`.
 
-### Cotação de Frete
+### Distância entre Cidades
 
-`app/(painel)/cotacao/` calcula o valor de um frete usando distância real via OSRM (`/api/cotacao/rota`) + geocodificação reversa via Nominatim (`/api/geocode/reverse`). Os parâmetros de diesel/pedágio vêm das env vars.
+`/api/rotas/distancia` resolve origem e destino via Nominatim e calcula a rota
+rodoviária via OSRM, usando `lib/services/cotacao-route.ts`. Consumido por
+`useDebouncedRouteDistance` (tela de Rotas).
+
+A tela de Cotação de frete e a API de geocodificação reversa foram removidas.
