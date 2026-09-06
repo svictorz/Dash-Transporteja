@@ -11,11 +11,8 @@ export const PAINEL_ROUTES = [
   '/performance',
   '/controle-financeiro',
   '/propostas',
-  '/relatorios',
   '/usuarios',
   '/configuracoes',
-  '/cotacao',
-  '/motoristas',
   '/dados-pessoais',
   '/bem-vindo',
 ] as const

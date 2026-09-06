@@ -7,10 +7,8 @@ import { legacyDashboardRewrite } from '@/lib/constants/painel-routes'
  * Limites por endpoint. Subiu o `count` → 429.
  */
 const API_RATE_LIMITS: { prefix: string; limit: number; windowMs: number }[] = [
-  // Cotação consulta serviços externos (Nominatim/OSRM): mais sensível
-  { prefix: '/api/cotacao/rota', limit: 30, windowMs: 60_000 },
+  // Consulta serviços externos (Nominatim/OSRM): mais sensível
   { prefix: '/api/rotas/distancia', limit: 30, windowMs: 60_000 },
-  { prefix: '/api/geocode/reverse', limit: 60, windowMs: 60_000 },
 ]
 
 function getClientIp(request: NextRequest): string {

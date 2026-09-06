@@ -89,25 +89,3 @@ export async function osrmDrivingRoute(
 
   return { distanceM, durationS }
 }
-
-export function parseEnvFloat(name: string, fallback: number): number {
-  const v = process.env[name]
-  if (v == null || v === '') return fallback
-  const n = parseFloat(String(v).replace(',', '.'))
-  return Number.isFinite(n) && n > 0 ? n : fallback
-}
-
-/** R$/L — atualizar semanalmente conforme média ANP (sem API oficial simples). */
-export function getDieselPrecoLitro(): number {
-  return parseEnvFloat('COTACAO_DIESEL_PRECO_LITRO', 6.35)
-}
-
-/** Quantos km o veículo roda com 1 litro (ex.: 3,2 km/L). */
-export function getKmPorLitro(): number {
-  return parseEnvFloat('COTACAO_KM_POR_LITRO', 3.2)
-}
-
-/** Estimativa nacional de pedágio: R$ por km de rodovia (ajuste regional no .env). */
-export function getPedagioReaisPorKm(): number {
-  return parseEnvFloat('COTACAO_PEDAGIO_R_POR_KM', 0.11)
-}
