@@ -23,7 +23,7 @@ import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import type { Route } from '@/lib/services/routes'
 import { formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import { filterRoutesByDateRange } from '@/lib/utils/route-period-filter'
-import { isSuperAdminEmail } from '@/lib/utils/roles'
+import { canManageFinancials, isSuperAdminEmail } from '@/lib/utils/roles'
 import { useColumnPrefs, type ColumnDef } from '@/lib/hooks/useColumnPrefs'
 import BrandLoading from '@/components/transporteja/BrandLoading'
 import ColumnManager from '@/components/transporteja/ColumnManager'
@@ -138,9 +138,10 @@ export default function ControleFinanceiroPage() {
 
   const role = currentUser?.role ?? null
   const roleResolved = currentUser?.roleResolved ?? false
-  const isStrictAdmin = role === 'admin' || isSuperAdminEmail(currentUser?.email)
-  const hasAccess =
-    role === 'admin' || role === 'financeiro' || isSuperAdminEmail(currentUser?.email)
+  // Acesso e edicao seguem a mesma regra do banco (migrations 045 e 046):
+  // admin, financeiro e fiscal gerenciam o financeiro por completo.
+  const canManage = canManageFinancials(role) || isSuperAdminEmail(currentUser?.email)
+  const hasAccess = canManage
 
   useEffect(() => {
     try {
@@ -373,7 +374,7 @@ export default function ControleFinanceiroPage() {
       try {
         const taxesPercent = normalizeTaxesPercent(Number(editFields.taxesPercent))
         // Seguro só pode ser alterado por admin; financeiro mantém o valor atual.
-        const seguroPercent = isStrictAdmin
+        const seguroPercent = canManage
           ? normalizeSeguroPercent(Number(editFields.seguroPercent))
           : getRouteSeguroPercent(route)
         const freightValue = parseCurrencyInput(editFields.freightValue)
@@ -388,7 +389,7 @@ export default function ControleFinanceiroPage() {
         const manualTaxes = parseCurrencyInput(editFields.taxesValueManual)
         const taxesValue = manualTaxes != null ? manualTaxes : calculateTaxesValue(baseFreight, taxesPercent)
         // Seguro: admin pode digitar o valor em R$; se em branco, calcula pelo %.
-        const manualSeguro = isStrictAdmin ? parseCurrencyInput(editFields.seguroValueManual) : null
+        const manualSeguro = canManage ? parseCurrencyInput(editFields.seguroValueManual) : null
         const seguroValue = manualSeguro != null ? manualSeguro : calculateSeguroValue(nfValue, seguroPercent)
         const valePedagioDiscount = valePedagioIncluso ? valePedagioValue ?? 0 : 0
         const netFreightValue =
@@ -421,12 +422,12 @@ export default function ControleFinanceiroPage() {
         setSavingId(null)
       }
     },
-    [editFields, sellerById, updateRoute, isStrictAdmin],
+    [editFields, sellerById, updateRoute, canManage],
   )
 
   const handleToggleCommissionPaid = useCallback(
     async (route: Route) => {
-      if (!isStrictAdmin) return
+      if (!canManage) return
       setCommissionToggleId(route.id)
       try {
         await updateRoute(route.id, { commission_paid: !route.commission_paid })
@@ -436,7 +437,7 @@ export default function ControleFinanceiroPage() {
         setCommissionToggleId(null)
       }
     },
-    [isStrictAdmin, updateRoute],
+    [canManage, updateRoute],
   )
 
   /** Conteúdo de uma célula por chave de coluna (exibição ou edição). */
@@ -453,11 +454,11 @@ export default function ControleFinanceiroPage() {
     const liveTaxesAuto = calculateTaxesValue(liveBaseFreight, normalizeTaxesPercent(Number(editFields.taxesPercent)))
     const liveTaxesManual = parseCurrencyInput(editFields.taxesValueManual)
     const liveTaxes = liveTaxesManual != null ? liveTaxesManual : liveTaxesAuto
-    const liveSeguroPct = isStrictAdmin
+    const liveSeguroPct = canManage
       ? normalizeSeguroPercent(Number(editFields.seguroPercent))
       : getRouteSeguroPercent(r)
     const liveSeguroAuto = calculateSeguroValue(liveNfValue, liveSeguroPct)
-    const liveSeguroManual = isStrictAdmin ? parseCurrencyInput(editFields.seguroValueManual) : null
+    const liveSeguroManual = canManage ? parseCurrencyInput(editFields.seguroValueManual) : null
     const liveSeguro = liveSeguroManual != null ? liveSeguroManual : liveSeguroAuto
     const liveValePedagio = parseCurrencyInput(editFields.valePedagioValue)
     const liveValePedagioDiscount = editFields.valePedagioIncluso === 'true' ? liveValePedagio ?? 0 : 0
@@ -607,7 +608,7 @@ export default function ControleFinanceiroPage() {
         )
       case 'seguro':
         return editing ? (
-          isStrictAdmin ? (
+          canManage ? (
             <input
               inputMode="decimal"
               value={editFields.seguroValueManual}
@@ -647,7 +648,7 @@ export default function ControleFinanceiroPage() {
               <CommissionPaidStatus
                 paid={r.commission_paid === true}
                 loading={commissionToggleId === r.id}
-                editable={isStrictAdmin}
+                editable={canManage}
                 onToggle={() => void handleToggleCommissionPaid(r)}
               />
             </span>

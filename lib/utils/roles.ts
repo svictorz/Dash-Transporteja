@@ -50,6 +50,18 @@ export function isAdminOrFinanceiro(role: string | null | undefined): boolean {
   return canEditPerformance(role)
 }
 
+/**
+ * Acessa o Controle Financeiro e edita tudo dentro dele — inclusive valor
+ * de seguro e status de pagamento da comissão.
+ *
+ * Espelha `public.is_admin_or_financeiro()` (migration 045) e o guard de
+ * commission_paid (migration 046). Ao mudar um, mude os outros: quem manda
+ * é o banco, isto aqui só evita oferecer na tela o que o RLS vai recusar.
+ */
+export function canManageFinancials(role: string | null | undefined): boolean {
+  return role === 'admin' || role === 'financeiro' || role === 'fiscal'
+}
+
 export function canViewRouteInRoutesPage(
   _role: string | null | undefined,
   currentUserId: string | null | undefined,

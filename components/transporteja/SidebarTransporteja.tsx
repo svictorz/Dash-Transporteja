@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
-import { canSupervisorAccessPanelPath, isSuperAdminEmail } from '@/lib/utils/roles'
+import { canManageFinancials, canSupervisorAccessPanelPath, isSuperAdminEmail } from '@/lib/utils/roles'
 
 interface MenuItem {
   icon: LucideIcon
@@ -54,9 +54,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
    * global dos valores na Performance). O super admin entra pelo e-mail.
    */
   const hasFinancialAccess =
-    currentUser?.role === 'admin' ||
-    currentUser?.role === 'financeiro' ||
-    isSuperAdminEmail(currentUser?.email)
+    canManageFinancials(currentUser?.role) || isSuperAdminEmail(currentUser?.email)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
