@@ -60,13 +60,21 @@ export default function PropostasPage() {
       abortRef.current[emitente] = controller
 
       try {
-        const params = new URLSearchParams({ co, uo, cd, ud })
-        const res = await fetch(`/api/calcular-distancia?${params}`, { signal: controller.signal })
+        // Usa /api/rotas/distancia (o mesmo da tela de Rotas): ele consulta o
+        // Nominatim em sequência, respeitando o limite de 1 req/s. A antiga
+        // /api/calcular-distancia disparava as duas cidades em paralelo e a
+        // segunda voltava vazia, resultando em "cidade não encontrada".
+        const params = new URLSearchParams({
+          origem: [co, uo].filter(Boolean).join(' '),
+          destino: [cd, ud].filter(Boolean).join(' '),
+        })
+        const res = await fetch(`/api/rotas/distancia?${params}`, { signal: controller.signal })
         if (!res.ok) throw new Error('erro')
         const data = await res.json()
         setForms((prev) => ({
           ...prev,
-          [emitente]: { ...prev[emitente], distanciaKm: String(data.km) },
+          // A rota devolve uma casa decimal; a proposta sempre usou inteiro.
+          [emitente]: { ...prev[emitente], distanciaKm: String(Math.round(data.distanciaKm)) },
         }))
         setStatusDistanciaByEmitente((prev) => ({ ...prev, [emitente]: 'ok' }))
       } catch (err) {
