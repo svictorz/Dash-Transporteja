@@ -39,6 +39,22 @@ import {
   isGlobalPerformanceViewer,
   isPerformanceSellerRole,
 } from '@/lib/utils/roles'
+import {
+  SEGURO_PERCENT_CHOICES,
+  TAXES_PERCENT_CHOICES,
+  calculateCommissionValue,
+  calculateNetFreightValue,
+  calculateSeguroValue,
+  calculateTaxesValue,
+  formatBRL,
+  getRouteNetFreightValue,
+  getRouteSeguroPercent,
+  getRouteSeguroValue,
+  getRouteTaxesPercent,
+  isValePedagioIncluso,
+  normalizeSeguroPercent,
+  normalizeTaxesPercent,
+} from '@/lib/utils/freight-financials'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 import { useColumnPrefs, type ColumnDef } from '@/lib/hooks/useColumnPrefs'
 import ColumnManager from '@/components/transporteja/ColumnManager'
@@ -118,10 +134,6 @@ interface UserPerfAgg {
   totalNetFreightValue: number
   totalCommissionValue: number
   totalKm: number
-}
-
-function formatBRL(value: number): string {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
 function formatNumber(value: number): string {
@@ -282,89 +294,6 @@ const PERIODO_LABELS: Record<Periodo, string> = {
   custom: 'Personalizado',
 }
 
-const TAXES_PERCENT_OPTIONS = [0, 10, 12, 18] as const
-/** Alíquotas que o admin/financeiro pode escolher: 18% ou isento (0%). */
-const TAXES_PERCENT_CHOICES = [18, 0] as const
-
-function normalizeTaxesPercentPerf(value: unknown): (typeof TAXES_PERCENT_OPTIONS)[number] {
-  const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
-  if (n === 0 || n === 10 || n === 12 || n === 18) return n
-  return 18
-}
-
-function inferTaxesPercentFromValuesPerf(
-  freight: number | null | undefined,
-  taxes: number | null | undefined,
-): (typeof TAXES_PERCENT_OPTIONS)[number] {
-  if (freight == null || freight <= 0 || taxes == null) return 18
-  for (const pct of [18, 12, 10, 0] as const) {
-    const expected = Math.round(freight * (pct / 100) * 100) / 100
-    if (Math.abs(expected - taxes) < 0.02) return pct
-  }
-  return 18
-}
-
-function getPerfRouteTaxesPercent(route: Route): (typeof TAXES_PERCENT_OPTIONS)[number] {
-  const raw = route.taxes_percent
-  if (raw === 0 || raw === 10 || raw === 12 || raw === 18) return raw
-  return inferTaxesPercentFromValuesPerf(route.freight_value ?? route.nf_value ?? undefined, route.taxes_value ?? undefined)
-}
-
-function calculatePerfTaxesValue(freightValue?: number | null, taxesPercent?: number | null) {
-  if (freightValue == null) return null
-  const p = normalizeTaxesPercentPerf(taxesPercent) / 100
-  return Math.round(freightValue * p * 100) / 100
-}
-
-function calculatePerfCommissionValue(netFreightValue?: number | null, ratePercent?: number | null) {
-  if (netFreightValue == null) return null
-  const rate = (ratePercent ?? 30) / 100
-  return Math.round(netFreightValue * rate * 100) / 100
-}
-
-function calculatePerfNetFreightValue(
-  freightValue?: number | null,
-  driverValue?: number | null,
-  taxesPercent?: number | null,
-  seguroValue?: number | null,
-) {
-  if (freightValue == null) return null
-  const taxesValue = calculatePerfTaxesValue(freightValue, taxesPercent) ?? 0
-  return Math.round((freightValue - taxesValue - (driverValue ?? 0) - (seguroValue ?? 0)) * 100) / 100
-}
-
-/** Alíquotas de seguro: 0,2% ou isento. Editável apenas por admin. */
-const SEGURO_PERCENT_CHOICES = [0.2, 0] as const
-
-function normalizeSeguroPercentPerf(value: unknown): number {
-  const n = typeof value === 'number' && !Number.isNaN(value) ? value : Number(value)
-  return n === 0.2 ? 0.2 : 0
-}
-
-function calculatePerfSeguroValue(nfValue?: number | null, seguroPercent?: number | null) {
-  if (nfValue == null) return null
-  const p = normalizeSeguroPercentPerf(seguroPercent) / 100
-  return Math.round(nfValue * p * 100) / 100
-}
-
-function getPerfRouteSeguroPercent(route: Route): number {
-  return normalizeSeguroPercentPerf(route.seguro_percent)
-}
-
-function getPerfRouteSeguroValue(route: Route): number {
-  return route.seguro_value ?? calculatePerfSeguroValue(route.nf_value, getPerfRouteSeguroPercent(route)) ?? 0
-}
-
-function getPerfRouteNetFreightValue(route: Route): number {
-  const baseFreight = route.freight_value ?? route.nf_value
-  const pct = getPerfRouteTaxesPercent(route)
-  return (
-    route.net_freight_value ??
-    calculatePerfNetFreightValue(baseFreight, route.driver_value, pct, getPerfRouteSeguroValue(route)) ??
-    0
-  )
-}
-
 function strField(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
@@ -436,6 +365,7 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     nf_value: toNumberOrNull(r.nf_value),
     cte_value: toNumberOrNull(r.cte_value),
     vale_pedagio: toNumberOrNull(r.vale_pedagio),
+    vale_pedagio_incluso: typeof r.vale_pedagio_incluso === 'boolean' ? r.vale_pedagio_incluso : null,
     observation: nullableStr(r.observation),
     created_by_user_id: typeof r.created_by_user_id === 'string' ? r.created_by_user_id : null,
     created_at: strField(r.created_at),
@@ -538,8 +468,16 @@ function PerfFreightDetailPanel({
   route: Route
   visibleMoney: Record<MoneyFieldKey, boolean>
 }) {
-  const pct = getPerfRouteTaxesPercent(route)
+  const pct = getRouteTaxesPercent(route)
   const baseFreight = route.freight_value ?? route.nf_value
+  const netFreight = calculateNetFreightValue(
+    baseFreight,
+    route.driver_value,
+    pct,
+    getRouteSeguroValue(route),
+    route.vale_pedagio,
+    route.vale_pedagio_incluso,
+  )
   const waCompany = getWhatsAppWebUrl(route.company_phone ?? '')
   const waDriver = getWhatsAppWebUrl(route.driver_phone ?? '')
 
@@ -715,6 +653,9 @@ function PerfFreightDetailPanel({
           <div className="rounded-lg border border-gray-200 bg-white p-3">
             <p className="text-xs text-gray-500 mb-1">Vale pedágio</p>
             <p className="text-sm font-medium text-gray-900">{moneyOrHidden(route.vale_pedagio, visibleMoney.freight)}</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {isValePedagioIncluso(route.vale_pedagio_incluso) ? 'Incluso ❌' : 'Não incluso ✅'}
+            </p>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-3">
             <p className="text-xs text-gray-500 mb-1">Motorista</p>
@@ -724,23 +665,22 @@ function PerfFreightDetailPanel({
             <p className="text-xs text-gray-500 mb-1">Tributos ({pct}%)</p>
             <p className="text-sm font-medium text-gray-900">
               {moneyOrHidden(
-                route.taxes_value ?? calculatePerfTaxesValue(baseFreight, pct),
+                route.taxes_value ?? calculateTaxesValue(baseFreight, pct),
                 visibleMoney.taxes,
               )}
             </p>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Seguro ({getPerfRouteSeguroPercent(route)}%)</p>
+            <p className="text-xs text-gray-500 mb-1">Seguro ({getRouteSeguroPercent(route)}%)</p>
             <p className="text-sm font-medium text-gray-900">
-              {moneyOrHidden(getPerfRouteSeguroValue(route), visibleMoney.taxes)}
+              {moneyOrHidden(getRouteSeguroValue(route), visibleMoney.taxes)}
             </p>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-3">
             <p className="text-xs text-gray-500 mb-1">Frete líquido</p>
             <p className="text-sm font-medium text-gray-900">
               {moneyOrHidden(
-                route.net_freight_value ??
-                  calculatePerfNetFreightValue(baseFreight, route.driver_value, pct, getPerfRouteSeguroValue(route)),
+                route.net_freight_value ?? netFreight,
                 visibleMoney.netFreight,
               )}
             </p>
@@ -749,11 +689,7 @@ function PerfFreightDetailPanel({
             <p className="text-xs text-gray-500 mb-1">Comissão</p>
             <p className="text-sm font-medium text-gray-900">
               {moneyOrHidden(
-                route.commission_value ??
-                  calculatePerfCommissionValue(
-                    route.net_freight_value ??
-                      calculatePerfNetFreightValue(baseFreight, route.driver_value, pct, getPerfRouteSeguroValue(route)),
-                  ),
+                route.commission_value ?? calculateCommissionValue(route.net_freight_value ?? netFreight),
                 visibleMoney.commission,
               )}
             </p>
@@ -803,6 +739,7 @@ export default function PerformancePage() {
   const [editingFields, setEditingFields] = useState({
     cteValue: '',
     valePedagioValue: '',
+    valePedagioIncluso: 'true',
     driverValue: '',
     taxesPercent: '18',
     seguroPercent: '0.2',
@@ -882,10 +819,11 @@ export default function PerformancePage() {
         selectedPerfRoute.cte_value != null ? String(selectedPerfRoute.cte_value).replace('.', ',') : '',
       valePedagioValue:
         selectedPerfRoute.vale_pedagio != null ? String(selectedPerfRoute.vale_pedagio).replace('.', ',') : '',
+      valePedagioIncluso: isValePedagioIncluso(selectedPerfRoute.vale_pedagio_incluso) ? 'true' : 'false',
       driverValue:
         selectedPerfRoute.driver_value != null ? String(selectedPerfRoute.driver_value).replace('.', ',') : '',
-      taxesPercent: String(getPerfRouteTaxesPercent(selectedPerfRoute)),
-      seguroPercent: String(getPerfRouteSeguroPercent(selectedPerfRoute)),
+      taxesPercent: String(getRouteTaxesPercent(selectedPerfRoute)),
+      seguroPercent: String(getRouteSeguroPercent(selectedPerfRoute)),
     })
     setEditingDriverFields({
       driverName: selectedPerfRoute.driver_name ?? '',
@@ -1089,7 +1027,7 @@ export default function PerformancePage() {
         existing.totalFreightValue += r.freight_value ?? r.nf_value ?? 0
         existing.totalDriverValue += r.driver_value ?? 0
         existing.totalTaxesValue += r.taxes_value ?? 0
-        existing.totalNetFreightValue += getPerfRouteNetFreightValue(r)
+        existing.totalNetFreightValue += getRouteNetFreightValue(r)
         existing.totalCommissionValue += r.commission_value ?? 0
         existing.totalKm += r.distance_km ?? 0
         return
@@ -1107,7 +1045,7 @@ export default function PerformancePage() {
         totalFreightValue: r.freight_value ?? r.nf_value ?? 0,
         totalDriverValue: r.driver_value ?? 0,
         totalTaxesValue: r.taxes_value ?? 0,
-        totalNetFreightValue: getPerfRouteNetFreightValue(r),
+        totalNetFreightValue: getRouteNetFreightValue(r),
         totalCommissionValue: r.commission_value ?? 0,
         totalKm: r.distance_km ?? 0,
       })
@@ -1125,7 +1063,7 @@ export default function PerformancePage() {
     const totalFreightValue = filteredRows.reduce((sum, r) => sum + (r.freight_value ?? r.nf_value ?? 0), 0)
     const totalDriverValue = filteredRows.reduce((sum, r) => sum + (r.driver_value ?? 0), 0)
     const totalTaxesValue = filteredRows.reduce((sum, r) => sum + (r.taxes_value ?? 0), 0)
-    const totalNetFreightValue = filteredRows.reduce((sum, r) => sum + getPerfRouteNetFreightValue(r), 0)
+    const totalNetFreightValue = filteredRows.reduce((sum, r) => sum + getRouteNetFreightValue(r), 0)
     const totalCommissionValue = filteredRows.reduce((sum, r) => sum + (r.commission_value ?? 0), 0)
     const totalKm = filteredRows.reduce((sum, r) => sum + (r.distance_km ?? 0), 0)
     const taxaEntrega = totalFretes > 0 ? (entregues / totalFretes) * 100 : 0
@@ -1306,15 +1244,22 @@ export default function PerformancePage() {
       const nfValue = parseCurrencyInput(editingFreightInfoFields.nfValue)
       const freightValue = parseCurrencyInput(editingFreightInfoFields.freightValue)
       const baseFreight = freightValue ?? nfValue
-      const taxesPercent = getPerfRouteTaxesPercent(selectedPerfRoute)
-      const seguroPercent = getPerfRouteSeguroPercent(selectedPerfRoute)
-      const seguroValue = calculatePerfSeguroValue(nfValue, seguroPercent)
-      const taxesValue = calculatePerfTaxesValue(baseFreight, taxesPercent)
-      const netFreightValue = calculatePerfNetFreightValue(baseFreight, selectedPerfRoute.driver_value, taxesPercent, seguroValue)
+      const taxesPercent = getRouteTaxesPercent(selectedPerfRoute)
+      const seguroPercent = getRouteSeguroPercent(selectedPerfRoute)
+      const seguroValue = calculateSeguroValue(nfValue, seguroPercent)
+      const taxesValue = calculateTaxesValue(baseFreight, taxesPercent)
+      const netFreightValue = calculateNetFreightValue(
+        baseFreight,
+        selectedPerfRoute.driver_value,
+        taxesPercent,
+        seguroValue,
+        selectedPerfRoute.vale_pedagio,
+        selectedPerfRoute.vale_pedagio_incluso,
+      )
       const sellerRate = selectedPerfRoute.created_by_user_id
         ? (comerciais.find((u) => u.id === selectedPerfRoute.created_by_user_id)?.commission_rate ?? null)
         : null
-      const commissionValue = calculatePerfCommissionValue(netFreightValue, sellerRate)
+      const commissionValue = calculateCommissionValue(netFreightValue, sellerRate)
 
       const updatePayload: Partial<Route> = {
         company_name: editingFreightInfoFields.companyName.trim(),
@@ -1362,25 +1307,34 @@ export default function PerformancePage() {
     if (!selectedPerfRoute || !canManagePerfModal) return
     try {
       setSavingFinancial(true)
-      const taxesPercent = normalizeTaxesPercentPerf(Number(editingFields.taxesPercent))
+      const taxesPercent = normalizeTaxesPercent(Number(editingFields.taxesPercent))
       const seguroPercent = canEditPerfSeguro
-        ? normalizeSeguroPercentPerf(Number(editingFields.seguroPercent))
-        : getPerfRouteSeguroPercent(selectedPerfRoute)
+        ? normalizeSeguroPercent(Number(editingFields.seguroPercent))
+        : getRouteSeguroPercent(selectedPerfRoute)
       const cteValue = parseCurrencyInput(editingFields.cteValue)
       const valePedagioValue = parseCurrencyInput(editingFields.valePedagioValue)
+      const valePedagioIncluso = editingFields.valePedagioIncluso === 'true'
       const driverValue = parseCurrencyInput(editingFields.driverValue)
       const baseFreight = selectedPerfRoute.freight_value ?? selectedPerfRoute.nf_value
-      const taxesValue = calculatePerfTaxesValue(baseFreight, taxesPercent)
-      const seguroValue = calculatePerfSeguroValue(selectedPerfRoute.nf_value, seguroPercent)
-      const netFreightValue = calculatePerfNetFreightValue(baseFreight, driverValue, taxesPercent, seguroValue)
+      const taxesValue = calculateTaxesValue(baseFreight, taxesPercent)
+      const seguroValue = calculateSeguroValue(selectedPerfRoute.nf_value, seguroPercent)
+      const netFreightValue = calculateNetFreightValue(
+        baseFreight,
+        driverValue,
+        taxesPercent,
+        seguroValue,
+        valePedagioValue,
+        valePedagioIncluso,
+      )
       const sellerRate = selectedPerfRoute.created_by_user_id
         ? (comerciais.find((u) => u.id === selectedPerfRoute.created_by_user_id)?.commission_rate ?? null)
         : null
-      const commissionValue = calculatePerfCommissionValue(netFreightValue, sellerRate)
+      const commissionValue = calculateCommissionValue(netFreightValue, sellerRate)
 
       const updatePayload: Partial<Route> = {
         cte_value: cteValue,
         vale_pedagio: valePedagioValue,
+        vale_pedagio_incluso: valePedagioIncluso,
         driver_value: driverValue,
         taxes_percent: taxesPercent,
         taxes_value: taxesValue,
@@ -2198,12 +2152,15 @@ export default function PerformancePage() {
                                   selectedPerfRoute.vale_pedagio != null
                                     ? String(selectedPerfRoute.vale_pedagio).replace('.', ',')
                                     : '',
+                                valePedagioIncluso: isValePedagioIncluso(selectedPerfRoute.vale_pedagio_incluso)
+                                  ? 'true'
+                                  : 'false',
                                 driverValue:
                                   selectedPerfRoute.driver_value != null
                                     ? String(selectedPerfRoute.driver_value).replace('.', ',')
                                     : '',
-                                taxesPercent: String(getPerfRouteTaxesPercent(selectedPerfRoute)),
-                                seguroPercent: String(getPerfRouteSeguroPercent(selectedPerfRoute)),
+                                taxesPercent: String(getRouteTaxesPercent(selectedPerfRoute)),
+                                seguroPercent: String(getRouteSeguroPercent(selectedPerfRoute)),
                               })
                             }}
                             className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
@@ -2252,6 +2209,16 @@ export default function PerformancePage() {
                           placeholder="Ex.: 150,00"
                           className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                         />
+                        <select
+                          value={editingFields.valePedagioIncluso}
+                          onChange={(e) => setEditingFields((prev) => ({ ...prev, valePedagioIncluso: e.target.value }))}
+                          disabled={!editingFinancial || savingFinancial}
+                          aria-label="Vale pedágio incluso"
+                          className="mt-2 w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                        >
+                          <option value="true">❌ Incluso</option>
+                          <option value="false">✅ Não incluso</option>
+                        </select>
                       </div>
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">Valor do motorista</label>
