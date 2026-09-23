@@ -33,9 +33,9 @@ export interface PropostaDocConfig {
 export const PROPOSTA_EMITENTES: PropostaEmitente[] = ['empresa']
 
 const PROPOSTA_ENDERECO = {
-  matriz: 'MATRIZ - CAMPINAS / SP',
-  logradouro: 'R. Alcides Modesto de Camargo, no 390, Sala C',
-  bairroCepCidade: 'Parque Santa Barbara - CEP 13.064-030 - Campinas / SP',
+  matriz: 'MATRIZ - HORTOLANDIA / SP',
+  logradouro: 'Rua dos Estudantes, no 375, Sala 1',
+  bairroCepCidade: 'Jardim do Bosque - CEP 13.186-220 - Hortolandia / SP',
 } as const
 
 export const PROPOSTA_DOC_BY_EMITENTE: Record<PropostaEmitente, PropostaDocConfig> = {
