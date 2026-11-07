@@ -12,6 +12,17 @@ WITH added AS (
  FROM test_actors WHERE role IN ('comercial','supervisor') RETURNING id
 ) INSERT INTO test_freights SELECT id FROM added;
 GRANT SELECT ON test_actors,test_freights TO authenticated;
+CREATE TEMP TABLE test_foreign_records(kind text,id uuid);
+WITH added AS (INSERT INTO public.clients(company_name,created_by_user_id)
+ SELECT 'Cliente teste alheio',id FROM test_actors WHERE role='comercial' RETURNING id)
+ INSERT INTO test_foreign_records SELECT 'client',id FROM added;
+WITH added AS (INSERT INTO public.calendar_events(event_type,title,event_at,created_by_user_id)
+ SELECT 'outro','Evento teste alheio',now(),id FROM test_actors WHERE role='comercial' RETURNING id)
+ INSERT INTO test_foreign_records SELECT 'calendar',id FROM added;
+WITH added AS (INSERT INTO public.drivers(name,phone,email,cnh,vehicle,plate,created_by_user_id)
+ SELECT 'Teste alheio','0','other@operacional-test.invalid','0','Teste','TEST000',id FROM test_actors WHERE role='comercial' RETURNING id)
+ INSERT INTO test_foreign_records SELECT 'driver',id FROM added;
+GRANT SELECT ON test_foreign_records TO authenticated;
 
 CREATE FUNCTION pg_temp.check_true(ok boolean, message text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'FAIL: %',message; END IF; END $$;
@@ -69,10 +80,62 @@ SELECT pg_temp.denied('SELECT public.update_route_observation((SELECT id FROM te
 SELECT pg_temp.denied('UPDATE public.users SET role=''admin'' WHERE id=auth.uid()');
 SELECT pg_temp.denied('UPDATE public.users SET commission_rate=100 WHERE id=auth.uid()');
 SELECT pg_temp.denied('UPDATE public.users SET email=''outra@operacional-test.invalid'' WHERE id=auth.uid()');
-SELECT pg_temp.denied('INSERT INTO public.routes(freight_id,origin,origin_state,destination,destination_state,vehicle,plate,weight,estimated_delivery,pickup_date) VALUES (-900000000099,''Teste'',''SP'',''Teste'',''RJ'',''Teste'',''TEST000'',''1'',''2026-11-08'',''2026-11-07'')');
 DO $$ DECLARE n int; BEGIN
  DELETE FROM public.routes WHERE id IN (SELECT id FROM test_freights); GET DIAGNOSTICS n=ROW_COUNT;
- PERFORM pg_temp.check_true(n=0,'no route delete');
+ PERFORM pg_temp.check_true(n=0,'no foreign route delete');
+END $$;
+
+-- Normal panel workflow: own routes, clients, drivers and calendar, never others'.
+DO $$
+DECLARE route_id uuid; client_id uuid; driver_id uuid; event_id uuid; n int;
+BEGIN
+ SELECT count(*) INTO n FROM public.clients WHERE id IN (SELECT id FROM test_foreign_records);
+ PERFORM pg_temp.check_true(n=0,'foreign clients hidden');
+ SELECT count(*) INTO n FROM public.calendar_events WHERE id IN (SELECT id FROM test_foreign_records);
+ PERFORM pg_temp.check_true(n=0,'foreign calendar hidden');
+ SELECT count(*) INTO n FROM public.drivers WHERE id IN (SELECT id FROM test_foreign_records);
+ PERFORM pg_temp.check_true(n=0,'foreign drivers hidden');
+ UPDATE public.clients SET company_name='Forbidden' WHERE id IN (SELECT id FROM test_foreign_records);
+ GET DIAGNOSTICS n=ROW_COUNT;
+ PERFORM pg_temp.check_true(n=0,'foreign clients update denied');
+ INSERT INTO public.routes(freight_id,origin,origin_state,destination,destination_state,vehicle,plate,weight,estimated_delivery,pickup_date)
+ VALUES (-900000000099,'Teste','SP','Teste','RJ','Teste','TEST000','1','2026-11-08','2026-11-07') RETURNING id INTO route_id;
+ UPDATE public.routes SET origin='Origem própria',observation='Anexo/observação própria',status='delivered' WHERE id=route_id;
+ GET DIAGNOSTICS n=ROW_COUNT;
+ PERFORM pg_temp.check_true(n=1,'own route full normal edit');
+ PERFORM pg_temp.denied(format('UPDATE public.routes SET created_by_user_id=%L WHERE id=%L',
+  (SELECT id FROM test_actors WHERE role='comercial'),route_id));
+ DELETE FROM public.routes WHERE id=route_id;
+ GET DIAGNOSTICS n=ROW_COUNT;
+ PERFORM pg_temp.check_true(n=1,'own route delete');
+
+ INSERT INTO public.clients(company_name,created_by_user_id) VALUES ('Cliente próprio',auth.uid()) RETURNING id INTO client_id;
+ UPDATE public.clients SET company_name='Cliente atualizado' WHERE id=client_id;
+ GET DIAGNOSTICS n=ROW_COUNT;
+ PERFORM pg_temp.check_true(n=1,'own client update');
+ DELETE FROM public.clients WHERE id=client_id;
+ GET DIAGNOSTICS n=ROW_COUNT;
+ PERFORM pg_temp.check_true(n=1,'own client delete');
+ PERFORM pg_temp.denied(format('INSERT INTO public.clients(company_name,created_by_user_id) VALUES (''Outro'',%L)',
+  (SELECT id FROM test_actors WHERE role='comercial')));
+
+ INSERT INTO public.drivers(name,phone,email,cnh,vehicle,plate,created_by_user_id)
+ VALUES ('Teste','0','test@operacional-test.invalid','0','Teste','TEST000',auth.uid()) RETURNING id INTO driver_id;
+ UPDATE public.drivers SET phone='1' WHERE id=driver_id;
+ GET DIAGNOSTICS n=ROW_COUNT;
+ PERFORM pg_temp.check_true(n=1,'own driver update');
+ DELETE FROM public.drivers WHERE id=driver_id;
+ GET DIAGNOSTICS n=ROW_COUNT;
+ PERFORM pg_temp.check_true(n=1,'own driver delete');
+
+ INSERT INTO public.calendar_events(event_type,title,event_at,created_by_user_id)
+ VALUES ('outro','Teste Operacional',now(),auth.uid()) RETURNING id INTO event_id;
+ UPDATE public.calendar_events SET title='Teste atualizado' WHERE id=event_id;
+ GET DIAGNOSTICS n=ROW_COUNT;
+ PERFORM pg_temp.check_true(n=1,'own calendar update');
+ DELETE FROM public.calendar_events WHERE id=event_id;
+ GET DIAGNOSTICS n=ROW_COUNT;
+ PERFORM pg_temp.check_true(n=1,'own calendar delete');
 END $$;
 RESET ROLE;
 SELECT 'PASS: operational RLS, whitelist, calculations, profile protection and old role matrix' AS result;

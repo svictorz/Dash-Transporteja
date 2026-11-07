@@ -29,7 +29,13 @@ for (const role of ['supervisor', 'comercial', 'operator', 'driver', null]) {
 }
 assert.equal(r.canOperacionalAccessPanelPath('/performance'), true)
 assert.equal(r.canOperacionalAccessPanelPath('/usuarios'), false)
-assert.equal(r.canOperacionalAccessPanelPath('/rotas'), false)
+for (const path of ['/inicio', '/clientes', '/rotas', '/propostas', '/calendario', '/performance']) {
+  assert.equal(r.canOperacionalAccessPanelPath(path), true, path)
+}
 assert.equal(r.canOperacionalAccessPanelPath('/controle-financeiro'), false)
-assert.equal(r.canCreateClients('operacional'), false)
+assert.equal(r.canCreateClients('operacional'), true)
+assert.equal(r.shouldScopeOperationalDataToOwner('operacional'), true)
+assert.equal(r.isPerformanceSellerRole('operacional'), true)
+assert.equal(r.canViewRouteInRoutesPage('operacional', 'me', 'other'), false)
+assert.equal(r.canViewRouteInRoutesPage('operacional', 'me', 'me'), true)
 console.log('PASS: matriz de permissões antigas e cargo Operacional')

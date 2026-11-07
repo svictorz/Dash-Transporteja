@@ -53,9 +53,7 @@ export function canEditPerformanceOperationalFields(role: string | null | undefi
 }
 
 export function canOperacionalAccessPanelPath(pathname: string | null): boolean {
-  return Boolean(pathname && ['/performance', '/configuracoes', '/dados-pessoais'].some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  ))
+  return canSupervisorAccessPanelPath(pathname)
 }
 
 /** @deprecated Use isGlobalPerformanceViewer or canEditPerformance for new checks. */
@@ -96,7 +94,7 @@ export function isComercial(role: string | null | undefined): boolean {
  * uma ação que o banco vai recusar.
  */
 export function shouldScopeOperationalDataToOwner(role: string | null | undefined): boolean {
-  return isComercial(role) || role === 'supervisor'
+  return isComercial(role) || role === 'supervisor' || role === 'operacional'
 }
 
 /**
@@ -108,13 +106,14 @@ export function canCreateClients(role: string | null | undefined): boolean {
     role === 'admin' ||
     role === 'financeiro' ||
     role === 'supervisor' ||
+    role === 'operacional' ||
     isComercial(role)
   )
 }
 
 /** Perfis exibidos como responsáveis no filtro de vendedores da Performance. */
 export function isPerformanceSellerRole(role: string | null | undefined): boolean {
-  return role === 'comercial' || role === 'operator' || role === 'admin' || role === 'supervisor'
+  return role === 'comercial' || role === 'operator' || role === 'admin' || role === 'supervisor' || role === 'operacional'
 }
 
 const SUPERVISOR_ALLOWED_PANEL_PATHS = [

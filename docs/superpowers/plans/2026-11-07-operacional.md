@@ -20,8 +20,11 @@ Migração aplicada em transação após backup do schema e da imagem anterior.
 Campos permitidos: cte_value, vale_pedagio, vale_pedagio_incluso, driver_value,
 taxes_percent, seguro_percent, driver_name, driver_phone, driver_payment_status,
 driver_payment_type, vehicle, plate. Derivados não são editáveis diretamente.
-Operacional acessa Performance, configurações e dados pessoais; outros caminhos
-do painel redirecionam à Performance. Não cria/exclui fretes, clientes ou usuários.
+Operacional acessa Dashboard, Clientes, Rotas, Propostas, Calendário e Performance,
+além de configurações e dados pessoais. Nas abas normais, cria/edita/exclui seus
+próprios registros como o Comercial. Na Performance, mantém visão global e edição
+limitada aos campos do print para fretes de terceiros. Não gerencia usuários nem
+acessa Controle Financeiro. A atribuição do cargo segue as regras já existentes.
 Nenhuma conta existente será convertida automaticamente.
 
 Verificações: acesso global de leitura, update entre proprietários, bloqueio
