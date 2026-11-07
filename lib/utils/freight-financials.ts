@@ -177,3 +177,9 @@ export function getRouteCommissionValue(route: Route, ratePercent?: number | nul
 export function formatBRL(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
+
+/** Participação no frete filtrado; sem porcentagem quando não existe uma base válida. */
+export function formatFreightShare(value: number, total?: number): string | null {
+  if (!Number.isFinite(value) || total == null || !Number.isFinite(total) || total <= 0) return null
+  return (value / total).toLocaleString('pt-BR', { style: 'percent', maximumFractionDigits: 1 })
+}

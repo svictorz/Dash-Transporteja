@@ -48,6 +48,7 @@ import {
   calculateSeguroValue,
   calculateTaxesValue,
   formatBRL,
+  formatFreightShare,
   getRouteNetFreightValue,
   getRouteDriverTotalValue,
   getRouteSeguroPercent,
@@ -184,17 +185,30 @@ function MoneyValueRow({
   value,
   visible,
   onToggle,
+  totalFreightValue,
 }: {
   value: number
   visible: boolean
   onToggle: () => void
+  totalFreightValue?: number
 }) {
   const label = visible ? 'Ocultar este valor' : 'Mostrar este valor'
+  const percentage = visible ? formatFreightShare(value, totalFreightValue) : null
   return (
     <div className="mt-1 flex items-center justify-between gap-2 min-w-0">
-      <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 truncate" aria-hidden={!visible}>
-        {visible ? formatBRL(value) : 'R$ ••••••'}
-      </p>
+      <div className="min-w-0 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+        <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 truncate" aria-hidden={!visible}>
+          {visible ? formatBRL(value) : 'R$ ••••••'}
+        </p>
+        {percentage !== null && (
+          <span
+            className="text-[11px] font-medium tabular-nums text-gray-400 dark:text-slate-400 whitespace-nowrap"
+            title="Percentual sobre o valor total dos fretes filtrados"
+          >
+            {percentage}
+          </span>
+        )}
+      </div>
       <button
         type="button"
         onClick={onToggle}
@@ -1749,6 +1763,7 @@ export default function PerformancePage() {
           <p className="text-xs text-gray-500 dark:text-slate-300">Valor dos motoristas</p>
           <MoneyValueRow
             value={totals.totalDriverValue}
+            totalFreightValue={visibleMoney.freight ? totals.totalFreightValue : undefined}
             visible={visibleMoney.driver}
             onToggle={() => toggleMoneyField('driver')}
           />
@@ -1757,6 +1772,7 @@ export default function PerformancePage() {
           <p className="text-xs text-gray-500 dark:text-slate-300">Valor dos tribultos</p>
           <MoneyValueRow
             value={totals.totalTaxesValue}
+            totalFreightValue={visibleMoney.freight ? totals.totalFreightValue : undefined}
             visible={visibleMoney.taxes}
             onToggle={() => toggleMoneyField('taxes')}
           />
@@ -1765,6 +1781,7 @@ export default function PerformancePage() {
           <p className="text-xs text-gray-500 dark:text-slate-300">Valor dos fretes líquidos</p>
           <MoneyValueRow
             value={totals.totalNetFreightValue}
+            totalFreightValue={visibleMoney.freight ? totals.totalFreightValue : undefined}
             visible={visibleMoney.netFreight}
             onToggle={() => toggleMoneyField('netFreight')}
           />
@@ -1773,6 +1790,7 @@ export default function PerformancePage() {
           <p className="text-xs text-gray-500 dark:text-slate-300">Valor total de comissões</p>
           <MoneyValueRow
             value={totals.totalCommissionValue}
+            totalFreightValue={visibleMoney.freight ? totals.totalFreightValue : undefined}
             visible={visibleMoney.commission}
             onToggle={() => toggleMoneyField('commission')}
           />
