@@ -35,6 +35,7 @@ import {
   getRouteTaxesPercent,
   getRouteTaxesValue,
   getRouteNetFreightValue,
+  getRouteDriverTotalValue,
   getRouteCommissionValue,
   getRouteSeguroPercent,
   getRouteSeguroValue,
@@ -44,6 +45,7 @@ import {
   calculateTaxesValue,
   calculateSeguroValue,
   calculateCommissionValue,
+  calculateNetFreightValue,
   SEGURO_PERCENT_DEFAULT,
 } from '@/lib/utils/freight-financials'
 
@@ -250,7 +252,7 @@ export default function ControleFinanceiroPage() {
         acc.nf += r.nf_value ?? 0
         acc.cte += r.cte_value ?? 0
         acc.pedagio += r.vale_pedagio ?? 0
-        acc.driver += r.driver_value ?? 0
+        acc.driver += getRouteDriverTotalValue(r)
         acc.taxes += getRouteTaxesValue(r)
         acc.seguro += getRouteSeguroValue(r)
         acc.net += getRouteNetFreightValue(r)
@@ -319,7 +321,7 @@ export default function ControleFinanceiroPage() {
         num(r.cte_value),
         num(r.vale_pedagio),
         isValePedagioIncluso(r.vale_pedagio_incluso) ? 'Incluso' : 'Não incluso',
-        num(r.driver_value),
+        num(getRouteDriverTotalValue(r)),
         r.driver_name?.trim() || '',
         num(getRouteTaxesValue(r)),
         getRouteTaxesPercent(r),
@@ -391,11 +393,8 @@ export default function ControleFinanceiroPage() {
         // Seguro: admin pode digitar o valor em R$; se em branco, calcula pelo %.
         const manualSeguro = canManage ? parseCurrencyInput(editFields.seguroValueManual) : null
         const seguroValue = manualSeguro != null ? manualSeguro : calculateSeguroValue(nfValue, seguroPercent)
-        const valePedagioDiscount = valePedagioIncluso ? valePedagioValue ?? 0 : 0
-        const netFreightValue =
-          baseFreight == null
-            ? null
-            : Math.round((baseFreight - (taxesValue ?? 0) - (driverValue ?? 0) - (seguroValue ?? 0) - valePedagioDiscount) * 100) / 100
+        const netFreightValue = calculateNetFreightValue(baseFreight, driverValue, taxesPercent,
+          seguroValue, valePedagioValue, valePedagioIncluso, taxesValue)
         const sellerRate = route.created_by_user_id
           ? sellerById.get(route.created_by_user_id)?.commission_rate ?? null
           : null
@@ -461,19 +460,9 @@ export default function ControleFinanceiroPage() {
     const liveSeguroManual = canManage ? parseCurrencyInput(editFields.seguroValueManual) : null
     const liveSeguro = liveSeguroManual != null ? liveSeguroManual : liveSeguroAuto
     const liveValePedagio = parseCurrencyInput(editFields.valePedagioValue)
-    const liveValePedagioDiscount = editFields.valePedagioIncluso === 'true' ? liveValePedagio ?? 0 : 0
-    const liveNet =
-      liveBaseFreight == null
-        ? null
-        : Math.round(
-            (
-              liveBaseFreight -
-              (liveTaxes ?? 0) -
-              (parseCurrencyInput(editFields.driverValue) ?? 0) -
-              (liveSeguro ?? 0) -
-              liveValePedagioDiscount
-            ) * 100,
-          ) / 100
+    const liveNet = calculateNetFreightValue(liveBaseFreight, parseCurrencyInput(editFields.driverValue),
+      normalizeTaxesPercent(Number(editFields.taxesPercent)), liveSeguro,
+      liveValePedagio, editFields.valePedagioIncluso === 'true', liveTaxes)
 
     switch (key) {
       case 'frete':
@@ -571,7 +560,7 @@ export default function ControleFinanceiroPage() {
           />
         ) : (
           <>
-            <span className="block text-gray-700 dark:text-slate-200">{money(r.driver_value)}</span>
+            <span className="block text-gray-700 dark:text-slate-200">{money(getRouteDriverTotalValue(r))}</span>
             <span className="block text-xs text-gray-400 dark:text-slate-400 font-normal truncate max-w-[160px] ml-auto">
               {r.driver_name?.trim() || '—'}
             </span>

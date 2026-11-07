@@ -32,6 +32,8 @@ export interface Route {
   distance_km?: number | null
   freight_value?: number | null
   driver_value?: number | null
+  /** 1: histórico preservado; 2: pedágio não incluso somado ao custo do motorista. */
+  financial_calculation_version?: number | null
   taxes_value?: number | null
   /** 0, 10, 12 ou 18 — percentual sobre o valor do frete para tributos. */
   taxes_percent?: number | null

@@ -33,6 +33,7 @@ import {
 } from '@/lib/utils/route-period-filter'
 import BrandLoading from '@/components/transporteja/BrandLoading'
 import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
+import { getRouteDriverTotalValue } from '@/lib/utils/freight-financials'
 
 interface Alert {
   id: string
@@ -291,8 +292,8 @@ export default function DashboardPage() {
     const comissoes = sumBy(currentRoutes, 'commission_value')
     const comissoesPrev = sumBy(previousRoutes, 'commission_value')
 
-    const aPagar = sumIf(currentRoutes, 'driver_value', (r) => !isDriverPaidFull(r))
-    const aPagarPrev = sumIf(previousRoutes, 'driver_value', (r) => !isDriverPaidFull(r))
+    const aPagar = currentRoutes.reduce((sum, r) => sum + (isDriverPaidFull(r) ? 0 : getRouteDriverTotalValue(r)), 0)
+    const aPagarPrev = previousRoutes.reduce((sum, r) => sum + (isDriverPaidFull(r) ? 0 : getRouteDriverTotalValue(r)), 0)
 
     const tributos = sumBy(currentRoutes, 'taxes_value')
     const tributosPrev = sumBy(previousRoutes, 'taxes_value')

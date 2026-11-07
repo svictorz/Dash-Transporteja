@@ -49,6 +49,7 @@ import {
   calculateTaxesValue,
   formatBRL,
   getRouteNetFreightValue,
+  getRouteDriverTotalValue,
   getRouteSeguroPercent,
   getRouteSeguroValue,
   getRouteTaxesPercent,
@@ -345,6 +346,7 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     distance_km: toNumberOrNull(r.distance_km),
     freight_value: toNumberOrNull(r.freight_value),
     driver_value: toNumberOrNull(r.driver_value),
+    financial_calculation_version: toNumberOrNull(r.financial_calculation_version),
     taxes_value: toNumberOrNull(r.taxes_value),
     taxes_percent: ((): Route['taxes_percent'] => {
       const n = toNumberOrNull(r.taxes_percent)
@@ -471,14 +473,7 @@ function PerfFreightDetailPanel({
 }) {
   const pct = getRouteTaxesPercent(route)
   const baseFreight = route.freight_value ?? route.nf_value
-  const netFreight = calculateNetFreightValue(
-    baseFreight,
-    route.driver_value,
-    pct,
-    getRouteSeguroValue(route),
-    route.vale_pedagio,
-    route.vale_pedagio_incluso,
-  )
+  const netFreight = getRouteNetFreightValue(route)
   const waCompany = getWhatsAppWebUrl(route.company_phone ?? '')
   const waDriver = getWhatsAppWebUrl(route.driver_phone ?? '')
 
@@ -660,7 +655,7 @@ function PerfFreightDetailPanel({
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-3">
             <p className="text-xs text-gray-500 mb-1">Motorista</p>
-            <p className="text-sm font-medium text-gray-900">{moneyOrHidden(route.driver_value, visibleMoney.driver)}</p>
+            <p className="text-sm font-medium text-gray-900">{moneyOrHidden(getRouteDriverTotalValue(route), visibleMoney.driver)}</p>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-3">
             <p className="text-xs text-gray-500 mb-1">Tributos ({pct}%)</p>
@@ -1026,7 +1021,7 @@ export default function PerformancePage() {
         if (r.status === 'pending' || r.status === 'inTransit' || r.status === 'pickedUp') existing.emAndamento += 1
         existing.totalNf += r.nf_value ?? 0
         existing.totalFreightValue += r.freight_value ?? r.nf_value ?? 0
-        existing.totalDriverValue += r.driver_value ?? 0
+        existing.totalDriverValue += getRouteDriverTotalValue(r)
         existing.totalTaxesValue += r.taxes_value ?? 0
         existing.totalNetFreightValue += getRouteNetFreightValue(r)
         existing.totalCommissionValue += r.commission_value ?? 0
@@ -1044,7 +1039,7 @@ export default function PerformancePage() {
         emAndamento: r.status === 'pending' || r.status === 'inTransit' || r.status === 'pickedUp' ? 1 : 0,
         totalNf: r.nf_value ?? 0,
         totalFreightValue: r.freight_value ?? r.nf_value ?? 0,
-        totalDriverValue: r.driver_value ?? 0,
+        totalDriverValue: getRouteDriverTotalValue(r),
         totalTaxesValue: r.taxes_value ?? 0,
         totalNetFreightValue: getRouteNetFreightValue(r),
         totalCommissionValue: r.commission_value ?? 0,
@@ -1062,7 +1057,7 @@ export default function PerformancePage() {
     const emAndamento = filteredRows.filter((r) => r.status === 'pending' || r.status === 'inTransit' || r.status === 'pickedUp').length
     const totalNf = filteredRows.reduce((sum, r) => sum + (r.nf_value ?? 0), 0)
     const totalFreightValue = filteredRows.reduce((sum, r) => sum + (r.freight_value ?? r.nf_value ?? 0), 0)
-    const totalDriverValue = filteredRows.reduce((sum, r) => sum + (r.driver_value ?? 0), 0)
+    const totalDriverValue = filteredRows.reduce((sum, r) => sum + getRouteDriverTotalValue(r), 0)
     const totalTaxesValue = filteredRows.reduce((sum, r) => sum + (r.taxes_value ?? 0), 0)
     const totalNetFreightValue = filteredRows.reduce((sum, r) => sum + getRouteNetFreightValue(r), 0)
     const totalCommissionValue = filteredRows.reduce((sum, r) => sum + (r.commission_value ?? 0), 0)

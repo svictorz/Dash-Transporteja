@@ -34,6 +34,8 @@ import {
   calculateTaxesValue,
   getRouteCommissionValue,
   getRouteNetFreightValue,
+  getRouteDriverTotalValue,
+  isValePedagioIncluso,
   getRouteSeguroPercent,
   getRouteSeguroValue,
   getRouteTaxesPercent,
@@ -236,6 +238,7 @@ export default function RotasPage() {
     freightValue: '',
     cteValue: '',
     valePedagio: '',
+    valePedagioIncluso: 'true',
     driverValue: '',
     taxesValue: '',
     netFreightValue: '',
@@ -450,6 +453,7 @@ export default function RotasPage() {
       freightValue: route.freight_value != null ? String(route.freight_value).replace('.', ',') : '',
       cteValue: route.cte_value != null ? String(route.cte_value).replace('.', ',') : '',
       valePedagio: route.vale_pedagio != null ? String(route.vale_pedagio).replace('.', ',') : '',
+      valePedagioIncluso: isValePedagioIncluso(route.vale_pedagio_incluso) ? 'true' : 'false',
       driverValue: route.driver_value != null ? String(route.driver_value).replace('.', ',') : '',
       taxesValue: route.taxes_value != null ? String(route.taxes_value).replace('.', ',') : '',
       netFreightValue: route.net_freight_value != null ? String(route.net_freight_value).replace('.', ',') : '',
@@ -770,7 +774,8 @@ export default function RotasPage() {
     const taxesPercent = normalizeTaxesPercent(Number(formData.taxesPercent))
     const seguroPercent = normalizeSeguroPercent(Number(formData.seguroPercent))
     const seguro = calculateSeguroValue(nf, seguroPercent)
-    const net = calculateNetFreightValue(freight, driver, taxesPercent, seguro)
+    const net = calculateNetFreightValue(freight, driver, taxesPercent, seguro,
+      parseCurrencyInput(formData.valePedagio), formData.valePedagioIncluso === 'true')
     return {
       taxes: calculateTaxesValue(freight, taxesPercent),
       seguro,
@@ -784,6 +789,8 @@ export default function RotasPage() {
     formData.nfValue,
     formData.taxesPercent,
     formData.seguroPercent,
+    formData.valePedagio,
+    formData.valePedagioIncluso,
     commissionRate,
   ])
 
@@ -838,7 +845,8 @@ export default function RotasPage() {
         ? normalizeSeguroPercent(Number(formData.seguroPercent))
         : SEGURO_PERCENT_DEFAULT
       const seguroValue = calculateSeguroValue(nfValueParsed, seguroPercent)
-      const netFreightValue = calculateNetFreightValue(freightValue, driverValue, taxesPercent, seguroValue)
+      const netFreightValue = calculateNetFreightValue(freightValue, driverValue, taxesPercent, seguroValue,
+        parseCurrencyInput(formData.valePedagio), formData.valePedagioIncluso === 'true')
       const routeData: CreateRouteData = {
         driver_id: null,
       origin: formData.origin,
@@ -867,6 +875,7 @@ export default function RotasPage() {
       nf_value: parseCurrencyInput(formData.nfValue),
       cte_value: parseCurrencyInput(formData.cteValue),
       vale_pedagio: parseCurrencyInput(formData.valePedagio),
+      vale_pedagio_incluso: formData.valePedagioIncluso === 'true',
       observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
@@ -978,12 +987,8 @@ export default function RotasPage() {
           ? editingRoute.taxes_value
           : calculateTaxesValue(freightValue, taxesPercent)
 
-      const netFreightValue =
-        freightValue == null
-          ? null
-          : Math.round(
-              (freightValue - (taxesValue ?? 0) - (driverValue ?? 0) - (seguroValue ?? 0)) * 100,
-            ) / 100
+      const netFreightValue = calculateNetFreightValue(freightValue, driverValue, taxesPercent, seguroValue,
+        parseCurrencyInput(formData.valePedagio), formData.valePedagioIncluso === 'true', taxesValue)
       await updateRoute(editingRoute.id, {
         driver_id: null,
         origin: formData.origin,
@@ -1012,6 +1017,7 @@ export default function RotasPage() {
         nf_value: parseCurrencyInput(formData.nfValue),
         cte_value: parseCurrencyInput(formData.cteValue),
         vale_pedagio: parseCurrencyInput(formData.valePedagio),
+        vale_pedagio_incluso: formData.valePedagioIncluso === 'true',
         observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
@@ -1068,6 +1074,7 @@ export default function RotasPage() {
       freightValue: '',
       cteValue: '',
       valePedagio: '',
+      valePedagioIncluso: 'true',
       driverValue: '',
       taxesValue: '',
       netFreightValue: '',
@@ -1108,6 +1115,7 @@ export default function RotasPage() {
       freightValue: '',
       cteValue: '',
       valePedagio: '',
+      valePedagioIncluso: 'true',
       driverValue: '',
       taxesValue: '',
       netFreightValue: '',
@@ -1367,7 +1375,7 @@ export default function RotasPage() {
                     </td>
                     <td className="hidden lg:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-900 tabular-nums">
-                        {formatCurrencyBR(route.driver_value)}
+                        {formatCurrencyBR(getRouteDriverTotalValue(route))}
                       </span>
                     </td>
                     <td className="hidden xl:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
@@ -1686,11 +1694,14 @@ export default function RotasPage() {
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(selectedRoute.vale_pedagio)}
                     </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {isValePedagioIncluso(selectedRoute.vale_pedagio_incluso) ? 'Incluso' : 'Não incluso'}
+                    </p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Valor do Motorista</p>
                     <p className="text-sm font-medium text-gray-900">
-                      {formatCurrencyBR(selectedRoute.driver_value)}
+                      {formatCurrencyBR(getRouteDriverTotalValue(selectedRoute))}
                     </p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
@@ -2312,6 +2323,15 @@ export default function RotasPage() {
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                         placeholder="Ex: 300,00"
                       />
+                      <select
+                        aria-label="Vale pedágio incluso"
+                        value={formData.valePedagioIncluso}
+                        onChange={(e) => setFormData({ ...formData, valePedagioIncluso: e.target.value })}
+                        className="mt-2 w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg"
+                      >
+                        <option value="true">Incluso</option>
+                        <option value="false">Não incluso</option>
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -2409,7 +2429,7 @@ export default function RotasPage() {
                     placeholder="Valor do frete - tribultos - motorista - seguro"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: frete - tribultos - motorista - seguro.
+                    Calculado automaticamente: frete - tributos - motorista - seguro - pedágio não incluso.
                   </p>
                 </div>
                 <div>
@@ -2899,6 +2919,15 @@ export default function RotasPage() {
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                         placeholder="Ex: 300,00"
                       />
+                      <select
+                        aria-label="Vale pedágio incluso"
+                        value={formData.valePedagioIncluso}
+                        onChange={(e) => setFormData({ ...formData, valePedagioIncluso: e.target.value })}
+                        className="mt-2 w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg"
+                      >
+                        <option value="true">Incluso</option>
+                        <option value="false">Não incluso</option>
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -2996,7 +3025,7 @@ export default function RotasPage() {
                     placeholder="Valor do frete - tribultos - motorista - seguro"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: frete - tribultos - motorista - seguro.
+                    Calculado automaticamente: frete - tributos - motorista - seguro - pedágio não incluso.
                   </p>
                 </div>
                 <div>

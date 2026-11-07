@@ -62,10 +62,10 @@ UPDATE public.routes SET cte_value=21000,vale_pedagio=1121.58,vale_pedagio_inclu
  vehicle='Carreta',plate='ABC1D23' WHERE id IN (SELECT id FROM test_freights);
 SELECT pg_temp.check_true(count(*)=2,'calculation excluding toll and seller commission')
  FROM public.routes WHERE id IN (SELECT id FROM test_freights)
- AND taxes_value=3780 AND seguro_value=100 AND net_freight_value=5620 AND commission_value=1405;
+ AND taxes_value=3780 AND seguro_value=100 AND net_freight_value=4498.42 AND commission_value=1124.61;
 UPDATE public.routes SET vale_pedagio_incluso=true WHERE id IN (SELECT id FROM test_freights);
 SELECT pg_temp.check_true(count(*)=2,'calculation including toll') FROM public.routes
- WHERE id IN (SELECT id FROM test_freights) AND net_freight_value=4498.42 AND commission_value=1124.61;
+ WHERE id IN (SELECT id FROM test_freights) AND net_freight_value=5620 AND commission_value=1405;
 
 SELECT pg_temp.denied('UPDATE public.routes SET status=''delivered'' WHERE id IN (SELECT id FROM test_freights)');
 SELECT pg_temp.denied('UPDATE public.routes SET observation=''x'' WHERE id IN (SELECT id FROM test_freights)');

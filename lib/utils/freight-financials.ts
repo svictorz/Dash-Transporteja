@@ -99,6 +99,24 @@ export function isValePedagioIncluso(value?: boolean | null): boolean {
   return value !== false
 }
 
+/** Valor-base do motorista + pedágio pago à parte, sem alterar o valor-base gravado. */
+export function calculateDriverTotalValue(
+  driverValue?: number | null,
+  valePedagioValue?: number | null,
+  valePedagioIncluso?: boolean | null,
+): number {
+  const additionalToll = isValePedagioIncluso(valePedagioIncluso) ? 0 : valePedagioValue ?? 0
+  return Math.round(((driverValue ?? 0) + additionalToll) * 100) / 100
+}
+
+/** Registros históricos mantêm seus totais até uma edição financeira. */
+export function getRouteDriverTotalValue(route: Pick<Route,
+  'driver_value' | 'vale_pedagio' | 'vale_pedagio_incluso' | 'financial_calculation_version'>): number {
+  return route.financial_calculation_version === 2
+    ? calculateDriverTotalValue(route.driver_value, route.vale_pedagio, route.vale_pedagio_incluso)
+    : route.driver_value ?? 0
+}
+
 export function calculateNetFreightValue(
   freightValue?: number | null,
   driverValue?: number | null,
@@ -106,11 +124,12 @@ export function calculateNetFreightValue(
   seguroValue?: number | null,
   valePedagioValue?: number | null,
   valePedagioIncluso?: boolean | null,
+  taxesValueOverride?: number | null,
 ): number | null {
   if (freightValue == null) return null
-  const taxesValue = calculateTaxesValue(freightValue, taxesPercent) ?? 0
-  const includedValePedagio = isValePedagioIncluso(valePedagioIncluso) ? valePedagioValue ?? 0 : 0
-  return Math.round((freightValue - taxesValue - (driverValue ?? 0) - (seguroValue ?? 0) - includedValePedagio) * 100) / 100
+  const taxesValue = taxesValueOverride ?? calculateTaxesValue(freightValue, taxesPercent) ?? 0
+  const driverTotal = calculateDriverTotalValue(driverValue, valePedagioValue, valePedagioIncluso)
+  return Math.round((freightValue - taxesValue - driverTotal - (seguroValue ?? 0)) * 100) / 100
 }
 
 export function calculateCommissionValue(
@@ -134,7 +153,10 @@ export function getRouteNetFreightValue(route: Route): number {
       pct,
       getRouteSeguroValue(route),
       route.vale_pedagio,
-      route.vale_pedagio_incluso,
+      // Histórico v1 usava o sinal inverso. Mantém a exibição até ser editado.
+      route.financial_calculation_version === 2
+        ? route.vale_pedagio_incluso
+        : !isValePedagioIncluso(route.vale_pedagio_incluso),
     ) ??
     0
   )
