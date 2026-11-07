@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Let the browser choose the swipe axis, including vertical page scrolling
+   when a gesture starts on a wide table. Keep pinch zoom and native inertia. */
+@media (any-pointer: coarse) {
+  .overflow-x-auto,
+  .overflow-y-auto {
+    touch-action: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 @layer base {
   :root {
     --font-inter: 'Inter', sans-serif;

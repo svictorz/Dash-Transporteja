@@ -1280,7 +1280,7 @@ export default function RotasPage() {
 
       {/* Tabela — scroll horizontal + coluna de ações fixa à direita em telas estreitas */}
       <div className="bg-white rounded-xl border border-gray-200 min-w-0 overflow-hidden">
-        <div className="overflow-x-auto overflow-y-visible overscroll-x-contain touch-pan-x">
+        <div className="overflow-x-auto overflow-y-visible overscroll-x-contain touch-auto">
           <table className="w-full min-w-[640px] table-auto border-separate border-spacing-0">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
