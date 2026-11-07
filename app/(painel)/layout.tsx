@@ -8,7 +8,7 @@ import TopBarTransporteja from '@/components/transporteja/TopBarTransporteja'
 import BrandLoading from '@/components/transporteja/BrandLoading'
 import { useAuthState } from '@/lib/hooks/useAuthState'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
-import { canSupervisorAccessPanelPath, PANEL_ROLES, isSuperAdminEmail } from '@/lib/utils/roles'
+import { canOperacionalAccessPanelPath, canSupervisorAccessPanelPath, PANEL_ROLES, isSuperAdminEmail } from '@/lib/utils/roles'
 
 export default function DashboardLayout({
   children,
@@ -35,6 +35,9 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!mounted || authLoading || userLoading) return
     if ((currentUser?.role ?? null) === 'supervisor' && !canSupervisorAccessPanelPath(pathname)) {
+      router.replace('/performance')
+    }
+    if (currentUser?.role === 'operacional' && !canOperacionalAccessPanelPath(pathname)) {
       router.replace('/performance')
     }
   }, [mounted, authLoading, userLoading, currentUser?.role, pathname, router])
@@ -92,6 +95,10 @@ export default function DashboardLayout({
    * pode resolver, e a RLS continua protegendo os dados).
    */
   const roleResolved = currentUser?.roleResolved ?? false
+
+  if (currentUser?.role === 'operacional' && !canOperacionalAccessPanelPath(pathname)) {
+    return <BrandLoading message="Abrindo Performance…" />
+  }
 
   if (!userLoading && roleResolved && !hasPanelAccess) {
     return (

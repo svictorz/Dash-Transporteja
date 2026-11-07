@@ -36,6 +36,7 @@ import {
 } from '@/lib/utils/route-period-filter'
 import {
   canEditPerformance,
+  canEditPerformanceOperationalFields,
   isGlobalPerformanceViewer,
   isPerformanceSellerRole,
 } from '@/lib/utils/roles'
@@ -77,7 +78,7 @@ const PERF_LABEL_BY_KEY = new Map(PERF_LIST_COLUMNS.map((c) => [c.key, c.label])
 const PERF_LIST_COLUMNS_STORAGE_KEY = 'performance:listColumns'
 
 type Periodo = 'tudo' | 'essaSemana' | 'mesAtual' | '30d' | 'mesPassado' | 'custom'
-type UserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'driver' | 'operator' | null
+type UserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'operacional' | 'driver' | 'operator' | null
 type DocumentKey = 'freteDocs'
 type RouteDocumentKind = 'image' | 'pdf'
 type RouteDocument = { path: string; url: string; name: string; kind: RouteDocumentKind }
@@ -1113,8 +1114,9 @@ export default function PerformancePage() {
   const canViewGlobalPerformance = isGlobalPerformanceViewer(role)
   const isStrictAdmin = role === 'admin'
   const canManagePerfModal = canEditPerformance(role)
-  const canViewPerfModalDetails = canManagePerfModal || role === 'supervisor'
-  const canEditPerfSeguro = canManagePerfModal
+  const canEditOperationalFields = canEditPerformanceOperationalFields(role)
+  const canViewPerfModalDetails = canManagePerfModal || role === 'supervisor' || role === 'operacional'
+  const canEditPerfSeguro = canEditOperationalFields
   /** Coluna Rotas: gestores/supervisor veem detalhe na própria página; demais veem os próprios fretes. */
   const showRotasColumn = useMemo(
     () =>
@@ -1304,7 +1306,7 @@ export default function PerformancePage() {
     }
   }, [selectedPerfRoute, canManagePerfModal, editingFreightInfoFields, parseCurrencyInput, comerciais])
   const handleSaveFinancialFields = useCallback(async () => {
-    if (!selectedPerfRoute || !canManagePerfModal) return
+    if (!selectedPerfRoute || !canEditOperationalFields) return
     try {
       setSavingFinancial(true)
       const taxesPercent = normalizeTaxesPercent(Number(editingFields.taxesPercent))
@@ -1344,6 +1346,14 @@ export default function PerformancePage() {
         commission_value: commissionValue,
       }
 
+      // Operacional envia apenas os campos autorizados. O banco recalcula os derivados.
+      if (role === 'operacional') {
+        delete updatePayload.taxes_value
+        delete updatePayload.seguro_value
+        delete updatePayload.net_freight_value
+        delete updatePayload.commission_value
+      }
+
       const { data, error: updateError } = await supabase
         .from('routes')
         .update(updatePayload)
@@ -1362,10 +1372,10 @@ export default function PerformancePage() {
     } finally {
       setSavingFinancial(false)
     }
-  }, [selectedPerfRoute, canManagePerfModal, editingFields, parseCurrencyInput, canEditPerfSeguro, comerciais])
+  }, [selectedPerfRoute, canEditOperationalFields, editingFields, parseCurrencyInput, canEditPerfSeguro, comerciais, role])
 
   const handleSaveDriverFields = useCallback(async () => {
-    if (!selectedPerfRoute || !canManagePerfModal) return
+    if (!selectedPerfRoute || !canEditOperationalFields) return
     try {
       setSavingDriver(true)
       const updatePayload = {
@@ -1392,7 +1402,7 @@ export default function PerformancePage() {
     } finally {
       setSavingDriver(false)
     }
-  }, [selectedPerfRoute, canManagePerfModal, editingDriverFields])
+  }, [selectedPerfRoute, canEditOperationalFields, editingDriverFields])
 
   const handleUploadDocuments = useCallback(
     async (documentKey: DocumentKey, files: FileList | null) => {
@@ -2177,7 +2187,7 @@ export default function PerformancePage() {
                             {savingFinancial ? 'Salvando...' : 'Salvar'}
                           </button>
                         </div>
-                      ) : canManagePerfModal ? (
+                      ) : canEditOperationalFields ? (
                         <button
                           type="button"
                           onClick={() => setEditingFinancial(true)}
@@ -2298,7 +2308,7 @@ export default function PerformancePage() {
                             {savingDriver ? 'Salvando...' : 'Salvar'}
                           </button>
                         </div>
-                      ) : canManagePerfModal ? (
+                      ) : canEditOperationalFields ? (
                         <button
                           type="button"
                           onClick={() => setEditingDriver(true)}

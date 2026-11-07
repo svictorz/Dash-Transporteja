@@ -28,7 +28,7 @@ import {
   type DashboardUserRole,
 } from '@/lib/utils/roles'
 
-type AssignableRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor'
+type AssignableRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'operacional'
 
 interface ManagedUser {
   id: string
@@ -48,6 +48,12 @@ interface CreateUserForm {
 }
 
 const ROLE_OPTIONS: { value: AssignableRole; label: string; description: string; icon: typeof Shield }[] = [
+  {
+    value: 'operacional',
+    label: 'Operacional',
+    description: 'Vê todos os fretes na Performance e edita somente campos financeiros e dados do motorista.',
+    icon: Briefcase,
+  },
   {
     value: 'admin',
     label: 'Administrador',
@@ -81,6 +87,7 @@ const ROLE_OPTIONS: { value: AssignableRole; label: string; description: string;
 ]
 
 const ROLE_BADGE: Record<AssignableRole, string> = {
+  operacional: 'bg-violet-100 text-violet-800 border-violet-300 dark:bg-violet-500/25 dark:text-violet-200 dark:border-violet-400/50',
   admin:
     'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-500/25 dark:text-rose-200 dark:border-rose-400/50',
   financeiro:
@@ -182,6 +189,7 @@ export default function UsuariosPage() {
     let financeiro = 0
     let fiscal = 0
     let supervisor = 0
+    let operacional = 0
     let comercial = 0
     users.forEach((u) => {
       const r = (u.role as string | null) === 'operator' ? 'comercial' : u.role
@@ -189,9 +197,10 @@ export default function UsuariosPage() {
       else if (r === 'financeiro') financeiro += 1
       else if (r === 'fiscal') fiscal += 1
       else if (r === 'supervisor') supervisor += 1
+      else if (r === 'operacional') operacional += 1
       else if (r === 'comercial') comercial += 1
     })
-    return { admin, financeiro, fiscal, supervisor, comercial, total: users.length }
+    return { admin, financeiro, fiscal, supervisor, operacional, comercial, total: users.length }
   }, [users])
 
   const handleChangeRole = async (target: ManagedUser, newRole: AssignableRole) => {
@@ -386,6 +395,7 @@ export default function UsuariosPage() {
             Defina o nível de acesso de cada conta. <strong>Comercial</strong> vê apenas os
             próprios fretes, rotas e performance. <strong>Financeiro</strong> e
             <strong> Administrador</strong> veem tudo. <strong>Supervisor</strong> vê Performance global sem editar.
+            {' '}<strong>Operacional</strong> edita somente campos financeiros e dados do motorista na Performance.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-3">
@@ -411,6 +421,7 @@ export default function UsuariosPage() {
         <SummaryCard label="Financeiro" value={counts.financeiro} icon={Wallet} tone="amber" />
         <SummaryCard label="Fiscal" value={counts.fiscal} icon={FileText} tone="emerald" />
         <SummaryCard label="Supervisores" value={counts.supervisor} icon={BarChart3} tone="slate" />
+        <SummaryCard label="Operacional" value={counts.operacional} icon={Briefcase} tone="slate" />
         <SummaryCard label="Comerciais" value={counts.comercial} icon={Briefcase} tone="sky" />
       </div>
 
@@ -585,7 +596,7 @@ export default function UsuariosPage() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <div className="inline-flex rounded-xl border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-900 overflow-hidden">
-                              {(['admin', 'financeiro', 'fiscal', 'supervisor', 'comercial'] as AssignableRole[]).map(
+                              {(['admin', 'financeiro', 'fiscal', 'supervisor', 'comercial', 'operacional'] as AssignableRole[]).map(
                                 (roleKey) => {
                                   const isActive =
                                     ((currentRole as string | null) === 'operator' ? 'comercial' : currentRole) ===
@@ -616,6 +627,8 @@ export default function UsuariosPage() {
                                         ? 'Fiscal'
                                         : roleKey === 'supervisor'
                                         ? 'Supervisor'
+                                        : roleKey === 'operacional'
+                                        ? 'Operacional'
                                         : 'Comercial'}
                                     </button>
                                   )

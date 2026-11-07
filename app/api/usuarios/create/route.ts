@@ -3,9 +3,9 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { isSuperAdminEmail, type DashboardUserRole } from '@/lib/utils/roles'
 
-type AssignableRole = 'admin' | 'financeiro' | 'fiscal' | 'supervisor' | 'comercial'
+type AssignableRole = 'admin' | 'financeiro' | 'fiscal' | 'supervisor' | 'comercial' | 'operacional'
 
-const ASSIGNABLE_ROLES: AssignableRole[] = ['admin', 'financeiro', 'fiscal', 'supervisor', 'comercial']
+const ASSIGNABLE_ROLES: AssignableRole[] = ['admin', 'financeiro', 'fiscal', 'supervisor', 'comercial', 'operacional']
 
 function normalizeEmail(value: unknown) {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''

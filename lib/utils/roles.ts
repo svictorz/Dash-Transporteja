@@ -1,8 +1,8 @@
 /** Perfis com acesso ao dashboard web (motorista é app). */
-export type DashboardUserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'driver'
+export type DashboardUserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'operacional' | 'driver'
 
 /** Perfis que podem operar o dashboard (excluindo motorista). */
-export const PANEL_ROLES = ['admin', 'comercial', 'financeiro', 'fiscal', 'supervisor'] as const
+export const PANEL_ROLES = ['admin', 'comercial', 'financeiro', 'fiscal', 'supervisor', 'operacional'] as const
 export type PanelRole = typeof PANEL_ROLES[number]
 
 /** E-mails com poderes totais de gerenciamento de permissões. */
@@ -25,6 +25,8 @@ export function dashboardRoleLabel(role: string | null | undefined): string {
       return 'Fiscal'
     case 'supervisor':
       return 'Supervisor'
+    case 'operacional':
+      return 'Operacional'
     case 'comercial':
     case 'operator':
       return 'Comercial'
@@ -37,12 +39,23 @@ export function dashboardRoleLabel(role: string | null | undefined): string {
 
 /** Vê dados de todos os comerciais na Performance. */
 export function isGlobalPerformanceViewer(role: string | null | undefined): boolean {
-  return role === 'admin' || role === 'financeiro' || role === 'fiscal' || role === 'supervisor'
+  return role === 'admin' || role === 'financeiro' || role === 'fiscal' || role === 'supervisor' || role === 'operacional'
 }
 
 /** Pode editar dados operacionais/financeiros dentro da Performance. */
 export function canEditPerformance(role: string | null | undefined): boolean {
   return role === 'admin' || role === 'financeiro' || role === 'fiscal'
+}
+
+/** Somente as seções Campos financeiros e Dados do motorista da Performance. */
+export function canEditPerformanceOperationalFields(role: string | null | undefined): boolean {
+  return canEditPerformance(role) || role === 'operacional'
+}
+
+export function canOperacionalAccessPanelPath(pathname: string | null): boolean {
+  return Boolean(pathname && ['/performance', '/configuracoes', '/dados-pessoais'].some(
+    (route) => pathname === route || pathname.startsWith(route + '/'),
+  ))
 }
 
 /** @deprecated Use isGlobalPerformanceViewer or canEditPerformance for new checks. */
