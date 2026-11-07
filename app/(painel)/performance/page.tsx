@@ -1512,7 +1512,7 @@ export default function PerformancePage() {
         )
       case 'cliente':
         return (
-          <p className="text-gray-900 dark:text-slate-100 truncate" title={r.company_name?.trim() || '—'}>
+          <p className="max-w-[160px] text-gray-900 dark:text-slate-100 truncate" title={r.company_name?.trim() || '—'}>
             {r.company_name?.trim() || '—'}
           </p>
         )
@@ -1920,7 +1920,7 @@ export default function PerformancePage() {
               <thead className="bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-200">
                 <tr>
                   {listColumns.visibleKeys.map((key) => (
-                    <th key={key} className="text-left px-4 py-3 font-semibold whitespace-nowrap">
+                    <th key={key} className={`text-left px-4 py-3 font-semibold whitespace-nowrap ${key === 'cliente' ? 'w-[192px] max-w-[192px]' : ''}`}>
                       {PERF_LABEL_BY_KEY.get(key)}
                     </th>
                   ))}
@@ -1956,7 +1956,7 @@ export default function PerformancePage() {
                   return (
                     <tr key={r.id} className="border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
                         {listColumns.visibleKeys.map((key) => (
-                          <td key={key} className="px-4 py-3 align-top">
+                          <td key={key} className={`px-4 py-3 align-top ${key === 'cliente' ? 'w-[192px] max-w-[192px]' : ''}`}>
                             {renderPerfListCell(key, cellCtx)}
                           </td>
                         ))}
