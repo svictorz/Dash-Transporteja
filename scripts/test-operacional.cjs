@@ -39,3 +39,9 @@ assert.equal(r.isPerformanceSellerRole('operacional'), true)
 assert.equal(r.canViewRouteInRoutesPage('operacional', 'me', 'other'), false)
 assert.equal(r.canViewRouteInRoutesPage('operacional', 'me', 'me'), true)
 console.log('PASS: matriz de permissões antigas e cargo Operacional')
+for (const role of ['admin', 'financeiro', 'fiscal', 'operacional']) {
+  assert.equal(r.canEditValePedagioIncluso(role), true, role)
+}
+for (const role of ['comercial', 'operator', 'supervisor', 'driver', null]) {
+  assert.equal(r.canEditValePedagioIncluso(role), false, String(role))
+}

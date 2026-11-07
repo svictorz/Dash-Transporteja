@@ -1,8 +1,8 @@
 CREATE TEMP TABLE toll_actor(id uuid DEFAULT gen_random_uuid());
 INSERT INTO toll_actor DEFAULT VALUES;
 INSERT INTO auth.users(id,email) SELECT id,id||'@toll-test.invalid' FROM toll_actor;
-INSERT INTO public.users(id,email,role,commission_rate) SELECT id,id||'@toll-test.invalid','comercial',25 FROM toll_actor
- ON CONFLICT(id) DO UPDATE SET role='comercial',commission_rate=25;
+INSERT INTO public.users(id,email,role,commission_rate) SELECT id,id||'@toll-test.invalid','admin',25 FROM toll_actor
+ ON CONFLICT(id) DO UPDATE SET role='admin',commission_rate=25;
 CREATE TEMP TABLE toll_legacy(id uuid);
 WITH added AS (INSERT INTO public.routes(freight_id,origin,origin_state,destination,destination_state,
  vehicle,plate,weight,estimated_delivery,pickup_date,created_by_user_id,freight_value,nf_value,

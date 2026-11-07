@@ -52,6 +52,11 @@ export function canEditPerformanceOperationalFields(role: string | null | undefi
   return canEditPerformance(role) || role === 'operacional'
 }
 
+/** Comercial e supervisor visualizam o indicador, mas não alteram seu valor. */
+export function canEditValePedagioIncluso(role: string | null | undefined): boolean {
+  return canEditPerformanceOperationalFields(role)
+}
+
 export function canOperacionalAccessPanelPath(pathname: string | null): boolean {
   return canSupervisorAccessPanelPath(pathname)
 }

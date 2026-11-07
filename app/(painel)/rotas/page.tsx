@@ -44,7 +44,7 @@ import {
   normalizeTaxesPercent,
 } from '@/lib/utils/freight-financials'
 import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
-import { canViewRouteInRoutesPage } from '@/lib/utils/roles'
+import { canEditValePedagioIncluso, canViewRouteInRoutesPage } from '@/lib/utils/roles'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
 import {
   ROUTE_PERIOD_FILTER_HINT,
@@ -171,6 +171,7 @@ export default function RotasPage() {
   const isAdminUser = currentUser?.role === 'admin'
   /** Motorista vê a rota mas não envia/remove comprovantes (anexos são do escritório). */
   const canManageFreightDocuments = currentUser?.role !== 'driver'
+  const canChangeTollInclusion = canEditValePedagioIncluso(currentUser?.role)
   const { routes, loading: routesLoading, error: routesError, createRoute, updateRoute, deleteRoute } = useRoutes()
   const { clients, loading: clientsLoading } = useClients()
   const { drivers, loading: driversLoading } = useDrivers()
@@ -875,7 +876,7 @@ export default function RotasPage() {
       nf_value: parseCurrencyInput(formData.nfValue),
       cte_value: parseCurrencyInput(formData.cteValue),
       vale_pedagio: parseCurrencyInput(formData.valePedagio),
-      vale_pedagio_incluso: formData.valePedagioIncluso === 'true',
+      vale_pedagio_incluso: canChangeTollInclusion ? formData.valePedagioIncluso === 'true' : true,
       observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
@@ -1017,7 +1018,9 @@ export default function RotasPage() {
         nf_value: parseCurrencyInput(formData.nfValue),
         cte_value: parseCurrencyInput(formData.cteValue),
         vale_pedagio: parseCurrencyInput(formData.valePedagio),
-        vale_pedagio_incluso: formData.valePedagioIncluso === 'true',
+        ...(canChangeTollInclusion
+          ? { vale_pedagio_incluso: formData.valePedagioIncluso === 'true' }
+          : {}),
         observation: formData.observation.trim() || null,
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
@@ -2325,6 +2328,8 @@ export default function RotasPage() {
                       />
                       <select
                         aria-label="Vale pedágio incluso"
+                        disabled={!canChangeTollInclusion}
+                        title={!canChangeTollInclusion ? 'Seu cargo pode visualizar, mas não alterar este campo.' : undefined}
                         value={formData.valePedagioIncluso}
                         onChange={(e) => setFormData({ ...formData, valePedagioIncluso: e.target.value })}
                         className="mt-2 w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg"
@@ -2921,6 +2926,8 @@ export default function RotasPage() {
                       />
                       <select
                         aria-label="Vale pedágio incluso"
+                        disabled={!canChangeTollInclusion}
+                        title={!canChangeTollInclusion ? 'Seu cargo pode visualizar, mas não alterar este campo.' : undefined}
                         value={formData.valePedagioIncluso}
                         onChange={(e) => setFormData({ ...formData, valePedagioIncluso: e.target.value })}
                         className="mt-2 w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg"
