@@ -18,7 +18,8 @@ históricos. RLS permite leitura própria; somente administradores podem gerenci
 Sem meta cadastrada, mostrar estado explícito; nunca inventar um valor padrão.
 
 Implementação: helpers de agregação testáveis, gráficos SVG sem nova dependência,
-cartão de meta com editor administrativo, layout responsivo e modo escuro. Sem
+cartão de meta para acompanhamento e edição administrativa na aba Permissões,
+layout responsivo e modo escuro. Sem
 blocos de clientes ou IA. Validar agregações, isolamento e RLS com rollback;
 executar build e conferir visualmente antes de publicar.
 
@@ -37,6 +38,7 @@ executar build e conferir visualmente antes de publicar.
 ## Publicação
 
 Aplicar `20261107213307_monthly_sales_goals.sql` em transação antes de disponibilizar
-o frontend. Nenhuma meta é cadastrada por padrão. O administrador usa “Definir
-metas” no Dashboard, escolhe mês e vendedor e informa o valor. Não altera políticas
+o frontend. Nenhuma meta é cadastrada por padrão. O administrador acessa Permissões,
+seleciona o mês e salva o valor da meta na linha de cada vendedor. O Dashboard exibe
+somente o acompanhamento, sem editor. Não altera políticas
 ou dados de outras tabelas. O `CLAUDE.md` exige prévia e aprovação antes de commit/push.

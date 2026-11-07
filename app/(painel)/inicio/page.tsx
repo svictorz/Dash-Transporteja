@@ -46,6 +46,6 @@ export default function InicioPage() {
   if (!mounted || authLoading || (loading && routes.length === 0)) return <BrandLoading fullScreen={false} />
   return <>
     {(error || updateError) && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200">{error || updateError}</div>}
-    <DashboardOverview metrics={metrics} period={period} onPeriodChange={setPeriod} refreshing={loading} onRefresh={() => { setNow(new Date()); void loadRoutes() }} isAdmin={isAdmin} savingCommissionId={savingCommissionId} onToggleCommission={route => void toggleCommission(route)} goal={<MonthlyGoalCard userId={userId} isAdmin={isAdmin} now={now} revenue={metrics.monthlyRevenue} />} />
+    <DashboardOverview metrics={metrics} period={period} onPeriodChange={setPeriod} refreshing={loading} onRefresh={() => { setNow(new Date()); void loadRoutes() }} isAdmin={isAdmin} savingCommissionId={savingCommissionId} onToggleCommission={route => void toggleCommission(route)} goal={<MonthlyGoalCard userId={userId} now={now} revenue={metrics.monthlyRevenue} />} />
   </>
 }

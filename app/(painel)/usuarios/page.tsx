@@ -22,6 +22,9 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
+import { useMonthlySalesGoals } from '@/lib/hooks/useMonthlySalesGoals'
+import { saveMonthlySalesGoal } from '@/lib/services/monthly-sales-goals'
+import { dashboardMonthKey } from '@/lib/utils/dashboard-metrics'
 import {
   dashboardRoleLabel,
   isSuperAdminEmail,
@@ -112,6 +115,10 @@ export default function UsuariosPage() {
   const [filter, setFilter] = useState<'all' | AssignableRole>('all')
   const [commissionDraft, setCommissionDraft] = useState<Record<string, string>>({})
   const [savingCommissionId, setSavingCommissionId] = useState<string | null>(null)
+  const [goalMonth, setGoalMonth] = useState(() => dashboardMonthKey(new Date()).slice(0, 7))
+  const [goalDraft, setGoalDraft] = useState<Record<string, string>>({})
+  const [savingGoalId, setSavingGoalId] = useState<string | null>(null)
+  const [savedGoalId, setSavedGoalId] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [creatingUser, setCreatingUser] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -127,10 +134,37 @@ export default function UsuariosPage() {
   const isAdmin = me?.role === 'admin'
   const isAuthorized = isSuperAdmin || isAdmin
   const canManageExistingUsers = isSuperAdmin
+  const { goals, loading: goalsLoading, error: goalsError, refresh: refreshGoals } =
+    useMonthlySalesGoals(isAdmin ? me?.id ?? null : null, `${goalMonth}-01`, true)
   const createRoleOptions = useMemo(
     () => ROLE_OPTIONS.filter((opt) => isSuperAdmin || opt.value !== 'admin'),
     [isSuperAdmin],
   )
+
+  const handleSaveGoal = async (target: ManagedUser) => {
+    if (!isAdmin || savingGoalId) return
+    const existing = goals.find(goal => goal.user_id === target.id && goal.month === `${goalMonth}-01`)
+    const amount = Number(goalDraft[target.id] ?? existing?.amount ?? '')
+    setSavingGoalId(target.id)
+    setSavedGoalId(null)
+    setError(null)
+    try {
+      await saveMonthlySalesGoal(target.id, `${goalMonth}-01`, amount)
+      await refreshGoals()
+      setSavedGoalId(target.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível salvar a meta mensal.')
+    } finally {
+      setSavingGoalId(null)
+    }
+  }
+
+  const handleGoalMonthChange = (month: string) => {
+    if (!month || savingGoalId) return
+    setGoalMonth(month)
+    setGoalDraft({})
+    setSavedGoalId(null)
+  }
 
   useEffect(() => {
     if (meLoading) return
@@ -410,7 +444,7 @@ export default function UsuariosPage() {
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 max-w-md">
             {canManageExistingUsers
               ? 'Super admin cria usuarios, altera permissoes e remove acessos existentes.'
-              : 'Admins podem criar novos usuarios. Alterar/remover usuarios existentes fica restrito ao super admin.'}
+              : 'Admins podem criar usuários e editar metas. Permissões e remoção de acessos ficam restritas ao super admin.'}
           </div>
         </div>
       </header>
@@ -490,6 +524,18 @@ export default function UsuariosPage() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4 dark:border-slate-700">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Metas de faturamento</h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Defina a meta de cada vendedor na coluna Meta mensal. Somente administradores podem editar.</p>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-slate-300">
+            Mês das metas
+            <input type="month" min="2020-01" max="2100-12" value={goalMonth} disabled={savingGoalId !== null} onChange={event => handleGoalMonthChange(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+          </label>
+        </div>
+        {goalsError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{goalsError}<button type="button" onClick={() => void refreshGoals()} className="ml-2 font-medium underline">Tentar novamente</button></div>}
+
         {error && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 flex items-center gap-2">
             <AlertCircle className="w-4 h-4" aria-hidden />
@@ -505,13 +551,14 @@ export default function UsuariosPage() {
                   <th className="px-4 py-3 font-semibold">Usuário</th>
                   <th className="px-4 py-3 font-semibold">Função atual</th>
                   <th className="px-4 py-3 font-semibold whitespace-nowrap">% Comissão</th>
+                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Meta mensal</th>
                   <th className="px-4 py-3 font-semibold">Alterar permissão</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
+                    <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Carregando usuários...
                     </td>
@@ -520,7 +567,7 @@ export default function UsuariosPage() {
 
                 {!loading && filteredUsers.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
+                    <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
                       Nenhum usuário encontrado.
                     </td>
                   </tr>
@@ -531,6 +578,7 @@ export default function UsuariosPage() {
                     const currentRole: AssignableRole | 'driver' | null =
                       (u.role as string | null) === 'operator' ? 'comercial' : (u.role as AssignableRole | 'driver' | null)
                     const isOwner = isSuperAdminEmail(u.email)
+                    const monthlyGoal = goals.find(goal => goal.user_id === u.id && goal.month === `${goalMonth}-01`)
                     const badge = currentRole && currentRole !== 'driver'
                       ? ROLE_BADGE[currentRole]
                       : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-500'
@@ -592,6 +640,18 @@ export default function UsuariosPage() {
                           ) : (
                             <span className="text-gray-400 text-sm">—</span>
                           )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {currentRole && currentRole !== 'driver' ? (
+                            <form onSubmit={event => { event.preventDefault(); void handleSaveGoal(u) }} className="min-w-[220px]">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500 dark:text-slate-400">R$</span>
+                                <input type="number" inputMode="decimal" min="0.01" max="999999999999.99" step="0.01" required aria-label={`Meta mensal de ${u.name || u.email}`} value={goalDraft[u.id] ?? monthlyGoal?.amount.toString() ?? ''} placeholder={goalsLoading ? 'Carregando...' : 'Não definida'} disabled={!isAdmin || goalsLoading || !!goalsError || savingGoalId !== null} onChange={event => { setGoalDraft(previous => ({ ...previous, [u.id]: event.target.value })); setSavedGoalId(null) }} className="w-32 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800/40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800" />
+                                {isAdmin && <button type="submit" disabled={goalsLoading || !!goalsError || savingGoalId !== null} aria-label={`Salvar meta de ${u.name || u.email}`} className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900">{savingGoalId === u.id ? <Loader2 className="h-4 w-4 animate-spin" aria-label="Salvando meta" /> : 'Salvar'}</button>}
+                              </div>
+                              {savedGoalId === u.id && <span role="status" className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300"><Check className="h-3 w-3" aria-hidden="true" />Meta salva</span>}
+                            </form>
+                          ) : <span className="text-gray-400">—</span>}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
