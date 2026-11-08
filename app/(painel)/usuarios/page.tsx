@@ -26,7 +26,6 @@ import { useMonthlySalesGoals } from '@/lib/hooks/useMonthlySalesGoals'
 import { saveMonthlySalesGoal } from '@/lib/services/monthly-sales-goals'
 import { dashboardMonthKey } from '@/lib/utils/dashboard-metrics'
 import {
-  dashboardRoleLabel,
   isSuperAdminEmail,
   type DashboardUserRole,
 } from '@/lib/utils/roles'
@@ -89,20 +88,6 @@ const ROLE_OPTIONS: { value: AssignableRole; label: string; description: string;
   },
 ]
 
-const ROLE_BADGE: Record<AssignableRole, string> = {
-  operacional: 'bg-violet-100 text-violet-800 border-violet-300 dark:bg-violet-500/25 dark:text-violet-200 dark:border-violet-400/50',
-  admin:
-    'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-500/25 dark:text-rose-200 dark:border-rose-400/50',
-  financeiro:
-    'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/25 dark:text-amber-200 dark:border-amber-400/50',
-  fiscal:
-    'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-500/25 dark:text-emerald-200 dark:border-emerald-400/50',
-  supervisor:
-    'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-500/25 dark:text-indigo-200 dark:border-indigo-400/50',
-  comercial:
-    'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-500/25 dark:text-sky-200 dark:border-sky-400/50',
-}
-
 export default function UsuariosPage() {
   const router = useRouter()
   const { user: me, loading: meLoading } = useCurrentUser()
@@ -114,11 +99,9 @@ export default function UsuariosPage() {
   const [savedId, setSavedId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | AssignableRole>('all')
   const [commissionDraft, setCommissionDraft] = useState<Record<string, string>>({})
-  const [savingCommissionId, setSavingCommissionId] = useState<string | null>(null)
+  const [roleDraft, setRoleDraft] = useState<Record<string, AssignableRole>>({})
   const [goalMonth, setGoalMonth] = useState(() => dashboardMonthKey(new Date()).slice(0, 7))
   const [goalDraft, setGoalDraft] = useState<Record<string, string>>({})
-  const [savingGoalId, setSavingGoalId] = useState<string | null>(null)
-  const [savedGoalId, setSavedGoalId] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [creatingUser, setCreatingUser] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -141,29 +124,11 @@ export default function UsuariosPage() {
     [isSuperAdmin],
   )
 
-  const handleSaveGoal = async (target: ManagedUser) => {
-    if (!isAdmin || savingGoalId) return
-    const existing = goals.find(goal => goal.user_id === target.id && goal.month === `${goalMonth}-01`)
-    const amount = Number(goalDraft[target.id] ?? existing?.amount ?? '')
-    setSavingGoalId(target.id)
-    setSavedGoalId(null)
-    setError(null)
-    try {
-      await saveMonthlySalesGoal(target.id, `${goalMonth}-01`, amount)
-      await refreshGoals()
-      setSavedGoalId(target.id)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível salvar a meta mensal.')
-    } finally {
-      setSavingGoalId(null)
-    }
-  }
-
   const handleGoalMonthChange = (month: string) => {
-    if (!month || savingGoalId) return
+    if (!month || savingId) return
     setGoalMonth(month)
     setGoalDraft({})
-    setSavedGoalId(null)
+    setSavedId(null)
   }
 
   useEffect(() => {
@@ -237,84 +202,77 @@ export default function UsuariosPage() {
     return { admin, financeiro, fiscal, supervisor, operacional, comercial, total: users.length }
   }, [users])
 
-  const handleChangeRole = async (target: ManagedUser, newRole: AssignableRole) => {
-    if (!canManageExistingUsers) {
-      alert('Apenas o super admin pode alterar permissoes existentes.')
-      return
-    }
-    if (target.role === newRole) return
-    if (target.email && isSuperAdminEmail(target.email) && newRole !== 'admin') {
-      alert('O proprietário do sistema não pode deixar de ser administrador.')
-      return
-    }
+  const handleSaveUser = async (target: ManagedUser) => {
+    if (savingId) return
+    const currentRole = (target.role as string) === 'operator' ? 'comercial' : target.role
+    const newRole = canManageExistingUsers ? roleDraft[target.id] : undefined
+    const roleChanged = newRole !== undefined && newRole !== currentRole
+    const rawCommission = canManageExistingUsers ? commissionDraft[target.id] : undefined
+    const commissionRate = rawCommission === undefined ? undefined : Number(rawCommission.replace(',', '.'))
+    const roundedCommission = commissionRate === undefined ? undefined : Math.round(commissionRate * 100) / 100
+    const existingGoal = goals.find(goal => goal.user_id === target.id && goal.month === `${goalMonth}-01`)
+    const rawGoal = isAdmin ? goalDraft[target.id] : undefined
+    const amount = rawGoal === undefined || (rawGoal === '' && !existingGoal) ? undefined : Number(rawGoal)
+    const goalChanged = amount !== undefined && amount !== Number(existingGoal?.amount)
 
+    setError(null)
+    setSavedId(null)
+    // Validate every pending field before sending either request.
+    if (rawCommission !== undefined && (!rawCommission.trim() || !Number.isFinite(commissionRate) || commissionRate! < 0 || commissionRate! > 100)) {
+      setError('Informe uma comissão válida entre 0 e 100%.')
+      return
+    }
+    if (goalChanged && (!Number.isFinite(amount) || amount! <= 0 || amount! > 999999999999.99)) {
+      setError('Informe uma meta mensal válida, maior que zero.')
+      return
+    }
+    if (goalChanged && (goalsLoading || goalsError)) {
+      setError('Aguarde o carregamento das metas antes de salvar.')
+      return
+    }
+    if (roleChanged && isSuperAdminEmail(target.email) && newRole !== 'admin') {
+      setError('O proprietário do sistema não pode deixar de ser administrador.')
+      return
+    }
+    const commissionChanged = roundedCommission !== undefined && roundedCommission !== (target.commission_rate ?? 30)
+    if (!roleChanged && !commissionChanged && !goalChanged) return
+
+    setSavingId(target.id)
+    let profileSaved = false
     try {
-      setSavingId(target.id)
-      setSavedId(null)
-      setError(null)
-
-      const res = await fetch('/api/usuarios/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: target.id, role: newRole }),
-      })
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.error || 'Erro ao salvar permissão')
-      setUsers((prev) =>
-        prev.map((u) => (u.id === target.id ? { ...u, role: newRole } : u)),
-      )
-      if (me?.id === target.id) {
-        window.dispatchEvent(new CustomEvent('transporteja:profile-updated', { detail: { role: newRole } }))
-        if (newRole === 'supervisor') {
-          router.replace('/performance')
-        } else {
-          router.refresh()
-        }
+      if (roleChanged || commissionChanged) {
+        const res = await fetch('/api/usuarios/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: target.id,
+            ...(roleChanged ? { role: newRole } : {}),
+            ...(commissionChanged ? { commissionRate: roundedCommission } : {}),
+          }),
+        })
+        const body = await res.json()
+        if (!res.ok) throw new Error(body.error || 'Erro ao salvar alterações do usuário')
+        setUsers(previous => previous.map(user => user.id === target.id ? { ...user, ...body.user } : user))
+        setRoleDraft(previous => { const next = { ...previous }; delete next[target.id]; return next })
+        setCommissionDraft(previous => { const next = { ...previous }; delete next[target.id]; return next })
+        profileSaved = true
+      }
+      if (goalChanged) {
+        await saveMonthlySalesGoal(target.id, `${goalMonth}-01`, amount!)
+        setGoalDraft(previous => { const next = { ...previous }; delete next[target.id]; return next })
+        await refreshGoals()
       }
       setSavedId(target.id)
-      setTimeout(() => setSavedId((curr) => (curr === target.id ? null : curr)), 2000)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erro ao salvar permissão')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao salvar alterações do usuário.'
+      setError(`${target.name || target.email}: ${profileSaved ? 'Alterações de permissão/comissão salvas. A meta não foi salva; tente novamente. ' : ''}${message}`)
     } finally {
       setSavingId(null)
-    }
-  }
-
-  const handleSaveCommissionRate = async (target: ManagedUser) => {
-    if (!canManageExistingUsers) {
-      setCommissionDraft((prev) => {
-        const next = { ...prev }
-        delete next[target.id]
-        return next
-      })
-      return
-    }
-    const raw = commissionDraft[target.id]
-    if (raw === undefined) return
-    const parsed = parseFloat(raw.replace(',', '.'))
-    if (isNaN(parsed) || parsed < 0 || parsed > 100) return
-    const rounded = Math.round(parsed * 100) / 100
-    if (rounded === (target.commission_rate ?? 30)) return
-
-    try {
-      setSavingCommissionId(target.id)
-      const res = await fetch('/api/usuarios/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: target.id, commissionRate: rounded }),
-      })
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.error || 'Erro ao salvar comissão')
-      setUsers((prev) =>
-        prev.map((u) => (u.id === target.id ? { ...u, commission_rate: rounded } : u)),
-      )
-      setCommissionDraft((prev) => { const n = { ...prev }; delete n[target.id]; return n })
-      setSavedId(target.id)
-      setTimeout(() => setSavedId((curr) => (curr === target.id ? null : curr)), 2000)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erro ao salvar comissão')
-    } finally {
-      setSavingCommissionId(null)
+      if (profileSaved && roleChanged && me?.id === target.id) {
+        window.dispatchEvent(new CustomEvent('transporteja:profile-updated', { detail: { role: newRole } }))
+        if (newRole === 'supervisor') router.replace('/performance')
+        else router.refresh()
+      }
     }
   }
 
@@ -527,11 +485,11 @@ export default function UsuariosPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4 dark:border-slate-700">
           <div>
             <h2 className="text-sm font-semibold text-gray-900 dark:text-slate-100">Metas de faturamento</h2>
-            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Defina a meta de cada vendedor na coluna Meta mensal. Somente administradores podem editar.</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Edite os campos e clique em Salvar no final da linha. Somente administradores podem editar as metas.</p>
           </div>
           <label className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-slate-300">
             Mês das metas
-            <input type="month" min="2020-01" max="2100-12" value={goalMonth} disabled={savingGoalId !== null} onChange={event => handleGoalMonthChange(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+            <input type="month" min="2020-01" max="2100-12" value={goalMonth} disabled={savingId !== null} onChange={event => handleGoalMonthChange(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
           </label>
         </div>
         {goalsError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{goalsError}<button type="button" onClick={() => void refreshGoals()} className="ml-2 font-medium underline">Tentar novamente</button></div>}
@@ -549,10 +507,10 @@ export default function UsuariosPage() {
               <thead className="bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-200 text-left">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Usuário</th>
-                  <th className="px-4 py-3 font-semibold">Função atual</th>
+                  <th className="px-4 py-3 font-semibold">Permissão</th>
                   <th className="px-4 py-3 font-semibold whitespace-nowrap">% Comissão</th>
                   <th className="px-4 py-3 font-semibold whitespace-nowrap">Meta mensal</th>
-                  <th className="px-4 py-3 font-semibold">Alterar permissão</th>
+                  <th className="px-4 py-3 font-semibold">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -579,10 +537,11 @@ export default function UsuariosPage() {
                       (u.role as string | null) === 'operator' ? 'comercial' : (u.role as AssignableRole | 'driver' | null)
                     const isOwner = isSuperAdminEmail(u.email)
                     const monthlyGoal = goals.find(goal => goal.user_id === u.id && goal.month === `${goalMonth}-01`)
-                    const badge = currentRole && currentRole !== 'driver'
-                      ? ROLE_BADGE[currentRole]
-                      : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-500'
-
+                    const selectedRole = roleDraft[u.id] ?? currentRole
+                    const hasChanges =
+                      (canManageExistingUsers && selectedRole !== currentRole) ||
+                      (canManageExistingUsers && commissionDraft[u.id] !== undefined && commissionDraft[u.id] !== String(u.commission_rate ?? 30)) ||
+                      (isAdmin && goalDraft[u.id] !== undefined && goalDraft[u.id] !== (monthlyGoal?.amount.toString() ?? ''))
                     return (
                       <tr key={u.id} className="border-t border-gray-100 dark:border-slate-500">
                         <td className="px-4 py-3">
@@ -607,14 +566,21 @@ export default function UsuariosPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${badge}`}
+                          <select
+                            aria-label={`Permissão de ${u.name || u.email}`}
+                            value={selectedRole ?? ''}
+                            disabled={!canManageExistingUsers || savingId !== null || isOwner}
+                            onChange={event => { setRoleDraft(previous => ({ ...previous, [u.id]: event.target.value as AssignableRole })); setSavedId(null) }}
+                            className="w-40 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800/40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
+                            title={!canManageExistingUsers ? 'Apenas o super admin pode alterar permissões existentes' : undefined}
                           >
-                            {dashboardRoleLabel(u.role)}
-                          </span>
+                            {!currentRole && <option value="" disabled>Sem acesso</option>}
+                            {currentRole === 'driver' && <option value="driver" disabled>Motorista</option>}
+                            {ROLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
                         </td>
                         <td className="px-4 py-3">
-                          {currentRole === 'comercial' ? (
+                          {(currentRole === 'comercial' || selectedRole === 'comercial') ? (
                             <div className="flex items-center gap-1.5">
                               <div className="relative w-20">
                                 <input
@@ -622,20 +588,14 @@ export default function UsuariosPage() {
                                   min={0}
                                   max={100}
                                   step={0.5}
-                                  disabled={!canManageExistingUsers}
+                                  disabled={!canManageExistingUsers || savingId !== null}
                                   value={commissionDraft[u.id] ?? String(u.commission_rate ?? 30)}
-                                  onChange={(e) =>
-                                    setCommissionDraft((prev) => ({ ...prev, [u.id]: e.target.value }))
-                                  }
-                                  onBlur={() => void handleSaveCommissionRate(u)}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveCommissionRate(u) }}
+                                  onChange={event => { setCommissionDraft(previous => ({ ...previous, [u.id]: event.target.value })); setSavedId(null) }}
+                                  aria-label={`Comissão de ${u.name || u.email}`}
                                   className="w-full pr-5 pl-2 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/40 text-right disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                                 />
                                 <Percent className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
                               </div>
-                              {savingCommissionId === u.id && (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 flex-shrink-0" />
-                              )}
                             </div>
                           ) : (
                             <span className="text-gray-400 text-sm">—</span>
@@ -643,62 +603,26 @@ export default function UsuariosPage() {
                         </td>
                         <td className="px-4 py-3">
                           {currentRole && currentRole !== 'driver' ? (
-                            <form onSubmit={event => { event.preventDefault(); void handleSaveGoal(u) }} className="min-w-[220px]">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-500 dark:text-slate-400">R$</span>
-                                <input type="number" inputMode="decimal" min="0.01" max="999999999999.99" step="0.01" required aria-label={`Meta mensal de ${u.name || u.email}`} value={goalDraft[u.id] ?? monthlyGoal?.amount.toString() ?? ''} placeholder={goalsLoading ? 'Carregando...' : 'Não definida'} disabled={!isAdmin || goalsLoading || !!goalsError || savingGoalId !== null} onChange={event => { setGoalDraft(previous => ({ ...previous, [u.id]: event.target.value })); setSavedGoalId(null) }} className="w-32 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800/40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800" />
-                                {isAdmin && <button type="submit" disabled={goalsLoading || !!goalsError || savingGoalId !== null} aria-label={`Salvar meta de ${u.name || u.email}`} className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900">{savingGoalId === u.id ? <Loader2 className="h-4 w-4 animate-spin" aria-label="Salvando meta" /> : 'Salvar'}</button>}
-                              </div>
-                              {savedGoalId === u.id && <span role="status" className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300"><Check className="h-3 w-3" aria-hidden="true" />Meta salva</span>}
-                            </form>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500 dark:text-slate-400">R$</span>
+                              <input
+                                type="number" inputMode="decimal" min="0.01" max="999999999999.99" step="0.01"
+                                aria-label={`Meta mensal de ${u.name || u.email}`}
+                                value={goalDraft[u.id] ?? monthlyGoal?.amount.toString() ?? ''}
+                                placeholder={goalsLoading ? 'Carregando...' : 'Não definida'}
+                                disabled={!isAdmin || goalsLoading || !!goalsError || savingId !== null}
+                                onChange={event => { setGoalDraft(previous => ({ ...previous, [u.id]: event.target.value })); setSavedId(null) }}
+                                className="w-32 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800/40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
+                              />
+                            </div>
                           ) : <span className="text-gray-400">—</span>}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <div className="inline-flex rounded-xl border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-900 overflow-hidden">
-                              {(['admin', 'financeiro', 'fiscal', 'supervisor', 'comercial', 'operacional'] as AssignableRole[]).map(
-                                (roleKey) => {
-                                  const isActive =
-                                    ((currentRole as string | null) === 'operator' ? 'comercial' : currentRole) ===
-                                    roleKey
-                                  const disabled =
-                                    savingId === u.id ||
-                                    !canManageExistingUsers ||
-                                    (isOwner && roleKey !== 'admin')
-                                  return (
-                                    <button
-                                      key={roleKey}
-                                      type="button"
-                                      disabled={disabled}
-                                      onClick={() => handleChangeRole(u, roleKey)}
-                                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                                        isActive
-                                          ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900'
-                                          : 'text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800'
-                                      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                      title={!canManageExistingUsers ? 'Apenas o super admin pode alterar permissoes existentes' : undefined}
-                                      aria-pressed={isActive}
-                                    >
-                                      {roleKey === 'admin'
-                                        ? 'Admin'
-                                        : roleKey === 'financeiro'
-                                        ? 'Financeiro'
-                                        : roleKey === 'fiscal'
-                                        ? 'Fiscal'
-                                        : roleKey === 'supervisor'
-                                        ? 'Supervisor'
-                                        : roleKey === 'operacional'
-                                        ? 'Operacional'
-                                        : 'Comercial'}
-                                    </button>
-                                  )
-                                },
-                              )}
-                            </div>
                             <button
                               type="button"
                               disabled={
-                                savingId === u.id ||
+                                savingId !== null ||
                                 !canManageExistingUsers ||
                                 isOwner ||
                                 me?.id === u.id ||
@@ -721,11 +645,18 @@ export default function UsuariosPage() {
                               <UserMinus className="w-3.5 h-3.5" />
                               Remover acesso
                             </button>
-                            {savingId === u.id && (
-                              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                            )}
-                            {savedId === u.id && (
-                              <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                            <button
+                              type="button"
+                              aria-label={`Salvar alterações de ${u.name || u.email}`}
+                              disabled={!hasChanges || savingId !== null}
+                              onClick={() => handleSaveUser(u)}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900"
+                            >
+                              {savingId === u.id && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />}
+                              {savingId === u.id ? 'Salvando...' : 'Salvar'}
+                            </button>
+                            {savedId === u.id && !hasChanges && (
+                              <span role="status" className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
                                 <Check className="w-3.5 h-3.5" /> salvo
                               </span>
                             )}
