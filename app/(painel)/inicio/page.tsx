@@ -15,6 +15,7 @@ export default function InicioPage() {
   const { session, loading: authLoading } = useAuthState()
   const { user } = useCurrentUser()
   const [mounted, setMounted] = useState(false)
+  const [showValues, setShowValues] = useState(false)
   const [period, setPeriod] = useState<DashboardPeriod>('month')
   const [now, setNow] = useState(() => new Date())
   const [savingCommissionId, setSavingCommissionId] = useState<string | null>(null)
@@ -24,6 +25,8 @@ export default function InicioPage() {
 
   useEffect(() => {
     setMounted(true)
+    try { setShowValues(localStorage.getItem('dashboard:showValues') !== 'false') }
+    catch { setShowValues(true) }
     try {
       const saved = localStorage.getItem('dashboard:period')
       if (DASHBOARD_PERIODS.some(option => option.value === saved)) setPeriod(saved as DashboardPeriod)
@@ -35,6 +38,11 @@ export default function InicioPage() {
     if (mounted) { try { localStorage.setItem('dashboard:period', period) } catch {} }
   }, [mounted, period])
   const metrics = useMemo(() => buildDashboardMetrics(routes, userId, period, now, user?.commission_rate), [routes, userId, period, now, user?.commission_rate])
+  function toggleValues() {
+    const next = !showValues
+    setShowValues(next)
+    try { localStorage.setItem('dashboard:showValues', String(next)) } catch {}
+  }
   async function toggleCommission(route: Route) {
     if (!isAdmin || savingCommissionId) return
     setSavingCommissionId(route.id)
@@ -46,6 +54,6 @@ export default function InicioPage() {
   if (!mounted || authLoading || (loading && routes.length === 0)) return <BrandLoading fullScreen={false} />
   return <>
     {(error || updateError) && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200">{error || updateError}</div>}
-    <DashboardOverview metrics={metrics} commissionRate={user?.commission_rate} period={period} onPeriodChange={setPeriod} refreshing={loading} onRefresh={() => { setNow(new Date()); void loadRoutes() }} isAdmin={isAdmin} savingCommissionId={savingCommissionId} onToggleCommission={route => void toggleCommission(route)} goal={<MonthlyGoalCard userId={userId} now={now} revenue={metrics.monthlyRevenue} />} />
+    <DashboardOverview metrics={metrics} showValues={showValues} onToggleValues={toggleValues} commissionRate={user?.commission_rate} period={period} onPeriodChange={setPeriod} refreshing={loading} onRefresh={() => { setNow(new Date()); void loadRoutes() }} isAdmin={isAdmin} savingCommissionId={savingCommissionId} onToggleCommission={route => void toggleCommission(route)} goal={<MonthlyGoalCard userId={userId} now={now} revenue={metrics.monthlyRevenue} showValues={showValues} />} />
   </>
 }
