@@ -4,7 +4,7 @@ import { useId, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { ArrowDownRight, ArrowUpRight, ArrowRight, CalendarDays, Coins, Eye, EyeOff, RefreshCw, Ticket, Truck } from 'lucide-react'
 import type { Route } from '@/lib/services/routes'
-import { DASHBOARD_PERIODS, dashboardFreightValue, dashboardVariation, type DashboardPeriod, type DashboardPoint, type buildDashboardMetrics } from '@/lib/utils/dashboard-metrics'
+import { DASHBOARD_PERIODS, dashboardFreightValue, dashboardVariation, type DashboardCustomRange, type DashboardPeriod, type DashboardPoint, type buildDashboardMetrics } from '@/lib/utils/dashboard-metrics'
 import { formatBRL, formatFreightShare, getRouteCommissionValue } from '@/lib/utils/freight-financials'
 import { formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
@@ -57,19 +57,27 @@ function RevenueChart({ points, monthly }: { points: DashboardPoint[]; monthly: 
   </div>
 }
 
-function LastSevenDays({ points }: { points: DashboardPoint[] }) {
+function FreightActivity({ points, monthly }: { points: DashboardPoint[]; monthly: boolean }) {
   const total = points.reduce((sum, point) => sum + point.count, 0)
   const max = Math.max(1, ...points.map(point => point.count))
+  // Quinze dias ainda cabem no cartão; períodos maiores preservam barras e rótulos legíveis com rolagem horizontal.
+  const minimumWidth = points.length > 15 ? `${Math.max(points.length * 42, 320)}px` : undefined
+  const label = (date: Date) => monthly
+    ? date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '')
+    : date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
+  const detail = (date: Date) => monthly
+    ? date.toLocaleDateString('pt-BR', { month: '2-digit', year: '2-digit' })
+    : date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
   return <section className={`${panel} p-5 sm:p-6`}>
-    <div className="flex items-start justify-between gap-2"><div><h2 className="text-sm font-semibold">Fretes por dia</h2><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Cadastros nos últimos 7 dias</p></div><CalendarDays className="h-4 w-4 text-slate-400" aria-hidden="true" /></div>
+    <div className="flex items-start justify-between gap-2"><div><h2 className="text-sm font-semibold">Fretes por {monthly ? 'mês' : 'dia'}</h2><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Cadastros no período selecionado</p></div><CalendarDays className="h-4 w-4 text-slate-400" aria-hidden="true" /></div>
     <p className="mt-4 flex items-baseline gap-2"><strong className="text-3xl font-semibold tracking-tight">{total}</strong><span className="text-xs text-slate-500 dark:text-slate-400">fretes no período</span></p>
-    <div className="mt-5 grid grid-cols-7 gap-2" role="list" aria-label="Quantidade de fretes nos últimos sete dias">
+    <div className="mt-5 overflow-x-auto touch-auto"><div className="grid min-w-[280px] gap-2" style={{ gridTemplateColumns: `repeat(${Math.max(points.length, 1)}, minmax(32px, 1fr))`, width: minimumWidth }} role="list" aria-label={`Quantidade de fretes por ${monthly ? 'mês' : 'dia'} no período selecionado`}>
       {points.map(point => <div key={point.key} role="listitem" className="min-w-0 text-center" title={`${point.date.toLocaleDateString('pt-BR')}: ${point.count} fretes`}>
         <span className="block text-[11px] font-medium tabular-nums">{point.count}</span>
         <div className="mt-2 flex h-24 items-end"><div className={`w-full rounded-t-md ${point.count > 0 && point.count === max ? 'bg-blue-500' : 'bg-slate-100 dark:bg-slate-800'}`} style={{ height: point.count ? `${point.count / max * 100}%` : '3px' }} /></div>
-        <span className="mt-2 block text-[10px] capitalize text-slate-500 dark:text-slate-400">{point.date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}</span><span className="block text-[10px] text-slate-400">{point.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>
+        <span className="mt-2 block text-[10px] capitalize text-slate-500 dark:text-slate-400">{label(point.date)}</span><span className="block text-[10px] text-slate-400">{detail(point.date)}</span>
       </div>)}
-    </div>
+    </div></div>
   </section>
 }
 
@@ -80,17 +88,25 @@ const statusStyles: Record<Route['status'], string> = {
   documentation: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300', cancelled: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
 }
 
-export function DashboardOverview({ metrics, period, onPeriodChange, onRefresh, refreshing, goal, isAdmin, savingCommissionId, onToggleCommission, commissionRate, showValues, onToggleValues }: {
+export function DashboardOverview({ metrics, period, onPeriodChange, customRange, customDraft, customError, onCustomDraftChange, onApplyCustomRange, onRefresh, refreshing, goal, isAdmin, savingCommissionId, onToggleCommission, commissionRate, showValues, onToggleValues }: {
   metrics: Metrics; period: DashboardPeriod; onPeriodChange: (period: DashboardPeriod) => void; onRefresh: () => void; refreshing: boolean; goal: ReactNode;
   isAdmin: boolean; savingCommissionId: string | null; onToggleCommission: (route: Route) => void;
   commissionRate?: number | null;
   showValues: boolean; onToggleValues: () => void;
+  customRange?: DashboardCustomRange; customDraft?: DashboardCustomRange; customError?: string | null;
+  onCustomDraftChange?: (field: 'start' | 'end', value: string) => void; onApplyCustomRange?: () => void;
 }) {
   const { current, previous } = metrics
   const money = (value: number) => showValues ? formatBRL(value) : 'R$ ••••••'
   const costs = [ { label: 'Motoristas', value: current.drivers, color: 'bg-blue-500' }, { label: 'Tributos', value: current.taxes, color: 'bg-amber-400' }, { label: 'Seguro', value: current.insurance, color: 'bg-violet-400' }, { label: 'Frete líquido', value: current.net, color: 'bg-emerald-400' } ]
   return <div className="mx-auto w-full max-w-[1600px] space-y-5 pb-4 text-slate-900 dark:text-slate-100">
     <header className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Uma visão dos seus fretes e resultados.</p></div><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={onToggleValues} aria-label={showValues ? 'Ocultar valores do Dashboard' : 'Mostrar valores do Dashboard'} title={showValues ? 'Ocultar valores do Dashboard' : 'Mostrar valores do Dashboard'} aria-pressed={!showValues} className={`${panel} flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-slate-500 hover:text-blue-600`}>{showValues ? <Eye className="h-4 w-4" aria-hidden="true" /> : <EyeOff className="h-4 w-4" aria-hidden="true" />}<span className="hidden sm:inline">{showValues ? 'Ocultar valores' : 'Mostrar valores'}</span></button><label className={`${panel} flex items-center gap-2 px-3 py-2 text-xs`}><CalendarDays className="h-4 w-4 text-slate-400" aria-hidden="true" /><span className="sr-only">Período dos indicadores e faturamento</span><select value={period} onChange={event => onPeriodChange(event.target.value as DashboardPeriod)} className="max-w-[160px] bg-transparent font-medium outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900">{DASHBOARD_PERIODS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><button type="button" onClick={onRefresh} disabled={refreshing} aria-label="Atualizar Dashboard" className={`${panel} p-2.5 text-slate-500 hover:text-blue-600 disabled:opacity-50`}><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" /></button></div></header>
+    {period === 'custom' && customDraft && <div className={`${panel} flex flex-wrap items-end gap-3 p-3 sm:p-4`}>
+      <label className="flex flex-col gap-1 text-xs text-slate-500 dark:text-slate-400">De<input type="date" aria-label="Data inicial do Dashboard" value={customDraft.start} onChange={event => onCustomDraftChange?.('start', event.target.value)} className="rounded-lg border border-slate-200 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:text-slate-100" /></label>
+      <label className="flex flex-col gap-1 text-xs text-slate-500 dark:text-slate-400">Até<input type="date" aria-label="Data final do Dashboard" value={customDraft.end} onChange={event => onCustomDraftChange?.('end', event.target.value)} className="rounded-lg border border-slate-200 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:text-slate-100" /></label>
+      <button type="button" onClick={onApplyCustomRange} disabled={!customRange || (customDraft.start === customRange.start && customDraft.end === customRange.end)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Aplicar</button>
+      {customError ? <p role="alert" className="w-full text-xs text-rose-600 dark:text-rose-300">{customError}</p> : customRange && (customDraft.start !== customRange.start || customDraft.end !== customRange.end) && <p className="w-full text-xs text-slate-500 dark:text-slate-400">Clique em Aplicar para atualizar os indicadores.</p>}
+    </div>}
     <div className="grid gap-4 md:grid-cols-3">
       {[
         { label: 'Valor total dos fretes', value: current.freight, prev: previous.freight, icon: Truck, share: null },
@@ -100,7 +116,7 @@ export function DashboardOverview({ metrics, period, onPeriodChange, onRefresh, 
     </div>
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="contents xl:block xl:min-w-0 xl:space-y-5">
-        <section className={`${panel} p-5 sm:p-6`}><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">Evolução do faturamento</h2><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Data de coleta · na ausência, data de entrega</p></div><span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">{current.count} frete{current.count !== 1 ? 's' : ''}</span></div>{showValues ? <RevenueChart points={metrics.series} monthly={period === 'year' || period === 'all'} /> : <div className="flex h-[250px] items-center justify-center text-sm text-slate-500 dark:text-slate-400">Valores do gráfico ocultos</div>}
+        <section className={`${panel} p-5 sm:p-6`}><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">Evolução do faturamento</h2><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Data de coleta · na ausência, data de entrega</p></div><span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">{current.count} frete{current.count !== 1 ? 's' : ''}</span></div>{showValues ? <RevenueChart points={metrics.series} monthly={metrics.monthly} /> : <div className="flex h-[250px] items-center justify-center text-sm text-slate-500 dark:text-slate-400">Valores do gráfico ocultos</div>}
           <div className="mt-2 border-t border-slate-100 pt-5 dark:border-slate-800"><div className="mb-4 flex items-center justify-between gap-2"><h3 className="text-xs font-semibold">Composição do frete</h3><span className="text-[10px] text-slate-500 dark:text-slate-400">% do faturamento selecionado</span></div><div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-4">{costs.map(cost => <div key={cost.label} className="min-w-0"><div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${cost.color}`} />{cost.label}</div><div className="mt-1 flex flex-wrap items-baseline gap-x-1.5"><span className="text-sm font-semibold tabular-nums">{money(cost.value)}</span><span className="text-[11px] text-slate-500 dark:text-slate-400">{showValues ? formatFreightShare(cost.value, current.freight) ?? '—' : '•••'}</span></div></div>)}</div><p className="mt-4 text-[10px] text-slate-400">A comissão é calculada sobre o frete líquido e está destacada no indicador acima.</p></div>
         </section>
         <section className={`${panel} order-2 overflow-hidden xl:order-none`}><div className="flex flex-wrap items-center justify-between gap-3 p-5 sm:p-6"><div><h2 className="text-sm font-semibold">Seus últimos fretes</h2><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Os 7 cadastros mais recentes · todos os períodos</p></div><Link href="/rotas" className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">Ver todos<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link></div>
@@ -115,7 +131,7 @@ export function DashboardOverview({ metrics, period, onPeriodChange, onRefresh, 
   </div>
 </td><td className="whitespace-nowrap px-4 py-4 font-medium tabular-nums">{money(dashboardFreightValue(route))}</td><td className="whitespace-nowrap px-4 py-4"><span className={`rounded-md px-2 py-1 text-[10px] ${statusStyles[route.status]}`}>{statusLabels[route.status] ?? route.status}</span></td><td className="px-4 py-4"><div className="flex flex-col items-start gap-1"><span className="whitespace-nowrap font-medium tabular-nums">{money(getRouteCommissionValue(route, commissionRate))}</span><CommissionPaidStatus paid={route.commission_paid === true} loading={savingCommissionId === route.id} editable={isAdmin} onToggle={() => onToggleCommission(route)} /></div></td></tr>)}</tbody></table></div>}
         </section>
-      </div><aside className="grid min-w-0 gap-5 sm:grid-cols-2 xl:grid-cols-1"><LastSevenDays points={metrics.daily} />{goal}</aside>
+      </div><aside className="grid min-w-0 gap-5 sm:grid-cols-2 xl:grid-cols-1"><FreightActivity points={metrics.activity} monthly={metrics.activityMonthly} />{goal}</aside>
     </div>
   </div>
 }

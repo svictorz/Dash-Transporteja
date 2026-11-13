@@ -102,6 +102,7 @@ export default function UsuariosPage() {
   const [roleDraft, setRoleDraft] = useState<Record<string, AssignableRole>>({})
   const [goalMonth, setGoalMonth] = useState(() => dashboardMonthKey(new Date()).slice(0, 7))
   const [goalDraft, setGoalDraft] = useState<Record<string, string>>({})
+  const [netGoalDraft, setNetGoalDraft] = useState<Record<string, string>>({})
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [creatingUser, setCreatingUser] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -128,6 +129,7 @@ export default function UsuariosPage() {
     if (!month || savingId) return
     setGoalMonth(month)
     setGoalDraft({})
+    setNetGoalDraft({})
     setSavedId(null)
   }
 
@@ -212,8 +214,12 @@ export default function UsuariosPage() {
     const roundedCommission = commissionRate === undefined ? undefined : Math.round(commissionRate * 100) / 100
     const existingGoal = goals.find(goal => goal.user_id === target.id && goal.month === `${goalMonth}-01`)
     const rawGoal = isAdmin ? goalDraft[target.id] : undefined
-    const amount = rawGoal === undefined || (rawGoal === '' && !existingGoal) ? undefined : Number(rawGoal)
-    const goalChanged = amount !== undefined && amount !== Number(existingGoal?.amount)
+    const rawNetGoal = isAdmin ? netGoalDraft[target.id] : undefined
+    const amount = rawGoal === undefined || (rawGoal === '' && !existingGoal) ? existingGoal?.amount : Number(rawGoal)
+    const netAmount = rawNetGoal === undefined ? existingGoal?.net_amount ?? null : rawNetGoal.trim() === '' ? null : Number(rawNetGoal)
+    const goalChanged =
+      (rawGoal !== undefined && !(rawGoal === '' && !existingGoal) && amount !== Number(existingGoal?.amount)) ||
+      (rawNetGoal !== undefined && netAmount !== (existingGoal?.net_amount ?? null))
 
     setError(null)
     setSavedId(null)
@@ -224,6 +230,10 @@ export default function UsuariosPage() {
     }
     if (goalChanged && (!Number.isFinite(amount) || amount! <= 0 || amount! > 999999999999.99)) {
       setError('Informe uma meta mensal válida, maior que zero.')
+      return
+    }
+    if (goalChanged && netAmount !== null && (!Number.isFinite(netAmount) || netAmount <= 0 || netAmount > 999999999999.99)) {
+      setError('Informe uma meta de lucro líquido válida, maior que zero.')
       return
     }
     if (goalChanged && (goalsLoading || goalsError)) {
@@ -258,8 +268,9 @@ export default function UsuariosPage() {
         profileSaved = true
       }
       if (goalChanged) {
-        await saveMonthlySalesGoal(target.id, `${goalMonth}-01`, amount!)
+        await saveMonthlySalesGoal(target.id, `${goalMonth}-01`, amount!, netAmount)
         setGoalDraft(previous => { const next = { ...previous }; delete next[target.id]; return next })
+        setNetGoalDraft(previous => { const next = { ...previous }; delete next[target.id]; return next })
         await refreshGoals()
       }
       setSavedId(target.id)
@@ -510,13 +521,14 @@ export default function UsuariosPage() {
                   <th className="px-4 py-3 font-semibold">Permissão</th>
                   <th className="px-4 py-3 font-semibold whitespace-nowrap">% Comissão</th>
                   <th className="px-4 py-3 font-semibold whitespace-nowrap">Meta mensal</th>
+                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Meta lucro líquido</th>
                   <th className="px-4 py-3 font-semibold">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Carregando usuários...
                     </td>
@@ -525,7 +537,7 @@ export default function UsuariosPage() {
 
                 {!loading && filteredUsers.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
                       Nenhum usuário encontrado.
                     </td>
                   </tr>
@@ -541,7 +553,8 @@ export default function UsuariosPage() {
                     const hasChanges =
                       (canManageExistingUsers && selectedRole !== currentRole) ||
                       (canManageExistingUsers && commissionDraft[u.id] !== undefined && commissionDraft[u.id] !== String(u.commission_rate ?? 30)) ||
-                      (isAdmin && goalDraft[u.id] !== undefined && goalDraft[u.id] !== (monthlyGoal?.amount.toString() ?? ''))
+                      (isAdmin && goalDraft[u.id] !== undefined && goalDraft[u.id] !== (monthlyGoal?.amount.toString() ?? '')) ||
+                      (isAdmin && netGoalDraft[u.id] !== undefined && netGoalDraft[u.id] !== (monthlyGoal?.net_amount?.toString() ?? ''))
                     return (
                       <tr key={u.id} className="border-t border-gray-100 dark:border-slate-500">
                         <td className="px-4 py-3">
@@ -613,6 +626,22 @@ export default function UsuariosPage() {
                                 disabled={!isAdmin || goalsLoading || !!goalsError || savingId !== null}
                                 onChange={event => { setGoalDraft(previous => ({ ...previous, [u.id]: event.target.value })); setSavedId(null) }}
                                 className="w-32 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800/40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
+                              />
+                            </div>
+                          ) : <span className="text-gray-400">—</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          {currentRole && currentRole !== 'driver' ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-emerald-600 dark:text-emerald-300">R$</span>
+                              <input
+                                type="number" inputMode="decimal" min="0.01" max="999999999999.99" step="0.01"
+                                aria-label={`Meta de lucro líquido de ${u.name || u.email}`}
+                                value={netGoalDraft[u.id] ?? monthlyGoal?.net_amount?.toString() ?? ''}
+                                placeholder={goalsLoading ? 'Carregando...' : 'Não definida'}
+                                disabled={!isAdmin || goalsLoading || !!goalsError || savingId !== null}
+                                onChange={event => { setNetGoalDraft(previous => ({ ...previous, [u.id]: event.target.value })); setSavedId(null) }}
+                                className="w-32 rounded-lg border border-emerald-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-600/40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-emerald-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
                               />
                             </div>
                           ) : <span className="text-gray-400">—</span>}

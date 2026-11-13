@@ -13,7 +13,7 @@ function load(file) {
   modules.set(filename, context.exports)
   return context.exports
 }
-const { buildDashboardMetrics, monthlyGoalProgress, dashboardVariation } = load('lib/utils/dashboard-metrics.ts')
+const { buildDashboardMetrics, dashboardPeriodRange, monthlyGoalProgress, dashboardVariation } = load('lib/utils/dashboard-metrics.ts')
 const { formatFreightShare } = load('lib/utils/freight-financials.ts')
 const route = (id, overrides = {}) => ({ id: String(id), freight_id: id, created_by_user_id: 'seller', status: 'delivered', pickup_date: '2026-11-07', created_at: `2026-11-07T12:${String(id).padStart(2, '0')}:00Z`, freight_value: 1000, driver_value: 300, vale_pedagio: 50, vale_pedagio_incluso: false, financial_calculation_version: 2, taxes_percent: 18, seguro_percent: 0, ...overrides })
 const now = new Date(2026, 10, 7, 12)
@@ -26,25 +26,51 @@ assert.equal(metrics.previous.freight, 2000)
 assert.equal(metrics.current.drivers, 1100) // Legacy driver 400; two v2 drivers 350.
 assert.equal(metrics.current.net, 470 + 444 + 60) // Saved historical net is untouched.
 assert.equal(metrics.current.commissions, 94 + 123 + 12)
+assert.equal(metrics.monthlyNet, 470 + 444 + 60)
 assert.equal(metrics.series.reduce((sum, point) => sum + point.value, 0), metrics.current.freight)
-assert.equal(metrics.daily.length, 7)
-assert.equal(metrics.daily[0].key, '2026-11-01')
-assert.equal(metrics.daily[6].key, '2026-11-07')
-assert.equal(metrics.daily.reduce((sum, point) => sum + point.count, 0), 5)
-assert.equal(metrics.daily[6].count, 5) // Registration date, not scheduled pickup.
-assert.equal(metrics.daily[1].count, 0)
+assert.equal(metrics.activity.length, 7)
+assert.equal(metrics.activity[0].key, '2026-11-01')
+assert.equal(metrics.activity[6].key, '2026-11-07')
+assert.equal(metrics.activity.reduce((sum, point) => sum + point.count, 0), 5)
+assert.equal(metrics.activity[6].count, 5) // Registration date, not scheduled pickup.
+assert.equal(metrics.activity[1].count, 0)
 assert.ok(metrics.recent.every(route => route.created_by_user_id === 'seller'))
 assert.equal(metrics.recent[0].id, '6') // Latest registration, even without operational date.
-assert.equal(buildDashboardMetrics(routes, 'seller', 'today', now).monthlyRevenue, 2500)
 assert.equal(buildDashboardMetrics(routes, 'seller', 'all', now).current.freight, 4542)
 assert.equal(buildDashboardMetrics(routes, null, 'all', now).current.count, 0)
 assert.equal(buildDashboardMetrics(Array.from({ length: 12 }, (_, index) => route(index + 1)), 'seller', 'month', now).recent.length, 7)
 const january = buildDashboardMetrics([route(1, { pickup_date: '2026-12-31', created_at: '2026-12-31T12:00:00Z' }), route(2, { pickup_date: '2027-01-01', created_at: '2027-01-01T12:00:00Z' })], 'seller', '7d', new Date(2027, 0, 2))
-assert.equal(january.daily[0].key, '2026-12-27')
-assert.equal(january.daily.reduce((sum, point) => sum + point.count, 0), 2)
+assert.equal(january.activity[0].key, '2026-12-27')
+assert.equal(january.activity.reduce((sum, point) => sum + point.count, 0), 2)
 assert.equal(metrics.series.at(-1).key, '2026-11-07')
 assert.equal(buildDashboardMetrics([route(1, { pickup_date: '2026-11-20' })], 'seller', 'month', now).series.at(-1).key, '2026-11-20')
 assert.equal(buildDashboardMetrics([], 'seller', 'month', now).current.ticket, 0)
+const date = value => value && `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+const seven = dashboardPeriodRange('7d', new Date(2026, 10, 12, 12))
+assert.deepEqual([date(seven.start), date(seven.end), date(seven.prevStart), date(seven.prevEnd)], ['2026-11-06', '2026-11-12', '2026-10-30', '2026-11-05'])
+const fifteen = dashboardPeriodRange('15d', new Date(2026, 10, 12, 12))
+assert.deepEqual([date(fifteen.start), date(fifteen.prevStart), date(fifteen.prevEnd)], ['2026-10-29', '2026-10-14', '2026-10-28'])
+const lastMonth = dashboardPeriodRange('lastMonth', new Date(2026, 0, 12, 12))
+assert.deepEqual([date(lastMonth.start), date(lastMonth.end), date(lastMonth.prevStart), date(lastMonth.prevEnd)], ['2025-12-01', '2025-12-31', '2025-11-01', '2025-11-30'])
+const custom = dashboardPeriodRange('custom', new Date(2026, 10, 12, 12), { start: '2026-11-03', end: '2026-11-10' })
+assert.deepEqual([date(custom.start), date(custom.end), date(custom.prevStart), date(custom.prevEnd)], ['2026-11-03', '2026-11-10', '2026-10-26', '2026-11-02'])
+assert.throws(() => dashboardPeriodRange('custom', now, { start: '2026-11-10', end: '2026-11-03' }), /intervalo/i)
+assert.throws(() => dashboardPeriodRange('custom', now, { start: '2026-02-30', end: '2026-03-01' }), /intervalo/i)
+assert.equal(buildDashboardMetrics(routes, 'seller', 'custom', now, 20, { start: '2026-11-01', end: '2026-11-07' }).current.freight, 2500)
+const activityRoutes = [
+  route(1, { created_at: '2026-10-25T12:00:00Z' }),
+  route(2, { created_at: '2026-11-01T12:00:00Z' }),
+  route(3, { created_at: '2026-11-06T12:00:00Z' }),
+  route(4, { created_at: '2026-11-07T12:00:00Z' }),
+]
+const fifteenActivity = buildDashboardMetrics(activityRoutes, 'seller', '15d', now)
+assert.equal(fifteenActivity.activity.length, 15)
+assert.equal(fifteenActivity.activity[0].key, '2026-10-24')
+assert.equal(fifteenActivity.activity.reduce((sum, point) => sum + point.count, 0), 4)
+const customActivity = buildDashboardMetrics(activityRoutes, 'seller', 'custom', now, undefined, { start: '2026-11-01', end: '2026-11-06' })
+assert.equal(customActivity.activity.length, 6)
+assert.equal(customActivity.activity.reduce((sum, point) => sum + point.count, 0), 2)
+assert.equal(buildDashboardMetrics(activityRoutes, 'seller', 'all', now).activityMonthly, true)
 assert.equal(dashboardVariation(0, 0), 0)
 assert.equal(dashboardVariation(100, 0), null)
 assert.equal(dashboardVariation(150, 100), 50)

@@ -26,10 +26,10 @@ function harness(superAdmin = true) {
       if (name === '@/lib/hooks/useCurrentUser') return { useCurrentUser: () => ({ user: { id: 'admin', role: 'admin', email: 'admin@example.invalid' }, loading: false }) }
       if (name === '@/lib/utils/roles') return { isSuperAdminEmail: email => superAdmin && email === 'admin@example.invalid', dashboardRoleLabel: role => role }
       if (name === '@/lib/hooks/useMonthlySalesGoals') return { useMonthlySalesGoals: () => ({ goals, loading: false, error: null, refresh: async () => {} }) }
-      if (name === '@/lib/services/monthly-sales-goals') return { saveMonthlySalesGoal: async (userId, month, amount) => {
-        calls.push({ kind: 'goal', userId, month, amount })
+      if (name === '@/lib/services/monthly-sales-goals') return { saveMonthlySalesGoal: async (userId, month, amount, netAmount) => {
+        calls.push({ kind: 'goal', userId, month, amount, netAmount })
         if (failGoal) throw Error('Falha ao salvar meta')
-        goals.push({ user_id: userId, month, amount })
+        goals.push({ user_id: userId, month, amount, net_amount: netAmount })
       } }
       if (name === '@/lib/supabase/client') return { supabase: {} }
       if (name.startsWith('@/')) return load(name.slice(2) + '.ts')
@@ -62,14 +62,18 @@ function harness(superAdmin = true) {
   commission.onChange({ target: { value: '22.5' } })
   if (commission.onBlur) await commission.onBlur()
   const goal = () => page.find(node => node.props['aria-label'] === 'Meta mensal de Vendedor')
+  const netGoal = () => page.find(node => node.props['aria-label'] === 'Meta de lucro líquido de Vendedor')
   goal().onChange({ target: { value: '10000' } })
+  netGoal().onChange({ target: { value: '2000' } })
   assert.equal(page.calls.length, 0, 'Editing or leaving fields must not persist before Save')
   const save = () => page.find(node => node.type === 'button' && node.props['aria-label'] === 'Salvar alterações de Vendedor')
   page.failGoal(true)
   await save().onClick()
   assert.deepEqual(page.calls[0], { kind: 'profile', userId: 'seller', role: 'operacional', commissionRate: 22.5 })
   assert.equal(page.calls[1].amount, 10000)
+  assert.equal(page.calls[1].netAmount, 2000)
   assert.equal(goal().value, '10000', 'Failed goal must keep its draft for retry')
+  assert.equal(netGoal().value, '2000', 'Failed net goal must keep its draft for retry')
   page.failGoal(false)
   await save().onClick()
   assert.equal(page.calls.filter(call => call.kind === 'profile').length, 1, 'Retry must not resend the already saved profile')
@@ -89,8 +93,10 @@ function harness(superAdmin = true) {
   assert.equal(admin.find(node => node.props['aria-label'] === 'Permissão de Vendedor').disabled, true)
   assert.equal(admin.find(node => node.props['aria-label'] === 'Comissão de Vendedor').disabled, true)
   admin.find(node => node.props['aria-label'] === 'Meta mensal de Vendedor').onChange({ target: { value: '5000' } })
+  admin.find(node => node.props['aria-label'] === 'Meta de lucro líquido de Vendedor').onChange({ target: { value: '1200' } })
   await admin.find(node => node.props['aria-label'] === 'Salvar alterações de Vendedor').onClick()
   assert.equal(admin.calls.length, 1)
   assert.equal(admin.calls[0].kind, 'goal')
+  assert.equal(admin.calls[0].netAmount, 1200)
   console.log('PASS: explicit row save, combined profile changes, goal retry, validation before writes and unchanged admin restrictions')
 })().catch(error => { console.error(error); process.exitCode = 1 })

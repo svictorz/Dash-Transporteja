@@ -2,28 +2,42 @@ import type { Route } from '@/lib/services/routes'
 import { filterRoutesByDateRange, getRouteOperationalDate, startOfDay, endOfDay } from './route-period-filter'
 import { getRouteCommissionValue, getRouteDriverTotalValue, getRouteNetFreightValue, getRouteTaxesValue, getRouteSeguroValue } from './freight-financials'
 
-export type DashboardPeriod = 'today' | '7d' | '30d' | 'month' | 'year' | 'all'
+export type DashboardPeriod = '7d' | '15d' | 'month' | 'lastMonth' | 'all' | 'custom'
+export type DashboardCustomRange = { start: string; end: string }
 export const DASHBOARD_PERIODS: { value: DashboardPeriod; label: string }[] = [
-  { value: 'today', label: 'Hoje' }, { value: '7d', label: '7 dias' },
-  { value: '30d', label: '30 dias' }, { value: 'month', label: 'Este mês' },
-  { value: 'year', label: 'Este ano' }, { value: 'all', label: 'Todo o período' },
+  { value: '7d', label: '7 dias' }, { value: '15d', label: '15 dias' },
+  { value: 'month', label: 'Este mês' }, { value: 'lastMonth', label: 'Mês passado' },
+  { value: 'all', label: 'Todo o período' }, { value: 'custom', label: 'Personalizado' },
 ]
 
-export function dashboardPeriodRange(period: DashboardPeriod, now: Date) {
+function parseInputDate(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null
+}
+
+export function dashboardPeriodRange(period: DashboardPeriod, now: Date, customRange?: DashboardCustomRange) {
   if (period === 'all') return { start: null, end: null, prevStart: null, prevEnd: null }
   let start = startOfDay(now)
   let end = endOfDay(now)
   let prevStart: Date
-  if (period === 'month') {
-    start = new Date(now.getFullYear(), now.getMonth(), 1)
-    end = endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0))
-    prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  } else if (period === 'year') {
-    start = new Date(now.getFullYear(), 0, 1)
-    end = endOfDay(new Date(now.getFullYear(), 11, 31))
-    prevStart = new Date(now.getFullYear() - 1, 0, 1)
+  if (period === 'custom') {
+    const from = customRange && parseInputDate(customRange.start)
+    const to = customRange && parseInputDate(customRange.end)
+    if (!from || !to || from > to) throw new Error('Informe um intervalo válido: a data inicial deve ser anterior ou igual à final.')
+    start = from
+    end = endOfDay(to)
+    const days = Math.round((Date.UTC(to.getFullYear(), to.getMonth(), to.getDate()) - Date.UTC(from.getFullYear(), from.getMonth(), from.getDate())) / 86400000) + 1
+    prevStart = new Date(start)
+    prevStart.setDate(prevStart.getDate() - days)
+  } else if (period === 'month' || period === 'lastMonth') {
+    const offset = period === 'lastMonth' ? -1 : 0
+    start = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+    end = endOfDay(new Date(now.getFullYear(), now.getMonth() + offset + 1, 0))
+    prevStart = new Date(now.getFullYear(), now.getMonth() + offset - 1, 1)
   } else {
-    const days = period === 'today' ? 1 : period === '7d' ? 7 : 30
+    const days = period === '7d' ? 7 : 15
     start.setDate(start.getDate() - days + 1)
     prevStart = new Date(start)
     prevStart.setDate(prevStart.getDate() - days)
@@ -35,6 +49,10 @@ const finite = (value: number | null | undefined) => Number.isFinite(Number(valu
 export const dashboardFreightValue = (route: Route) => finite(route.freight_value ?? route.nf_value)
 export const dashboardMonthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
 const dayKey = (date: Date) => `${dashboardMonthKey(date).slice(0, 7)}-${String(date.getDate()).padStart(2, '0')}`
+const getRouteActivityDate = (route: Route) => {
+  const created = route.created_at ? new Date(route.created_at) : null
+  return created && Number.isFinite(created.getTime()) ? created : getRouteOperationalDate(route)
+}
 
 export function summarizeDashboardRoutes(routes: Route[], rate?: number | null) {
   const total = routes.reduce((sum, route) => ({
@@ -64,30 +82,42 @@ export function monthlyGoalProgress(revenue: number, goal: number | null) {
 
 export type DashboardPoint = { key: string; date: Date; value: number; count: number }
 
-export function buildDashboardMetrics(routes: Route[], userId: string | null, period: DashboardPeriod, now: Date, rate?: number | null) {
+export function buildDashboardMetrics(routes: Route[], userId: string | null, period: DashboardPeriod, now: Date, rate?: number | null, customRange?: DashboardCustomRange) {
   // A visão pessoal não se amplia com o cargo ou com as permissões da Performance.
   const owned = userId ? routes.filter(route => route.created_by_user_id === userId) : []
-  const range = dashboardPeriodRange(period, now)
+  const range = dashboardPeriodRange(period, now, customRange)
   const current = filterRoutesByDateRange(owned, range.start, range.end)
   const previous = period === 'all' ? [] : filterRoutesByDateRange(owned, range.prevStart, range.prevEnd)
   const monthRange = dashboardPeriodRange('month', now)
-  const monthlyRevenue = summarizeDashboardRoutes(filterRoutesByDateRange(owned, monthRange.start, monthRange.end), rate).freight
+  const monthlyTotals = summarizeDashboardRoutes(filterRoutesByDateRange(owned, monthRange.start, monthRange.end), rate)
+  const monthlyRevenue = monthlyTotals.freight
+  const monthlyNet = monthlyTotals.net
 
-  const daily: DashboardPoint[] = Array.from({ length: 7 }, (_, index) => {
-    const date = startOfDay(now)
-    date.setDate(date.getDate() - 6 + index)
-    return { key: dayKey(date), date, value: 0, count: 0 }
-  })
-  const dailyMap = new Map(daily.map(point => [point.key, point]))
+  // A atividade acompanha o filtro do Dashboard, mas mede cadastros: created_at,
+  // com fallback para a data operacional em registros antigos.
+  const activityMonthly = period === 'all' || (period === 'custom' && range.start !== null && range.end !== null && range.end.getTime() - range.start.getTime() >= 60 * 86400000)
+  const activityDates = owned.map(getRouteActivityDate).filter((date): date is Date => date !== null)
+  const earliestActivity = activityDates.length ? new Date(Math.min(...activityDates.map(date => date.getTime()))) : startOfDay(now)
+  const latestActivity = activityDates.length ? new Date(Math.max(...activityDates.map(date => date.getTime()))) : endOfDay(now)
+  const activityStart = range.start ?? startOfDay(earliestActivity)
+  const activityEnd = range.end
+    ? period === 'month' ? new Date(Math.min(range.end.getTime(), endOfDay(now).getTime())) : range.end
+    : endOfDay(latestActivity)
+  const activityCursor = activityMonthly ? new Date(activityStart.getFullYear(), activityStart.getMonth(), 1) : startOfDay(activityStart)
+  const activity: DashboardPoint[] = []
+  while (activityCursor <= activityEnd) {
+    activity.push({ key: activityMonthly ? dashboardMonthKey(activityCursor) : dayKey(activityCursor), date: new Date(activityCursor), value: 0, count: 0 })
+    if (activityMonthly) activityCursor.setMonth(activityCursor.getMonth() + 1)
+    else activityCursor.setDate(activityCursor.getDate() + 1)
+  }
+  const activityMap = new Map(activity.map(point => [point.key, point]))
   for (const route of owned) {
-    // Atividade diária conta cadastros, independentemente da data negociada da coleta.
-    const created = route.created_at ? new Date(route.created_at) : null
-    const date = created && Number.isFinite(created.getTime()) ? created : getRouteOperationalDate(route)
-    const point = date && dailyMap.get(dayKey(date))
+    const date = getRouteActivityDate(route)
+    const point = date && activityMap.get(activityMonthly ? dashboardMonthKey(date) : dayKey(date))
     if (point) { point.count++; point.value += dashboardFreightValue(route) }
   }
 
-  const monthly = period === 'year' || period === 'all'
+  const monthly = period === 'all' || (period === 'custom' && range.start !== null && range.end !== null && range.end.getTime() - range.start.getTime() >= 60 * 86400000)
   const dates = current.map(getRouteOperationalDate).filter((date): date is Date => date !== null)
   const first = range.start ?? (dates.length ? new Date(Math.min(...dates.map(date => date.getTime()))) : startOfDay(now))
   // Evita desenhar dias futuros vazios como queda de faturamento. Fretes futuros
@@ -116,5 +146,5 @@ export function buildDashboardMetrics(routes: Route[], userId: string | null, pe
     }
     return time(b) - time(a) || b.freight_id - a.freight_id
   }).slice(0, 7)
-  return { current: summarizeDashboardRoutes(current, rate), previous: summarizeDashboardRoutes(previous, rate), series, daily, recent, monthlyRevenue, range }
+  return { current: summarizeDashboardRoutes(current, rate), previous: summarizeDashboardRoutes(previous, rate), series, activity, recent, monthlyRevenue, monthlyNet, range, monthly, activityMonthly }
 }
