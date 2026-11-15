@@ -1,0 +1,40 @@
+@media print {
+  @page { size: A4 portrait; margin: 14mm; }
+  html, body { background: #fff !important; color: #0f172a !important; }
+  .cotacao-page { padding: 0 !important; margin: 0 !important; }
+  .cotacao-page > .cotacao-proposal-print { margin: 0 !important; }
+  .cotacao-proposal-print {
+    display: block !important;
+    width: 100%;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #0f172a !important;
+    font-family: Arial, sans-serif;
+    font-size: 9pt;
+    box-shadow: none !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .cotacao-proposal-header { display: flex; align-items: center; gap: 10mm; padding-bottom: 4mm; border-bottom: 2px solid #15366a; }
+  .cotacao-proposal-header img { width: 38mm; max-height: 20mm; object-fit: contain; }
+  .cotacao-proposal-header span { color: #2878ef; font-size: 9pt; font-weight: bold; letter-spacing: 1.5px; }
+  .cotacao-proposal-header h1 { margin: 1mm 0; color: #123466; font-size: 18pt; font-weight: bold; }
+  .cotacao-proposal-header p { margin: 0; color: #475569; }
+  .cotacao-proposal-issuer { display: flex; flex-direction: column; gap: 1mm; margin-top: 4mm; color: #475569; font-size: 8pt; }
+  .cotacao-proposal-meta { display: flex; justify-content: space-between; margin: 4mm 0 6mm; color: #64748b; font-size: 9pt; }
+  .cotacao-proposal-print h2 { margin: 0 0 3mm; color: #123466; font-size: 12pt; font-weight: bold; }
+  .cotacao-proposal-print .cotacao-proposal-subtitle { margin-top: 5mm; }
+  .cotacao-proposal-route { display: flex; justify-content: space-between; gap: 5mm; padding: 4mm; border: 1px solid #dbe4ef; border-radius: 3mm; color: #0f172a; }
+  .cotacao-proposal-route span { white-space: nowrap; color: #475569; font-size: 9pt; }
+  .cotacao-proposal-parties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5mm; margin-top: 4mm; }
+  .cotacao-proposal-parties div { display: flex; flex-direction: column; gap: 1mm; min-width: 0; padding: 3mm; border: 1px solid #dbe4ef; border-radius: 3mm; font-size: 8pt; overflow-wrap: anywhere; }
+  .cotacao-proposal-parties strong { color: #123466; }
+  .cotacao-proposal-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3mm 5mm; margin: 0; padding: 4mm; border: 1px solid #dbe4ef; border-radius: 3mm; }
+  .cotacao-proposal-fields div { break-inside: avoid; min-width: 0; }
+  .cotacao-proposal-fields dt { color: #64748b; font-size: 9pt; }
+  .cotacao-proposal-fields dd { margin: 1mm 0 0; color: #0f172a; font-weight: bold; overflow-wrap: anywhere; }
+  .cotacao-proposal-total { display: flex; align-items: center; justify-content: space-between; margin-top: 6mm; padding: 5mm; border-radius: 3mm; background: #eaf2ff; color: #123466; break-inside: avoid; }
+  .cotacao-proposal-total strong { font-size: 17pt; }
+  .cotacao-proposal-note { margin-top: 5mm; color: #475569; font-size: 9pt; line-height: 1.5; }
+  .cotacao-proposal-print footer { display: flex; flex-direction: column; gap: 2mm; margin-top: 8mm; border-top: 1px solid #dbe4ef; padding-top: 3mm; color: #64748b; font-size: 9pt; }
+}

@@ -16,6 +16,7 @@ export const maxDuration = 30
 export async function GET(request: NextRequest) {
   const origem = request.nextUrl.searchParams.get('origem')?.trim() ?? ''
   const destino = request.nextUrl.searchParams.get('destino')?.trim() ?? ''
+  const includeGeometry = request.nextUrl.searchParams.get('map') === '1'
 
   if (!origem || !destino || origem.length > 400 || destino.length > 400) {
     return NextResponse.json(
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const route = await osrmDrivingRoute(o.lon, o.lat, d.lon, d.lat)
+    const route = await osrmDrivingRoute(o.lon, o.lat, d.lon, d.lat, includeGeometry)
     if (!route) {
       return NextResponse.json(
         { error: 'Não foi possível calcular a rota rodoviária.' },
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest) {
       duracaoMin,
       origemResolvida: o.displayName,
       destinoResolvida: d.displayName,
+      ...(includeGeometry ? { coordinates: route.coordinates ?? [] } : {}),
     })
   } catch (e) {
     console.error('[api/rotas/distancia]', e)

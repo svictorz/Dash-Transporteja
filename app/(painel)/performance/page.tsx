@@ -14,14 +14,12 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
-  FileText,
   Filter,
   Loader2,
   Mail,
   MapPin,
   Phone,
   Route as RouteIcon,
-  Trash2,
   Truck,
   Upload,
   Users,
@@ -63,6 +61,8 @@ import { useColumnPrefs, type ColumnDef } from '@/lib/hooks/useColumnPrefs'
 import ColumnManager from '@/components/transporteja/ColumnManager'
 import StickyScrollX from '@/components/transporteja/StickyScrollX'
 import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
+import { createFreightDocumentService, type FreightDocument } from '@/lib/services/freight-documents'
+import FreightDocumentGallery from '@/components/transporteja/FreightDocumentGallery'
 
 /** Colunas da "Lista de fretes" (a coluna Detalhes fica fora do organizador). */
 const PERF_LIST_COLUMNS: ColumnDef[] = [
@@ -82,8 +82,7 @@ const PERF_LIST_COLUMNS_STORAGE_KEY = 'performance:listColumns'
 type Periodo = 'tudo' | 'essaSemana' | 'mesAtual' | '30d' | 'mesPassado' | 'custom'
 type UserRole = 'admin' | 'comercial' | 'financeiro' | 'fiscal' | 'supervisor' | 'operacional' | 'driver' | 'operator' | null
 type DocumentKey = 'freteDocs'
-type RouteDocumentKind = 'image' | 'pdf'
-type RouteDocument = { path: string; url: string; name: string; kind: RouteDocumentKind }
+type RouteDocument = FreightDocument
 type RouteStatus = Route['status']
 type PaymentStatusFilter = 'all' | 'Pendente' | '50%' | '70%' | '100%'
 
@@ -148,11 +147,7 @@ const MONEY_FIELD_KEYS = ['freight', 'driver', 'taxes', 'netFreight', 'commissio
 type MoneyFieldKey = (typeof MONEY_FIELD_KEYS)[number]
 
 const EMPTY_DOCUMENTS: Record<DocumentKey, RouteDocument[]> = { freteDocs: [] }
-const SAFE_IMAGE_DIMENSION = 4000
-const IMAGE_COMPRESSION_QUALITY = 0.9
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
-const ALLOWED_DOCUMENT_TYPES = [...ALLOWED_IMAGE_TYPES, 'image/heic', 'image/heif', 'application/pdf']
-const MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024
+const freightDocuments = createFreightDocumentService(supabase.storage.from('checkin-photos'))
 
 const ALL_MONEY_VISIBLE: Record<MoneyFieldKey, boolean> = {
   freight: true,
@@ -428,50 +423,6 @@ function perfStatusDisplay(status: Route['status']): { label: string; dotColor: 
   }
 }
 
-function getDocumentKind(name: string): RouteDocumentKind {
-  return name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image'
-}
-
-async function compressImage(file: File): Promise<File> {
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return file
-
-  const dataUrl: string = await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-
-  const image: HTMLImageElement = await new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('Não foi possível carregar a imagem.'))
-    img.src = dataUrl
-  })
-
-  const ratio = Math.min(1, SAFE_IMAGE_DIMENSION / Math.max(image.width, image.height))
-  const targetW = Math.round(image.width * ratio)
-  const targetH = Math.round(image.height * ratio)
-
-  const canvas = document.createElement('canvas')
-  canvas.width = targetW
-  canvas.height = targetH
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return file
-  ctx.drawImage(image, 0, 0, targetW, targetH)
-
-  const blob: Blob | null = await new Promise((resolve) => {
-    canvas.toBlob((b) => resolve(b), 'image/jpeg', IMAGE_COMPRESSION_QUALITY)
-  })
-  if (!blob) return file
-
-  const compressed = new File([blob], file.name.replace(/\.(png|webp|heic|heif)$/i, '.jpg'), {
-    type: 'image/jpeg',
-    lastModified: Date.now(),
-  })
-  return compressed.size < file.size ? compressed : file
-}
-
 function moneyOrHidden(v: number | null | undefined, visible: boolean): string {
   if (!visible) return 'R$ ••••••'
   if (v == null) return '—'
@@ -739,6 +690,9 @@ export default function PerformancePage() {
   const [selectedPerfRoute, setSelectedPerfRoute] = useState<Route | null>(null)
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
   const [documents, setDocuments] = useState<Record<DocumentKey, RouteDocument[]>>(EMPTY_DOCUMENTS)
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [documentsError, setDocumentsError] = useState<string | null>(null)
+  const [documentsRetry, setDocumentsRetry] = useState(0)
   const [uploadingDocument, setUploadingDocument] = useState<DocumentKey | null>(null)
   const [removingDocumentPath, setRemovingDocumentPath] = useState<string | null>(null)
   const [editingObservation, setEditingObservation] = useState(false)
@@ -815,6 +769,8 @@ export default function PerformancePage() {
   useEffect(() => {
     if (!selectedPerfRoute) {
       setDocuments(EMPTY_DOCUMENTS)
+      setDocumentsError(null)
+      setDocumentsLoading(false)
       setSelectedPhoto(null)
       setUploadingDocument(null)
       setRemovingDocumentPath(null)
@@ -868,30 +824,25 @@ export default function PerformancePage() {
     setEditingDriver(false)
 
     let cancelled = false
+    setDocuments(EMPTY_DOCUMENTS)
+    setDocumentsError(null)
+    setDocumentsLoading(true)
     ;(async () => {
       try {
-        const folder = `documents/${selectedPerfRoute.id}`
-        const { data, error } = await supabase.storage
-          .from('checkin-photos')
-          .list(folder, { limit: 100, sortBy: { column: 'created_at', order: 'asc' } })
-        if (error) throw error
+        const docs = await freightDocuments.list(selectedPerfRoute.id)
         if (cancelled) return
-        const items = (data || []).filter((entry) => entry.name && entry.name.startsWith('freteDocs-'))
-        const docs: RouteDocument[] = items.map((entry) => {
-          const path = `${folder}/${entry.name}`
-          const { data: pub } = supabase.storage.from('checkin-photos').getPublicUrl(path)
-          return { path, url: pub.publicUrl, name: entry.name, kind: getDocumentKind(entry.name) }
-        })
         setDocuments({ freteDocs: docs })
       } catch {
-        if (!cancelled) setDocuments(EMPTY_DOCUMENTS)
+        if (!cancelled) setDocumentsError('Não foi possível carregar os anexos deste frete.')
+      } finally {
+        if (!cancelled) setDocumentsLoading(false)
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [selectedPerfRoute])
+  }, [selectedPerfRoute, documentsRetry])
 
   useEffect(() => {
     let cancelled = false
@@ -1418,39 +1369,11 @@ export default function PerformancePage() {
       if (!canManagePerfModal || !selectedPerfRoute) return
       if (!files || files.length === 0) return
 
-      const list = Array.from(files)
-      const invalid = list.find((f) => !ALLOWED_DOCUMENT_TYPES.includes(f.type) && !f.type.startsWith('image/'))
-      if (invalid) {
-        alert('Envie apenas imagens (JPG, PNG, WEBP) ou PDF.')
-        return
-      }
-      const tooLargePdf = list.find((f) => f.type === 'application/pdf' && f.size > MAX_PDF_SIZE_BYTES)
-      if (tooLargePdf) {
-        alert('Cada PDF pode ter no máximo 20 MB.')
-        return
-      }
-
       try {
         setUploadingDocument(documentKey)
-        const uploaded: RouteDocument[] = []
-        for (const original of list) {
-          const isPdf = original.type === 'application/pdf'
-          const file = isPdf ? original : await compressImage(original)
-          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-          const filePath = `documents/${selectedPerfRoute.id}/${documentKey}-${Date.now()}-${Math.random()
-            .toString(36)
-            .slice(2, 8)}-${safeName}`
-
-          const { data, error: uploadError } = await supabase.storage
-            .from('checkin-photos')
-            .upload(filePath, file, { cacheControl: '3600', upsert: false, contentType: file.type })
-          if (uploadError) throw uploadError
-
-          const { data: pub } = supabase.storage.from('checkin-photos').getPublicUrl(data.path)
-          const finalName = data.path.split('/').pop() ?? data.path
-          uploaded.push({ path: data.path, url: pub.publicUrl, name: finalName, kind: getDocumentKind(finalName) })
-        }
-        setDocuments((prev) => ({ ...prev, [documentKey]: [...prev[documentKey], ...uploaded] }))
+        await freightDocuments.upload(selectedPerfRoute.id, Array.from(files), (document) => {
+          setDocuments((prev) => ({ ...prev, [documentKey]: [...prev[documentKey], document] }))
+        })
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Erro ao anexar arquivo.'
         alert(msg)
@@ -1467,8 +1390,7 @@ export default function PerformancePage() {
       if (!confirm('Remover este arquivo?')) return
       try {
         setRemovingDocumentPath(doc.path)
-        const { error: removeError } = await supabase.storage.from('checkin-photos').remove([doc.path])
-        if (removeError) throw removeError
+        await freightDocuments.remove(selectedPerfRoute.id, doc.path)
         setDocuments((prev) => ({ ...prev, [documentKey]: prev[documentKey].filter((d) => d.path !== doc.path) }))
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Erro ao remover arquivo.'
@@ -2416,6 +2338,15 @@ export default function PerformancePage() {
                         Adicione imagens ou PDF (até 20 MB por PDF) sem sair da tela de performance.
                       </p>
                     ) : null}
+                    {documentsLoading && <p className="mb-3 text-sm text-gray-600">Carregando anexos...</p>}
+                    {documentsError && (
+                      <p role="alert" className="mb-3 text-sm text-red-700">
+                        {documentsError}{' '}
+                        <button type="button" className="underline" onClick={() => setDocumentsRetry((value) => value + 1)}>
+                          Tentar novamente
+                        </button>
+                      </p>
+                    )}
                     {canManagePerfModal ? (
                       <>
                         <input
@@ -2447,65 +2378,13 @@ export default function PerformancePage() {
                       </>
                     ) : null}
 
-                    {documents.freteDocs.length > 0 ? (
-                      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {documents.freteDocs.map((doc) => {
-                          const isRemoving = removingDocumentPath === doc.path
-                          return (
-                            <div
-                              key={doc.path}
-                              className="group relative aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center"
-                            >
-                              {doc.kind === 'pdf' ? (
-                                <a
-                                  href={doc.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex flex-col items-center justify-center w-full h-full p-2 text-center text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-800"
-                                  title={doc.name}
-                                >
-                                  <FileText className="w-10 h-10 text-red-600 mb-1" />
-                                  <span className="text-[11px] font-semibold uppercase tracking-wide text-red-700">PDF</span>
-                                  <span className="text-[10px] text-gray-500 mt-1 line-clamp-2 break-all">
-                                    {doc.name.replace(/^freteDocs-\d+-[a-z0-9]+-/, '')}
-                                  </span>
-                                </a>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedPhoto(doc.url)}
-                                  className="block w-full h-full focus:outline-none focus:ring-2 focus:ring-slate-800"
-                                  aria-label="Visualizar imagem"
-                                >
-                                  <img
-                                    src={doc.url}
-                                    alt="Documento do frete"
-                                    className="h-full w-full object-contain transition-opacity group-hover:opacity-95"
-                                    loading="lazy"
-                                  />
-                                </button>
-                              )}
-                              {canManagePerfModal ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveDocument('freteDocs', doc)}
-                                disabled={isRemoving}
-                                className="absolute top-1.5 right-1.5 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/90 text-red-600 shadow border border-gray-200 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-wait"
-                                title="Remover arquivo"
-                                aria-label="Remover arquivo"
-                              >
-                                {isRemoving ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                              ) : null}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ) : null}
+                    <FreightDocumentGallery
+                      documents={documents.freteDocs}
+                      canRemove={canManagePerfModal}
+                      removingPath={removingDocumentPath}
+                      onPreview={setSelectedPhoto}
+                      onRemove={(doc) => void handleRemoveDocument('freteDocs', doc)}
+                    />
                   </div>
                 </div>
               ) : null}

@@ -81,7 +81,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
     { icon: LayoutDashboard, label: 'Dashboard', path: '/inicio' },
     { icon: Users, label: 'Clientes', path: '/clientes' },
     { icon: Route, label: 'Rotas', path: '/rotas' },
-    { icon: FileText, label: 'Propostas', path: '/propostas' },
+    { icon: FileText, label: 'Cotação', path: '/propostas' },
     { icon: CalendarDays, label: 'Calendário', path: '/calendario' },
     { icon: BarChart3, label: 'Performance', path: '/performance' },
     ...(hasFinancialAccess

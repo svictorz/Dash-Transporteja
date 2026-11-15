@@ -1,0 +1,38 @@
+.jcn-route-pin-icon {
+  background: transparent;
+  border: 0;
+}
+
+.jcn-route-pin {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  box-shadow: 0 3px 9px rgb(15 23 42 / 35%);
+  transform: rotate(-45deg);
+}
+
+.jcn-route-pin span {
+  color: #fff;
+  font: 700 13px/1 Arial, sans-serif;
+  transform: rotate(45deg);
+}
+
+.jcn-route-pin--origin { background: #245de4; }
+.jcn-route-pin--destination { background: #0c9b61; }
+
+.leaflet-tooltip.jcn-route-tooltip {
+  padding: 5px 8px;
+  border: 1px solid #d5e1f0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 3px 10px rgb(15 23 42 / 18%);
+  color: #17324f;
+  font: 700 11px/1.25 Arial, sans-serif;
+}
+
+.leaflet-tooltip.jcn-route-tooltip--origin { border-color: #a8bff9; }
+.leaflet-tooltip.jcn-route-tooltip--destination { border-color: #90d8b6; }

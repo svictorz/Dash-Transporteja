@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Route, MapPin, ArrowRight, X, Truck, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Upload, Eye, ChevronDown, FileText } from 'lucide-react'
+import { Route, MapPin, ArrowRight, X, Truck, Calendar, Building2, Phone, Mail, Plus, Edit, Trash2, Loader2, Search, Upload, Eye, ChevronDown } from 'lucide-react'
 import { useRoutes } from '@/lib/hooks/useRoutes'
 import { useClients } from '@/lib/hooks/useClients'
 import { useDrivers } from '@/lib/hooks/useDrivers'
@@ -13,7 +13,9 @@ import {
   ROUTE_NO_DRIVER_PLATE,
   ROUTE_NO_DRIVER_VEHICLE,
 } from '@/lib/services/routes'
-import { Client, ensureClientFromRoute } from '@/lib/services/clients'
+import { Client, ensureClientByCnpj, getClients } from '@/lib/services/clients'
+import { formatCNPJDisplay } from '@/lib/services/cnpj'
+import { validateCNPJ } from '@/lib/utils/validation'
 import { Driver } from '@/lib/services/drivers'
 import CEPInput from '@/components/transporteja/CEPInput'
 import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
@@ -23,7 +25,7 @@ import { supabase } from '@/lib/supabase/client'
 import { useAuthState } from '@/lib/hooks/useAuthState'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { useDebouncedRouteDistance } from '@/lib/hooks/useDebouncedRouteDistance'
-import { equalsFold, foldText } from '@/lib/utils/strings'
+import { equalsFold } from '@/lib/utils/strings'
 import {
   SEGURO_PERCENT_CHOICES,
   SEGURO_PERCENT_DEFAULT,
@@ -46,6 +48,8 @@ import {
 import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import { canEditValePedagioIncluso, canViewRouteInRoutesPage } from '@/lib/utils/roles'
 import { getWhatsAppWebUrl } from '@/lib/utils/whatsapp'
+import { createFreightDocumentService, type FreightDocument } from '@/lib/services/freight-documents'
+import FreightDocumentGallery from '@/components/transporteja/FreightDocumentGallery'
 import {
   ROUTE_PERIOD_FILTER_HINT,
   filterRoutesByDateRange,
@@ -97,70 +101,16 @@ interface RouteDisplayData extends RouteType {
 
 type DocumentKey = 'freteDocs'
 type RouteStatus = RouteType['status']
-type RouteDocumentKind = 'image' | 'pdf'
-type RouteDocument = { path: string; url: string; name: string; kind: RouteDocumentKind }
+type RouteDocument = FreightDocument
+const freightDocuments = createFreightDocumentService(supabase.storage.from('checkin-photos'))
 const EMPTY_DOCUMENTS: Record<DocumentKey, RouteDocument[]> = {
   freteDocs: [],
 }
 
-const SAFE_IMAGE_DIMENSION = 4000
-const IMAGE_COMPRESSION_QUALITY = 0.9
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
-const ALLOWED_DOCUMENT_TYPES = [...ALLOWED_IMAGE_TYPES, 'image/heic', 'image/heif', 'application/pdf']
-const MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024
-
-function getDocumentKind(name: string): RouteDocumentKind {
-  return name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image'
-}
-
-async function compressImage(file: File): Promise<File> {
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return file
-
-  const dataUrl: string = await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-
-  const image: HTMLImageElement = await new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('Não foi possível carregar a imagem.'))
-    img.src = dataUrl
-  })
-
-  // Preserva a resolução original (sem cortar e sem reduzir o tamanho).
-  // Só faz "downscale" se a imagem for absurdamente grande (> 4000px) para evitar travar
-  // o navegador ao renderizar / fazer upload.
-  const ratio = Math.min(1, SAFE_IMAGE_DIMENSION / Math.max(image.width, image.height))
-  const targetW = Math.round(image.width * ratio)
-  const targetH = Math.round(image.height * ratio)
-
-  const canvas = document.createElement('canvas')
-  canvas.width = targetW
-  canvas.height = targetH
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return file
-  ctx.drawImage(image, 0, 0, targetW, targetH)
-
-  const blob: Blob | null = await new Promise((resolve) => {
-    canvas.toBlob((b) => resolve(b), 'image/jpeg', IMAGE_COMPRESSION_QUALITY)
-  })
-  if (!blob) return file
-
-  const compressed = new File([blob], file.name.replace(/\.(png|webp|heic|heif)$/i, '.jpg'), {
-    type: 'image/jpeg',
-    lastModified: Date.now(),
-  })
-  return compressed.size < file.size ? compressed : file
-}
-
 const ROUTE_STATUS_OPTIONS: RouteStatus[] = ['pending', 'pickedUp', 'inTransit', 'delivered', 'documentation', 'cancelled']
 const PAYMENT_STATUS_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
-const PAYMENT_TYPE_OPTIONS = ['Pix', 'Cartão de crédito', 'Transferencia', 'Boleto'] as const
+const PAYMENT_TYPE_OPTIONS = ['Pix', 'Link de Pagamento', 'Boleto'] as const
 const DRIVER_PAYMENT_TYPE_OPTIONS = ['Pendente', '50%', '70%', '100%'] as const
-const MIN_COMPANY_SUGGEST_CHARS = 3
 
 export default function RotasPage() {
   const { session } = useAuthState()
@@ -218,12 +168,17 @@ export default function RotasPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
   const [documents, setDocuments] = useState<Record<DocumentKey, RouteDocument[]>>(EMPTY_DOCUMENTS)
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [documentsError, setDocumentsError] = useState<string | null>(null)
+  const documentLoadSequence = useRef(0)
   const [uploadingDocument, setUploadingDocument] = useState<DocumentKey | null>(null)
   const [removingDocumentPath, setRemovingDocumentPath] = useState<string | null>(null)
   const [updatingStatusRouteId, setUpdatingStatusRouteId] = useState<string | null>(null)
   const [commissionToggleRouteId, setCommissionToggleRouteId] = useState<string | null>(null)
   
   const [companyInput, setCompanyInput] = useState('')
+  const [companyLookup, setCompanyLookup] = useState<{ kind: 'idle' | 'loading' | 'existing' | 'new' | 'error'; cnpj: string; message?: string }>({ kind: 'idle', cnpj: '' })
+  const companyLookupSequence = useRef(0)
   
   // Estado do formulário
   const [formData, setFormData] = useState({
@@ -235,7 +190,11 @@ export default function RotasPage() {
     destinationAddress: '',
     companyPhone: '',
     companyEmail: '',
+    companyCnpj: '',
+    companyResponsible: '',
     weight: '',
+    cubageM3: '',
+    materialType: '',
     freightValue: '',
     cteValue: '',
     valePedagio: '',
@@ -246,6 +205,7 @@ export default function RotasPage() {
     commissionValue: '',
     paymentStatus: '',
     paymentType: '',
+    freightType: '',
     driverName: '',
     driverPhone: '',
     driverPaymentStatus: '',
@@ -405,25 +365,17 @@ export default function RotasPage() {
   }, [updateRoute])
 
   const loadRouteDocuments = useCallback(async (routeId: string) => {
+    const sequence = ++documentLoadSequence.current
+    setDocumentsLoading(true)
+    setDocumentsError(null)
     try {
-      const folder = `documents/${routeId}`
-      const { data, error } = await supabase.storage
-        .from('checkin-photos')
-        .list(folder, { limit: 100, sortBy: { column: 'created_at', order: 'asc' } })
-
-      if (error) throw error
-      const items = (data || []).filter((entry) => entry.name && entry.name.startsWith('freteDocs-'))
-
-      const docs: RouteDocument[] = items.map((entry) => {
-        const path = `${folder}/${entry.name}`
-        const { data: pub } = supabase.storage.from('checkin-photos').getPublicUrl(path)
-        return { path, url: pub.publicUrl, name: entry.name, kind: getDocumentKind(entry.name) }
-      })
-
-      setDocuments({ freteDocs: docs })
+      const docs = await freightDocuments.list(routeId)
+      if (sequence === documentLoadSequence.current) setDocuments({ freteDocs: docs })
     } catch (err) {
       console.warn('Erro ao listar documentos do frete:', err)
-      setDocuments(EMPTY_DOCUMENTS)
+      if (sequence === documentLoadSequence.current) setDocumentsError('Não foi possível carregar os anexos deste frete.')
+    } finally {
+      if (sequence === documentLoadSequence.current) setDocumentsLoading(false)
     }
   }, [])
 
@@ -437,10 +389,16 @@ export default function RotasPage() {
   const handleOpenEdit = useCallback((route: RouteDisplayData) => {
     setEditingRoute(route)
     const client = myClients.find(c =>
+      (!!route.company_cnpj && c.cnpj?.replace(/\D/g, '') === route.company_cnpj.replace(/\D/g, '')) ||
       equalsFold(c.company_name, route.company_name) ||
       (!!route.company_email && equalsFold(c.email, route.company_email))
     )
     setCompanyInput(client?.company_name || route.company_name || '')
+    companyLookupSequence.current += 1
+    setCompanyLookup({
+      kind: client?.cnpj?.replace(/\D/g, '') === route.company_cnpj?.replace(/\D/g, '') && !!route.company_cnpj ? 'existing' : 'idle',
+      cnpj: route.company_cnpj?.replace(/\D/g, '') || '',
+    })
     setFormData({
       origin: route.origin,
       originState: route.origin_state,
@@ -450,7 +408,11 @@ export default function RotasPage() {
       destinationAddress: route.destination_address || '',
       companyPhone: route.company_phone || client?.whatsapp || '',
       companyEmail: route.company_email || client?.email || '',
+      companyCnpj: route.company_cnpj || '',
+      companyResponsible: route.company_responsible || client?.responsible || '',
       weight: route.weight,
+      cubageM3: route.cubage_m3 != null ? String(route.cubage_m3).replace('.', ',') : '',
+      materialType: route.material_type || '',
       freightValue: route.freight_value != null ? String(route.freight_value).replace('.', ',') : '',
       cteValue: route.cte_value != null ? String(route.cte_value).replace('.', ',') : '',
       valePedagio: route.vale_pedagio != null ? String(route.vale_pedagio).replace('.', ',') : '',
@@ -461,6 +423,7 @@ export default function RotasPage() {
       commissionValue: route.commission_value != null ? String(route.commission_value).replace('.', ',') : '',
       paymentStatus: route.payment_status || '',
       paymentType: route.payment_type || '',
+      freightType: route.freight_type || '',
       driverName: route.driver_name || route.driver?.name || '',
       driverPhone: route.driver_phone || route.driver?.phone || '',
       driverPaymentStatus: route.driver_payment_status || '',
@@ -527,9 +490,12 @@ export default function RotasPage() {
   }
 
   const handleCloseModal = () => {
+    documentLoadSequence.current += 1
     setSelectedRoute(null)
     setSelectedPhoto(null)
     setDocuments(EMPTY_DOCUMENTS)
+    setDocumentsError(null)
+    setDocumentsLoading(false)
     setUploadingDocument(null)
     setRemovingDocumentPath(null)
   }
@@ -538,56 +504,14 @@ export default function RotasPage() {
     if (!canManageFreightDocuments) return
     if (!files || files.length === 0 || !selectedRoute) return
 
-    const list = Array.from(files)
-    const invalid = list.find(
-      (f) =>
-        !ALLOWED_DOCUMENT_TYPES.includes(f.type) &&
-        !f.type.startsWith('image/'),
-    )
-    if (invalid) {
-      alert('Envie apenas imagens (JPG, PNG, WEBP) ou PDF.')
-      return
-    }
-    const tooLargePdf = list.find(
-      (f) => f.type === 'application/pdf' && f.size > MAX_PDF_SIZE_BYTES,
-    )
-    if (tooLargePdf) {
-      alert('Cada PDF pode ter no máximo 20 MB.')
-      return
-    }
-
     try {
       setUploadingDocument(documentKey)
-      const uploaded: RouteDocument[] = []
-
-      for (const original of list) {
-        const isPdf = original.type === 'application/pdf'
-        const file = isPdf ? original : await compressImage(original)
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-        const filePath = `documents/${selectedRoute.id}/${documentKey}-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 8)}-${safeName}`
-
-        const { data, error } = await supabase.storage
-          .from('checkin-photos')
-          .upload(filePath, file, { cacheControl: '3600', upsert: false, contentType: file.type })
-
-        if (error) throw error
-
-        const { data: pub } = supabase.storage.from('checkin-photos').getPublicUrl(data.path)
-        const finalName = data.path.split('/').pop() ?? data.path
-        uploaded.push({
-          path: data.path,
-          url: pub.publicUrl,
-          name: finalName,
-          kind: getDocumentKind(finalName),
-        })
-      }
-
-      setDocuments((prev) => ({
-        ...prev,
-        [documentKey]: [...prev[documentKey], ...uploaded],
-      }))
+      await freightDocuments.upload(selectedRoute.id, Array.from(files), (document) => {
+        setDocuments((prev) => ({
+          ...prev,
+          [documentKey]: [...prev[documentKey], document],
+        }))
+      })
     } catch (err: any) {
       alert(`Erro ao anexar arquivo: ${err?.message || 'tente novamente.'}`)
     } finally {
@@ -602,8 +526,7 @@ export default function RotasPage() {
 
     try {
       setRemovingDocumentPath(doc.path)
-      const { error } = await supabase.storage.from('checkin-photos').remove([doc.path])
-      if (error) throw error
+      await freightDocuments.remove(selectedRoute.id, doc.path)
 
       setDocuments((prev) => ({
         ...prev,
@@ -670,83 +593,59 @@ export default function RotasPage() {
     [formData.origin, formData.destination, formData.originState, formData.destinationState],
   )
 
-  const findCompanyByInput = useCallback((value: string): Client | null => {
-    // Match EXATO apenas (ignorando caixa e acentos).
-    // Anteriormente fazíamos um segundo find por substring (.includes), o
-    // que "casava" qualquer cliente parcial. Ex.: digitar "Padaria" trazia
-    // "Padaria do João", então a rota nova era gravada com esse nome e o
-    // cliente novo "Padaria do Pedro" nunca era criado.
-    const q = foldText(value)
-    if (!q) return null
-    return (
-      myClients.find(
-        (c) =>
-          equalsFold(c.company_name, value) ||
-          equalsFold(c.email, value) ||
-          equalsFold(c.responsible, value),
-      ) ?? null
-    )
-  }, [myClients])
-
-  /** Cliente do cadastro ou nome digitado (texto livre) para preencher os campos da rota. */
-  const resolveCompanyForRoute = useCallback(
-    (matched: Client | null, rawInput: string) => {
-      const raw = rawInput.trim()
-      if (matched) {
-        return {
-          company_name: matched.company_name,
-          company_responsible: matched.responsible,
-          company_phone: matched.whatsapp,
-          company_email: matched.email,
-          company_address: matched.address,
-          company_city: matched.city,
-          company_state: matched.state,
-        }
-      }
-      if (raw) {
-        return {
-          company_name: raw,
-          company_responsible: 'Não informado',
-          company_phone: '',
-          company_email: '',
-          company_address: '',
-          company_city: '',
-          company_state: '',
-        }
-      }
-      return null
-    },
-    []
-  )
-
-  const companyInputMatch = useMemo(
-    () => findCompanyByInput(companyInput),
-    [companyInput, findCompanyByInput]
-  )
-
-  const companySuggestions = useMemo(() => {
-    const q = foldText(companyInput.trim())
-    if (q.length < MIN_COMPANY_SUGGEST_CHARS) return [] as Client[]
-
-    const seen = new Set<string>()
-    const filtered = myClients.filter((c) => {
-      const company = foldText(c.company_name)
-      const responsible = foldText(c.responsible)
-      const email = foldText(c.email)
-      return company.includes(q) || responsible.includes(q) || email.includes(q)
-    })
-
-    // Evita duplicar empresas visualmente no datalist.
-    const unique: Client[] = []
-    for (const c of filtered) {
-      const key = foldText(c.company_name)
-      if (seen.has(key)) continue
-      seen.add(key)
-      unique.push(c)
-      if (unique.length >= 20) break
+  const lookupCompanyByCnpj = async (value: string, sequence: number) => {
+    const digits = value.replace(/\D/g, '')
+    const validation = validateCNPJ(digits)
+    if (!validation.valid) {
+      setCompanyLookup({ kind: 'error', cnpj: digits, message: validation.error })
+      return
     }
-    return unique
-  }, [companyInput, myClients])
+
+    setCompanyLookup({ kind: 'loading', cnpj: digits })
+    try {
+      const registeredClients = await getClients()
+      if (sequence !== companyLookupSequence.current) return
+      const existing = registeredClients.find((client) => client.cnpj?.replace(/\D/g, '') === digits)
+      if (existing) {
+        setCompanyInput(existing.company_name)
+        setFormData((previous) => ({
+          ...previous,
+          companyCnpj: formatCNPJDisplay(digits),
+          companyResponsible: existing.responsible || '',
+          companyPhone: existing.whatsapp || '',
+          companyEmail: existing.email || '',
+        }))
+        setCompanyLookup({ kind: 'existing', cnpj: digits })
+      } else {
+        setCompanyLookup({ kind: 'new', cnpj: digits, message: 'Empresa não encontrada. Preencha os dados para cadastrá-la ao salvar o frete.' })
+      }
+    } catch {
+      if (sequence === companyLookupSequence.current) {
+        setCompanyLookup({ kind: 'error', cnpj: digits, message: 'Não foi possível consultar os clientes. Tente novamente.' })
+      }
+    }
+  }
+
+  const handleCompanyCnpjChange = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 14)
+    companyLookupSequence.current += 1
+    setCompanyInput('')
+    setCompanyLookup({ kind: 'idle', cnpj: digits })
+    setFormData((previous) => ({
+      ...previous,
+      companyCnpj: digits.length === 14 ? formatCNPJDisplay(digits) : digits,
+      companyResponsible: '',
+      companyPhone: '',
+      companyEmail: '',
+    }))
+  }
+
+  // Evita cadastrar um cliente isolado na prévia caso as colunas do frete
+  // ainda não tenham sido migradas no banco.
+  const ensureCompanyRouteSchema = async () => {
+    const { error } = await supabase.from('routes').select('company_cnpj, cubage_m3, material_type, freight_type').limit(0)
+    if (error) throw new Error('O banco ainda não recebeu as migrações dos campos da empresa, carga e tipo de frete. Salve após a publicação das migrações.')
+  }
 
 
   const formatCurrencyBR = (value?: number | null) => {
@@ -762,6 +661,14 @@ export default function RotasPage() {
     if (!normalized) return null
     const parsed = Number(normalized)
     return Number.isFinite(parsed) ? parsed : null
+  }
+
+  const parseCubageInput = (value: string) => {
+    const trimmed = value.trim()
+    const normalized = trimmed.includes(',') ? trimmed.replace(/\./g, '').replace(',', '.') : trimmed
+    if (!normalized) return null
+    const parsed = Number(normalized)
+    return Number.isFinite(parsed) && parsed >= 0 && parsed < 1_000_000_000 ? parsed : null
   }
 
   /** Alíquota de comissão do vendedor logado (cada um só lança/edita os próprios fretes). */
@@ -798,10 +705,17 @@ export default function RotasPage() {
   const handleCreateRoute = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const matchedCompany = findCompanyByInput(companyInput)
-    const companyResolved = resolveCompanyForRoute(matchedCompany, companyInput)
-    if (!companyResolved) {
-      alert('Informe a empresa: escolha um cliente da lista ou digite o nome da empresa.')
+    const companyCnpj = formData.companyCnpj.replace(/\D/g, '')
+    if (!validateCNPJ(companyCnpj).valid) {
+      alert('Informe um CNPJ válido para a empresa.')
+      return
+    }
+    if (companyLookup.cnpj !== companyCnpj || !['existing', 'new'].includes(companyLookup.kind)) {
+      alert('Clique em Buscar empresa antes de salvar o frete.')
+      return
+    }
+    if (!companyInput.trim()) {
+      alert('Informe o nome da empresa.')
       return
     }
 
@@ -825,6 +739,10 @@ export default function RotasPage() {
       alert('Preencha o peso do frete.')
       return
     }
+    if (formData.cubageM3.trim() && parseCubageInput(formData.cubageM3) === null) {
+      alert('Informe os metros cúbicos com um valor válido e não negativo.')
+      return
+    }
 
     setIsSubmitting(true)
 
@@ -834,6 +752,15 @@ export default function RotasPage() {
         alert('Sessao expirada. Faca login novamente para criar a rota.')
         return
       }
+
+      await ensureCompanyRouteSchema()
+      const { client: companyResolved } = await ensureClientByCnpj({
+        cnpj: formatCNPJDisplay(companyCnpj),
+        companyName: companyInput,
+        responsible: formData.companyResponsible,
+        phone: formData.companyPhone,
+        email: formData.companyEmail,
+      })
 
       const freightValue = parseCurrencyInput(formData.freightValue)
       const driverValue = parseCurrencyInput(formData.driverValue)
@@ -859,6 +786,8 @@ export default function RotasPage() {
       vehicle: ROUTE_NO_DRIVER_VEHICLE,
       plate: ROUTE_NO_DRIVER_PLATE,
       weight: formData.weight,
+      cubage_m3: parseCubageInput(formData.cubageM3),
+      material_type: formData.materialType.trim() || null,
       freight_value: freightValue,
       driver_value: driverValue,
       taxes_value: calculateTaxesValue(freightValue, taxesPercent),
@@ -869,6 +798,7 @@ export default function RotasPage() {
       commission_value: calculateCommissionValue(netFreightValue, commissionRate),
       payment_status: formData.paymentStatus.trim() || null,
       payment_type: formData.paymentType.trim() || null,
+      freight_type: (formData.freightType || null) as 'Dedicado' | 'Fracionado' | null,
       driver_name: formData.driverName.trim() || null,
       driver_phone: formData.driverPhone.trim() || null,
       driver_payment_status: formData.driverPaymentStatus.trim() || null,
@@ -882,12 +812,13 @@ export default function RotasPage() {
         pickup_date: formData.pickupDate.trim(),
         status: 'pending',
         company_name: companyResolved.company_name,
-        company_responsible: companyResolved.company_responsible,
-        company_phone: formData.companyPhone.trim() || companyResolved.company_phone,
-        company_email: formData.companyEmail.trim() || companyResolved.company_email,
-        company_address: companyResolved.company_address,
-        company_city: companyResolved.company_city,
-        company_state: companyResolved.company_state,
+        company_cnpj: formatCNPJDisplay(companyCnpj),
+        company_responsible: formData.companyResponsible.trim() || companyResolved.responsible,
+        company_phone: formData.companyPhone.trim() || companyResolved.whatsapp,
+        company_email: formData.companyEmail.trim() || companyResolved.email,
+        company_address: companyResolved.address,
+        company_city: companyResolved.city,
+        company_state: companyResolved.state,
         distance_km:
           routeDistance.distanciaKm ??
           null,
@@ -895,17 +826,6 @@ export default function RotasPage() {
       }
 
       await createRoute(routeData)
-
-      await ensureClientFromRoute({
-        ownerUserId,
-        companyName: companyResolved.company_name,
-        responsible: companyResolved.company_responsible,
-        phone: routeData.company_phone ?? null,
-        email: routeData.company_email ?? null,
-        city: companyResolved.company_city,
-        state: companyResolved.company_state,
-        address: companyResolved.company_address,
-      })
 
       handleCloseCreateModal()
     } catch (err: any) {
@@ -918,10 +838,17 @@ export default function RotasPage() {
   const handleUpdateRoute = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const matchedCompany = findCompanyByInput(companyInput)
-    const companyResolved = resolveCompanyForRoute(matchedCompany, companyInput)
-    if (!companyResolved) {
-      alert('Informe a empresa: escolha um cliente da lista ou digite o nome da empresa.')
+    const companyCnpj = formData.companyCnpj.replace(/\D/g, '')
+    if ((companyCnpj || editingRoute?.company_cnpj) && !validateCNPJ(companyCnpj).valid) {
+      alert('Informe um CNPJ válido para a empresa.')
+      return
+    }
+    if (companyCnpj && (companyLookup.cnpj !== companyCnpj || !['existing', 'new'].includes(companyLookup.kind))) {
+      alert('Clique em Buscar empresa antes de salvar o frete.')
+      return
+    }
+    if (!companyInput.trim()) {
+      alert('Informe o nome da empresa.')
       return
     }
     
@@ -949,6 +876,10 @@ export default function RotasPage() {
       alert('Preencha o peso do frete.')
       return
     }
+    if (formData.cubageM3.trim() && parseCubageInput(formData.cubageM3) === null) {
+      alert('Informe os metros cúbicos com um valor válido e não negativo.')
+      return
+    }
 
     setIsSubmitting(true)
 
@@ -958,6 +889,17 @@ export default function RotasPage() {
         alert('Sessao expirada. Faca login novamente para atualizar a rota.')
         return
       }
+
+      await ensureCompanyRouteSchema()
+      const companyResolved = companyCnpj
+        ? (await ensureClientByCnpj({
+            cnpj: formatCNPJDisplay(companyCnpj),
+            companyName: companyInput,
+            responsible: formData.companyResponsible,
+            phone: formData.companyPhone,
+            email: formData.companyEmail,
+          })).client
+        : null
 
       const freightValue = parseCurrencyInput(formData.freightValue)
       const driverValue = parseCurrencyInput(formData.driverValue)
@@ -1001,6 +943,8 @@ export default function RotasPage() {
         vehicle: editingRoute.vehicle ?? ROUTE_NO_DRIVER_VEHICLE,
         plate: editingRoute.plate ?? ROUTE_NO_DRIVER_PLATE,
         weight: formData.weight,
+        cubage_m3: parseCubageInput(formData.cubageM3),
+        material_type: formData.materialType.trim() || null,
         freight_value: freightValue,
         driver_value: driverValue,
         taxes_value: taxesValue,
@@ -1011,6 +955,7 @@ export default function RotasPage() {
         commission_value: calculateCommissionValue(netFreightValue, commissionRate),
         payment_status: formData.paymentStatus.trim() || null,
         payment_type: formData.paymentType.trim() || null,
+        freight_type: (formData.freightType || null) as 'Dedicado' | 'Fracionado' | null,
         driver_name: formData.driverName.trim() || null,
         driver_phone: formData.driverPhone.trim() || null,
         driver_payment_status: formData.driverPaymentStatus.trim() || null,
@@ -1025,28 +970,18 @@ export default function RotasPage() {
         estimated_delivery: formData.estimatedDelivery.trim(),
         pickup_date: formData.pickupDate.trim(),
         status: editingRoute.status,
-        company_name: companyResolved.company_name,
-        company_responsible: companyResolved.company_responsible,
-        company_phone: formData.companyPhone.trim() || companyResolved.company_phone,
-        company_email: formData.companyEmail.trim() || companyResolved.company_email,
-        company_address: companyResolved.company_address,
-        company_city: companyResolved.company_city,
-        company_state: companyResolved.company_state,
+        company_name: companyResolved?.company_name || companyInput.trim(),
+        ...(companyCnpj ? { company_cnpj: formatCNPJDisplay(companyCnpj) } : {}),
+        company_responsible: formData.companyResponsible.trim() || companyResolved?.responsible || null,
+        company_phone: formData.companyPhone.trim() || companyResolved?.whatsapp || null,
+        company_email: formData.companyEmail.trim() || companyResolved?.email || null,
+        company_address: companyResolved?.address || editingRoute.company_address,
+        company_city: companyResolved?.city || editingRoute.company_city,
+        company_state: companyResolved?.state || editingRoute.company_state,
         distance_km:
           routeDistance.distanciaKm ??
           editingRoute.distance_km ??
           null,
-      })
-
-      await ensureClientFromRoute({
-        ownerUserId,
-        companyName: companyResolved.company_name,
-        responsible: companyResolved.company_responsible,
-        phone: formData.companyPhone.trim() || companyResolved.company_phone,
-        email: formData.companyEmail.trim() || companyResolved.company_email,
-        city: companyResolved.company_city,
-        state: companyResolved.company_state,
-        address: companyResolved.company_address,
       })
 
       handleCloseEditModal()
@@ -1060,6 +995,8 @@ export default function RotasPage() {
   const handleCloseCreateModal = () => {
     setShowCreateModal(false)
     setCompanyInput('')
+    setCompanyLookup({ kind: 'idle', cnpj: '' })
+    companyLookupSequence.current += 1
     setOriginCEP('')
     setDestinationCEP('')
     setOriginCityFeedback({ kind: 'idle' })
@@ -1073,7 +1010,11 @@ export default function RotasPage() {
       destinationAddress: '',
       companyPhone: '',
       companyEmail: '',
+      companyCnpj: '',
+      companyResponsible: '',
       weight: '',
+      cubageM3: '',
+      materialType: '',
       freightValue: '',
       cteValue: '',
       valePedagio: '',
@@ -1084,6 +1025,7 @@ export default function RotasPage() {
       commissionValue: '',
       paymentStatus: '',
       paymentType: '',
+      freightType: '',
       driverName: '',
       driverPhone: '',
       driverPaymentStatus: '',
@@ -1101,6 +1043,8 @@ export default function RotasPage() {
     setShowEditModal(false)
     setEditingRoute(null)
     setCompanyInput('')
+    setCompanyLookup({ kind: 'idle', cnpj: '' })
+    companyLookupSequence.current += 1
     setOriginCEP('')
     setDestinationCEP('')
     setOriginCityFeedback({ kind: 'idle' })
@@ -1114,7 +1058,11 @@ export default function RotasPage() {
       destinationAddress: '',
       companyPhone: '',
       companyEmail: '',
+      companyCnpj: '',
+      companyResponsible: '',
       weight: '',
+      cubageM3: '',
+      materialType: '',
       freightValue: '',
       cteValue: '',
       valePedagio: '',
@@ -1125,6 +1073,7 @@ export default function RotasPage() {
       commissionValue: '',
       paymentStatus: '',
       paymentType: '',
+      freightType: '',
       driverName: '',
       driverPhone: '',
       driverPaymentStatus: '',
@@ -1136,6 +1085,167 @@ export default function RotasPage() {
       taxesPercent: '18',
       seguroPercent: String(SEGURO_PERCENT_DEFAULT),
     })
+  }
+
+  const renderCompanyFields = () => (
+    <section aria-labelledby="route-company-heading" className="space-y-4">
+      <h3 id="route-company-heading" className="text-sm font-semibold text-gray-900">Empresa</h3>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-gray-900" htmlFor="route-company-cnpj">CNPJ da empresa <span className="text-red-500">{showEditModal && !formData.companyCnpj ? '(opcional para frete antigo)' : '*'}</span></label>
+          <div className="flex gap-2">
+            <input
+              id="route-company-cnpj"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={formData.companyCnpj}
+              onChange={(event) => handleCompanyCnpjChange(event.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-800"
+              placeholder="00.000.000/0000-00"
+              aria-invalid={companyLookup.kind === 'error'}
+            />
+            <button
+              type="button"
+              aria-label="Buscar empresa pelo CNPJ"
+              title="Buscar empresa pelo CNPJ"
+              onClick={() => void lookupCompanyByCnpj(formData.companyCnpj, ++companyLookupSequence.current)}
+              disabled={companyLookup.kind === 'loading'}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {companyLookup.kind === 'loading' ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <Search className="h-5 w-5" aria-hidden="true" />}
+            </button>
+          </div>
+          <p className={`mt-1 text-xs ${companyLookup.kind === 'error' ? 'text-red-600' : companyLookup.kind === 'existing' ? 'text-emerald-700' : 'text-gray-500'}`} role="status">
+            {companyLookup.kind === 'loading' ? 'Consultando clientes...' : companyLookup.kind === 'existing' ? 'Empresa encontrada no seu cadastro.' : companyLookup.message || 'Informe o CNPJ e clique em Buscar empresa.'}
+          </p>
+        </div>
+        <label className="block text-sm font-semibold text-gray-900">
+          <span className="mb-2 block">Nome da empresa <span className="text-red-500">*</span></span>
+          <input type="text" value={companyInput} readOnly={companyLookup.kind === 'existing'} onChange={(event) => setCompanyInput(event.target.value)} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-800 read-only:bg-slate-100" placeholder="Nome da empresa" />
+        </label>
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <label className="block text-sm font-semibold text-gray-900">
+          <span className="mb-2 block">Nome do responsável</span>
+          <input type="text" value={formData.companyResponsible} onChange={(event) => setFormData({ ...formData, companyResponsible: event.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-800" placeholder="Responsável pela empresa" />
+        </label>
+        <label className="block text-sm font-semibold text-gray-900">
+          <span className="mb-2 block">Número de telefone</span>
+          <input type="tel" value={formData.companyPhone} onChange={(event) => setFormData({ ...formData, companyPhone: event.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-800" placeholder="(11) 99999-9999" />
+        </label>
+        <label className="block text-sm font-semibold text-gray-900">
+          <span className="mb-2 block">E-mail</span>
+          <input type="email" value={formData.companyEmail} onChange={(event) => setFormData({ ...formData, companyEmail: event.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-800" placeholder="empresa@email.com" />
+        </label>
+      </div>
+    </section>
+  )
+
+  const renderRouteDates = () => (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <label className="block text-sm font-semibold text-gray-900">
+        <span className="mb-2 block">Data de coleta <span className="font-normal text-gray-500">(opcional)</span></span>
+        <input type="date" value={formData.pickupDate} onChange={(event) => setFormData({ ...formData, pickupDate: event.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-800" />
+      </label>
+      <label className="block text-sm font-semibold text-gray-900">
+        <span className="mb-2 block">Previsão de entrega <span className="font-normal text-gray-500">(opcional)</span></span>
+        <input type="date" value={formData.estimatedDelivery} onChange={(event) => setFormData({ ...formData, estimatedDelivery: event.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-800" />
+      </label>
+    </div>
+  )
+
+  const renderCargoAndValues = () => {
+    const inputClass = 'w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800'
+    const calculatedClass = 'w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none'
+    const editable = (label: string, key: 'weight' | 'cubageM3' | 'materialType' | 'nfValue' | 'freightValue' | 'driverValue' | 'cteValue' | 'valePedagio', placeholder: string, required = false) => (
+      <label className="block min-w-0 text-sm font-semibold text-gray-900">
+        <span className="mb-2 block">{label}{required && <span className="text-red-500"> *</span>}</span>
+        <input
+          type="text"
+          inputMode={['cubageM3', 'nfValue', 'freightValue', 'driverValue', 'cteValue', 'valePedagio'].includes(key) ? 'decimal' : 'text'}
+          required={required}
+          value={formData[key]}
+          onChange={(event) => setFormData({ ...formData, [key]: event.target.value })}
+          className={inputClass}
+          placeholder={placeholder}
+        />
+      </label>
+    )
+    const calculated = (label: string, value: number | null, help: string) => (
+      <div className="min-w-0">
+        <label className="mb-2 block text-sm font-semibold text-gray-900">{label}</label>
+        <input type="text" readOnly value={formatCurrencyBR(value)} className={calculatedClass} aria-label={label} />
+        <p className="mt-1 text-xs text-gray-500">{help}</p>
+      </div>
+    )
+
+    return (
+      <div className="space-y-7">
+        <section aria-labelledby="cargo-details-heading" className="border-t border-gray-200 pt-5">
+          <h3 id="cargo-details-heading" className="mb-4 text-sm font-semibold text-gray-900">Dados da carga</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {editable('Peso', 'weight', 'Ex: 15.500 kg', true)}
+            {editable('Metros cúbicos (m³)', 'cubageM3', 'Ex: 2,81')}
+            {editable('Tipo de material', 'materialType', 'Ex: argamassa e porta de madeira')}
+            {editable('Valor da nota fiscal', 'nfValue', 'Ex: 14.916,47')}
+          </div>
+        </section>
+
+        <section aria-labelledby="route-values-heading" className="border-t border-gray-200 pt-5">
+          <h3 id="route-values-heading" className="mb-4 text-sm font-semibold text-gray-900">Valores e custos</h3>
+          <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+            {editable('Valor do frete', 'freightValue', 'Ex: 12.500,00')}
+            {editable('Valor do motorista', 'driverValue', 'Ex: 8.500,00')}
+            {calculated('Frete líquido', formPreview.net, 'Frete menos tributos, motorista, seguro e pedágio não incluso.')}
+            <div className="min-w-0">
+              <label className="mb-2 block text-sm font-semibold text-gray-900">Seguro</label>
+              {isAdminUser ? (
+                <select value={formData.seguroPercent} onChange={(event) => setFormData({ ...formData, seguroPercent: event.target.value })} className={`${inputClass} mb-2 text-gray-900`} aria-label="Percentual de seguro sobre a NF">
+                  {SEGURO_PERCENT_CHOICES.map((percent) => <option key={percent} value={String(percent)}>{percent}% sobre a NF</option>)}
+                </select>
+              ) : <p className="mb-2 text-xs text-gray-600">Alíquota de <strong>{normalizeSeguroPercent(Number(formData.seguroPercent))}%</strong> — somente administrador pode alterar.</p>}
+              <input type="text" readOnly value={formatCurrencyBR(formPreview.seguro)} className={calculatedClass} aria-label="Valor do seguro" />
+              <p className="mt-1 text-xs text-gray-500">Calculado automaticamente sobre o valor da NF.</p>
+            </div>
+            <div className="min-w-0">
+              <label className="mb-2 block text-sm font-semibold text-gray-900">Tributos *</label>
+              {isAdminUser ? (
+                <select value={formData.taxesPercent} onChange={(event) => setFormData({ ...formData, taxesPercent: event.target.value })} className={`${inputClass} mb-2 text-gray-900`} aria-label="Percentual de tributos sobre o frete">
+                  {TAXES_PERCENT_CHOICES.map((percent) => <option key={percent} value={String(percent)}>{percent}% sobre o frete</option>)}
+                </select>
+              ) : <p className="mb-2 text-xs text-gray-600">Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0% ou 18%).</p>}
+              <input type="text" readOnly value={formatCurrencyBR(formPreview.taxes)} className={calculatedClass} aria-label="Valor dos tributos" />
+              <p className="mt-1 text-xs text-gray-500">Calculado automaticamente sobre o valor do frete.</p>
+            </div>
+            {calculated('Comissão', formPreview.commission, `Calculada automaticamente: ${commissionRate ?? 30}% do frete líquido.`)}
+            {editable('Valor do CT-e (opcional)', 'cteValue', 'Ex: 150,00')}
+            <div className="min-w-0">
+              {editable('Vale pedágio (opcional)', 'valePedagio', 'Ex: 300,00')}
+              <select
+                aria-label="Vale pedágio incluso"
+                disabled={!canChangeTollInclusion}
+                title={!canChangeTollInclusion ? 'Seu cargo pode visualizar, mas não alterar este campo.' : undefined}
+                value={formData.valePedagioIncluso}
+                onChange={(event) => setFormData({ ...formData, valePedagioIncluso: event.target.value })}
+                className={`${inputClass} mt-2`}
+              >
+                <option value="true">Incluso</option>
+                <option value="false">Não incluso</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="route-other-heading" className="border-t border-gray-200 pt-5">
+          <h3 id="route-other-heading" className="mb-4 text-sm font-semibold text-gray-900">Observação</h3>
+          <label className="block text-sm font-semibold text-gray-900">
+            <span className="sr-only">Observação</span>
+            <textarea rows={3} value={formData.observation} onChange={(event) => setFormData({ ...formData, observation: event.target.value })} className={`${inputClass} resize-y`} placeholder="Informações adicionais do frete" />
+          </label>
+        </section>
+      </div>
+    )
   }
 
   return (
@@ -1566,6 +1676,10 @@ export default function RotasPage() {
                       {selectedRoute.payment_type || '—'}
                     </p>
                   </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Tipo de frete</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedRoute.freight_type || '—'}</p>
+                  </div>
                 </div>
               </div>
 
@@ -1632,6 +1746,14 @@ export default function RotasPage() {
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Peso</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.weight}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Metros cúbicos</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedRoute.cubage_m3 == null ? '—' : `${selectedRoute.cubage_m3.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} m³`}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1">Tipo de material</p>
+                    <p className="text-sm font-medium text-gray-900 break-words">{selectedRoute.material_type || '—'}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 mb-1">Nome do Motorista</p>
@@ -1778,6 +1900,15 @@ export default function RotasPage() {
                         ? 'Nota fiscal, CT-e, comprovantes de pagamento (PDF) e demais anexos do frete. As imagens são comprimidas (sem cortar) antes do envio. PDF até 20 MB.'
                         : 'Visualização dos anexos. Envio e exclusão ficam a cargo do time comercial ou administrativo.'}
                     </p>
+                    {documentsLoading && <p className="mb-3 text-sm text-gray-600">Carregando anexos...</p>}
+                    {documentsError && (
+                      <p role="alert" className="mb-3 text-sm text-red-700">
+                        {documentsError}{' '}
+                        <button type="button" className="underline" onClick={() => void loadRouteDocuments(selectedRoute.id)}>
+                          Tentar novamente
+                        </button>
+                      </p>
+                    )}
                     <input
                       id="upload-frete-docs"
                       type="file"
@@ -1811,67 +1942,13 @@ export default function RotasPage() {
                       </div>
                     )}
 
-                    {documents.freteDocs.length > 0 && (
-                      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {documents.freteDocs.map((doc) => {
-                          const isRemoving = removingDocumentPath === doc.path
-                          return (
-                            <div
-                              key={doc.path}
-                              className="group relative aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center"
-                            >
-                              {doc.kind === 'pdf' ? (
-                                <a
-                                  href={doc.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex flex-col items-center justify-center w-full h-full p-2 text-center text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-800"
-                                  title={doc.name}
-                                >
-                                  <FileText className="w-10 h-10 text-red-600 mb-1" />
-                                  <span className="text-[11px] font-semibold uppercase tracking-wide text-red-700">
-                                    PDF
-                                  </span>
-                                  <span className="text-[10px] text-gray-500 mt-1 line-clamp-2 break-all">
-                                    {doc.name.replace(/^freteDocs-\d+-[a-z0-9]+-/, '')}
-                                  </span>
-                                </a>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedPhoto(doc.url)}
-                                  className="block w-full h-full focus:outline-none focus:ring-2 focus:ring-slate-800"
-                                  aria-label="Visualizar imagem"
-                                >
-                                  <img
-                                    src={doc.url}
-                                    alt="Documento do frete"
-                                    className="h-full w-full object-contain transition-opacity group-hover:opacity-95"
-                                    loading="lazy"
-                                  />
-                                </button>
-                              )}
-                              {canManageFreightDocuments && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveDocument('freteDocs', doc)}
-                                  disabled={isRemoving}
-                                  className="absolute top-1.5 right-1.5 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/90 text-red-600 shadow border border-gray-200 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-wait"
-                                  title="Remover arquivo"
-                                  aria-label="Remover arquivo"
-                                >
-                                  {isRemoving ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  )}
-                                </button>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
+                    <FreightDocumentGallery
+                      documents={documents.freteDocs}
+                      canRemove={canManageFreightDocuments}
+                      removingPath={removingDocumentPath}
+                      onPreview={setSelectedPhoto}
+                      onRemove={(doc) => void handleRemoveDocument('freteDocs', doc)}
+                    />
                   </div>
                 </div>
               </div>
@@ -1936,65 +2013,9 @@ export default function RotasPage() {
 
             <form onSubmit={handleCreateRoute} noValidate className="p-6 space-y-6">
               {/* CEP será adicionado antes dos campos de origem */}
-              {/* Empresa (preenchimento manual) */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">
-                  Empresa <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  list="companies-list-create"
-                  value={companyInput}
-                  onChange={(e) => {
-                    setCompanyInput(e.target.value)
-                  }}
-                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                  placeholder="Digite nome da empresa, responsável ou e-mail"
-                />
-                <datalist id="companies-list-create">
-                  {companySuggestions.map((c) => (
-                    <option key={c.id} value={c.company_name}>
-                      {`${c.responsible} • ${c.city}/${c.state}`}
-                    </option>
-                  ))}
-                </datalist>
-                <p className="text-xs text-gray-500 mt-1">
-                  {companyInputMatch
-                    ? `${companyInputMatch.company_name} • ${companyInputMatch.responsible} (seu cadastro)`
-                    : companyInput.trim()
-                      ? `Será usado o nome digitado: "${companyInput.trim()}"`
-                      : 'Escolha um cliente da lista ou digite o nome da empresa'}
-                </p>
-              </div>
+              {renderCompanyFields()}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Telefone
-                  </label>
-                  <input
-                    type="tel"
-                    value={formData.companyPhone}
-                    onChange={(e) => setFormData({ ...formData, companyPhone: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: (11) 99999-9999"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    E-mail
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.companyEmail}
-                    onChange={(e) => setFormData({ ...formData, companyEmail: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="empresa@email.com"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
                     Status de Pagamento
@@ -2020,13 +2041,30 @@ export default function RotasPage() {
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                   >
                     <option value="">Selecione</option>
+                    {formData.paymentType && !PAYMENT_TYPE_OPTIONS.some((type) => type === formData.paymentType) && (
+                      <option value={formData.paymentType}>{formData.paymentType} (cadastro anterior)</option>
+                    )}
                     {PAYMENT_TYPE_OPTIONS.map((type) => (
                       <option key={type} value={type}>{type}</option>
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label htmlFor="create-freight-type" className="block text-sm font-semibold text-gray-900 mb-2">Tipo de frete</label>
+                  <select id="create-freight-type" value={formData.freightType} onChange={(e) => setFormData({ ...formData, freightType: e.target.value })} className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800">
+                    <option value="">Selecione</option>
+                    <option value="Dedicado">Dedicado</option>
+                    <option value="Fracionado">Fracionado</option>
+                  </select>
+                </div>
               </div>
 
+              <details className="group border-t border-gray-200 pt-4">
+                <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 [&::-webkit-details-marker]:hidden">
+                  Dados do motorista e datas
+                  <ChevronDown className="h-4 w-4 text-gray-500 transition-transform group-open:rotate-180" aria-hidden="true" />
+                </summary>
+                <div className="mt-4 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -2078,6 +2116,10 @@ export default function RotasPage() {
                   </select>
                 </div>
               </div>
+
+              {renderRouteDates()}
+                </div>
+              </details>
 
               {/* Origem - Começando pelo CEP */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
@@ -2245,241 +2287,7 @@ export default function RotasPage() {
                 </div>
               </div>
 
-              {/* Outras Informações */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Peso <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.weight}
-                    onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: 15.500 kg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Data de Coleta <span className="text-gray-500 font-normal">(opcional)</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.pickupDate}
-                    onChange={(e) => setFormData({ ...formData, pickupDate: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Previsão de Entrega <span className="text-gray-500 font-normal">(opcional)</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.estimatedDelivery}
-                    onChange={(e) => setFormData({ ...formData, estimatedDelivery: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Valor do Frete
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.freightValue}
-                      onChange={(e) => setFormData({ ...formData, freightValue: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Ex: 12500,00"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-900 mb-2">
-                        Valor de CTE{' '}
-                        <span className="text-gray-500 font-normal">(opcional)</span>
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={formData.cteValue}
-                        onChange={(e) => setFormData({ ...formData, cteValue: e.target.value })}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                        placeholder="Ex: 150,00"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-900 mb-2">
-                        Vale pedágio <span className="text-gray-500 font-normal">(opcional)</span>
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={formData.valePedagio}
-                        onChange={(e) => setFormData({ ...formData, valePedagio: e.target.value })}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                        placeholder="Ex: 300,00"
-                      />
-                      <select
-                        aria-label="Vale pedágio incluso"
-                        disabled={!canChangeTollInclusion}
-                        title={!canChangeTollInclusion ? 'Seu cargo pode visualizar, mas não alterar este campo.' : undefined}
-                        value={formData.valePedagioIncluso}
-                        onChange={(e) => setFormData({ ...formData, valePedagioIncluso: e.target.value })}
-                        className="mt-2 w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg"
-                      >
-                        <option value="true">Incluso</option>
-                        <option value="false">Não incluso</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Valor do Motorista
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={formData.driverValue}
-                    onChange={(e) => setFormData({ ...formData, driverValue: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: 8500,00"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Tribultos*
-                  </label>
-                  {isAdminUser ? (
-                    <select
-                      value={formData.taxesPercent}
-                      onChange={(e) => setFormData({ ...formData, taxesPercent: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
-                      aria-label="Percentual de tributos sobre o frete"
-                    >
-                      {TAXES_PERCENT_CHOICES.map((p) => (
-                        <option key={p} value={String(p)}>
-                          {p}% sobre o frete
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="mb-2 text-xs text-gray-600">
-                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0% ou 18%).
-                    </p>
-                  )}
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    readOnly
-                    value={formatCurrencyBR(formPreview.taxes)}
-                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
-                    placeholder="Valor calculado"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: {normalizeTaxesPercent(Number(formData.taxesPercent))}% do valor do frete.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Seguro
-                  </label>
-                  {isAdminUser ? (
-                    <select
-                      value={formData.seguroPercent}
-                      onChange={(e) => setFormData({ ...formData, seguroPercent: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
-                      aria-label="Percentual de seguro sobre a NF"
-                    >
-                      {SEGURO_PERCENT_CHOICES.map((p) => (
-                        <option key={p} value={String(p)}>
-                          {p}% sobre a NF
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="mb-2 text-xs text-gray-600">
-                      Alíquota de <strong>{normalizeSeguroPercent(Number(formData.seguroPercent))}%</strong> — somente administrador pode alterar.
-                    </p>
-                  )}
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    readOnly
-                    value={formatCurrencyBR(formPreview.seguro)}
-                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
-                    placeholder="Valor calculado"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: {normalizeSeguroPercent(Number(formData.seguroPercent))}% do valor da NF.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Frete Líquido
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    readOnly
-                    value={formatCurrencyBR(formPreview.net)}
-                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
-                    placeholder="Valor do frete - tribultos - motorista - seguro"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: frete - tributos - motorista - seguro - pedágio não incluso.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Comissão
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    readOnly
-                    value={formatCurrencyBR(formPreview.commission)}
-                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
-                    placeholder="% do frete líquido"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: {commissionRate ?? 30}% do frete líquido.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Valor da NF
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={formData.nfValue}
-                    onChange={(e) => setFormData({ ...formData, nfValue: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: 12500,00"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">
-                  Observação
-                </label>
-                <textarea
-                  rows={3}
-                  value={formData.observation}
-                  onChange={(e) => setFormData({ ...formData, observation: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 resize-y"
-                  placeholder="Informações adicionais do frete"
-                />
-              </div>
+              {renderCargoAndValues()}
 
               {/* Botões */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
@@ -2534,65 +2342,9 @@ export default function RotasPage() {
             </div>
 
             <form onSubmit={handleUpdateRoute} noValidate className="p-6 space-y-6">
-              {/* Empresa (preenchimento manual) */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">
-                  Empresa <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  list="companies-list-edit"
-                  value={companyInput}
-                  onChange={(e) => {
-                    setCompanyInput(e.target.value)
-                  }}
-                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                  placeholder="Digite nome da empresa, responsável ou e-mail"
-                />
-                <datalist id="companies-list-edit">
-                  {companySuggestions.map((c) => (
-                    <option key={c.id} value={c.company_name}>
-                      {`${c.responsible} • ${c.city}/${c.state}`}
-                    </option>
-                  ))}
-                </datalist>
-                <p className="text-xs text-gray-500 mt-1">
-                  {companyInputMatch
-                    ? `${companyInputMatch.company_name} • ${companyInputMatch.responsible} (seu cadastro)`
-                    : companyInput.trim()
-                      ? `Será usado o nome digitado: "${companyInput.trim()}"`
-                      : 'Escolha um cliente da lista ou digite o nome da empresa'}
-                </p>
-              </div>
+              {renderCompanyFields()}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Telefone
-                  </label>
-                  <input
-                    type="tel"
-                    value={formData.companyPhone}
-                    onChange={(e) => setFormData({ ...formData, companyPhone: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: (11) 99999-9999"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    E-mail
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.companyEmail}
-                    onChange={(e) => setFormData({ ...formData, companyEmail: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="empresa@email.com"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
                     Status de Pagamento
@@ -2618,13 +2370,30 @@ export default function RotasPage() {
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
                   >
                     <option value="">Selecione</option>
+                    {formData.paymentType && !PAYMENT_TYPE_OPTIONS.some((type) => type === formData.paymentType) && (
+                      <option value={formData.paymentType}>{formData.paymentType} (cadastro anterior)</option>
+                    )}
                     {PAYMENT_TYPE_OPTIONS.map((type) => (
                       <option key={type} value={type}>{type}</option>
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label htmlFor="edit-freight-type" className="block text-sm font-semibold text-gray-900 mb-2">Tipo de frete</label>
+                  <select id="edit-freight-type" value={formData.freightType} onChange={(e) => setFormData({ ...formData, freightType: e.target.value })} className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800">
+                    <option value="">Selecione</option>
+                    <option value="Dedicado">Dedicado</option>
+                    <option value="Fracionado">Fracionado</option>
+                  </select>
+                </div>
               </div>
 
+              <details className="group border-t border-gray-200 pt-4">
+                <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 [&::-webkit-details-marker]:hidden">
+                  Dados do motorista e datas
+                  <ChevronDown className="h-4 w-4 text-gray-500 transition-transform group-open:rotate-180" aria-hidden="true" />
+                </summary>
+                <div className="mt-4 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -2676,6 +2445,10 @@ export default function RotasPage() {
                   </select>
                 </div>
               </div>
+
+              {renderRouteDates()}
+                </div>
+              </details>
 
               {/* Origem - Começando pelo CEP */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
@@ -2843,241 +2616,7 @@ export default function RotasPage() {
                 </div>
               </div>
 
-              {/* Outras Informações */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Peso <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.weight}
-                    onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: 15.500 kg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Data de Coleta <span className="text-gray-500 font-normal">(opcional)</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.pickupDate}
-                    onChange={(e) => setFormData({ ...formData, pickupDate: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Previsão de Entrega <span className="text-gray-500 font-normal">(opcional)</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.estimatedDelivery}
-                    onChange={(e) => setFormData({ ...formData, estimatedDelivery: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Valor do Frete
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.freightValue}
-                      onChange={(e) => setFormData({ ...formData, freightValue: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                      placeholder="Ex: 12500,00"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-900 mb-2">
-                        Valor de CTE{' '}
-                        <span className="text-gray-500 font-normal">(opcional)</span>
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={formData.cteValue}
-                        onChange={(e) => setFormData({ ...formData, cteValue: e.target.value })}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                        placeholder="Ex: 150,00"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-900 mb-2">
-                        Vale pedágio <span className="text-gray-500 font-normal">(opcional)</span>
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={formData.valePedagio}
-                        onChange={(e) => setFormData({ ...formData, valePedagio: e.target.value })}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                        placeholder="Ex: 300,00"
-                      />
-                      <select
-                        aria-label="Vale pedágio incluso"
-                        disabled={!canChangeTollInclusion}
-                        title={!canChangeTollInclusion ? 'Seu cargo pode visualizar, mas não alterar este campo.' : undefined}
-                        value={formData.valePedagioIncluso}
-                        onChange={(e) => setFormData({ ...formData, valePedagioIncluso: e.target.value })}
-                        className="mt-2 w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg"
-                      >
-                        <option value="true">Incluso</option>
-                        <option value="false">Não incluso</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Valor do Motorista
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={formData.driverValue}
-                    onChange={(e) => setFormData({ ...formData, driverValue: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: 8500,00"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Tribultos*
-                  </label>
-                  {isAdminUser ? (
-                    <select
-                      value={formData.taxesPercent}
-                      onChange={(e) => setFormData({ ...formData, taxesPercent: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
-                      aria-label="Percentual de tributos sobre o frete"
-                    >
-                      {TAXES_PERCENT_CHOICES.map((p) => (
-                        <option key={p} value={String(p)}>
-                          {p}% sobre o frete
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="mb-2 text-xs text-gray-600">
-                      Alíquota de <strong>{normalizeTaxesPercent(Number(formData.taxesPercent))}%</strong> — somente administrador pode alterar (0% ou 18%).
-                    </p>
-                  )}
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    readOnly
-                    value={formatCurrencyBR(formPreview.taxes)}
-                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
-                    placeholder="Valor calculado"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: {normalizeTaxesPercent(Number(formData.taxesPercent))}% do valor do frete.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Seguro
-                  </label>
-                  {isAdminUser ? (
-                    <select
-                      value={formData.seguroPercent}
-                      onChange={(e) => setFormData({ ...formData, seguroPercent: e.target.value })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 mb-2 text-gray-900"
-                      aria-label="Percentual de seguro sobre a NF"
-                    >
-                      {SEGURO_PERCENT_CHOICES.map((p) => (
-                        <option key={p} value={String(p)}>
-                          {p}% sobre a NF
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="mb-2 text-xs text-gray-600">
-                      Alíquota de <strong>{normalizeSeguroPercent(Number(formData.seguroPercent))}%</strong> — somente administrador pode alterar.
-                    </p>
-                  )}
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    readOnly
-                    value={formatCurrencyBR(formPreview.seguro)}
-                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
-                    placeholder="Valor calculado"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: {normalizeSeguroPercent(Number(formData.seguroPercent))}% do valor da NF.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Frete Líquido
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    readOnly
-                    value={formatCurrencyBR(formPreview.net)}
-                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
-                    placeholder="Valor do frete - tribultos - motorista - seguro"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: frete - tributos - motorista - seguro - pedágio não incluso.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Comissão
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    readOnly
-                    value={formatCurrencyBR(formPreview.commission)}
-                    className="w-full px-4 py-3 bg-slate-100 border border-gray-300 rounded-lg text-gray-700 focus:outline-none"
-                    placeholder="% do frete líquido"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Calculado automaticamente: {commissionRate ?? 30}% do frete líquido.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    Valor da NF
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={formData.nfValue}
-                    onChange={(e) => setFormData({ ...formData, nfValue: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    placeholder="Ex: 12500,00"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">
-                  Observação
-                </label>
-                <textarea
-                  rows={3}
-                  value={formData.observation}
-                  onChange={(e) => setFormData({ ...formData, observation: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 resize-y"
-                  placeholder="Informações adicionais do frete"
-                />
-              </div>
+              {renderCargoAndValues()}
 
               {/* Botões */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">

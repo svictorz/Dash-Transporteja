@@ -8,7 +8,7 @@ const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving'
 
 const USER_AGENT =
   process.env.COTACAO_NOMINATIM_USER_AGENT ||
-  'OP-Transportes-Gestao/1.0 (cotacao; contato@empresa.com.br)'
+  'JCNTransportes-Cotacao/1.0 (https://www.jcntransportes.com)'
 
 export interface GeocodeHit {
   lat: number
@@ -57,16 +57,18 @@ export async function nominatimSearchBrasil(query: string): Promise<GeocodeHit |
 export interface OsrmRouteResult {
   distanceM: number
   durationS: number
+  coordinates?: [number, number][]
 }
 
 export async function osrmDrivingRoute(
   lon1: number,
   lat1: number,
   lon2: number,
-  lat2: number
+  lat2: number,
+  includeGeometry = false
 ): Promise<OsrmRouteResult | null> {
   const path = `${lon1},${lat1};${lon2},${lat2}`
-  const url = `${OSRM_BASE}/${path}?overview=false&alternatives=false&steps=false`
+  const url = `${OSRM_BASE}/${path}?overview=${includeGeometry ? 'full' : 'false'}&alternatives=false&steps=false${includeGeometry ? '&geometries=geojson' : ''}`
 
   const res = await fetch(url, {
     headers: { 'User-Agent': USER_AGENT },
@@ -77,7 +79,7 @@ export async function osrmDrivingRoute(
 
   const json = (await res.json()) as {
     code?: string
-    routes?: Array<{ distance?: number; duration?: number }>
+    routes?: Array<{ distance?: number; duration?: number; geometry?: { coordinates?: [number, number][] } }>
   }
 
   if (json.code !== 'Ok' || !json.routes?.[0]) return null
@@ -87,5 +89,12 @@ export async function osrmDrivingRoute(
   const durationS = r.duration
   if (typeof distanceM !== 'number' || typeof durationS !== 'number') return null
 
-  return { distanceM, durationS }
+  const points = includeGeometry ? r.geometry?.coordinates : undefined
+  const stride = points ? Math.max(1, Math.ceil(points.length / 900)) : 1
+  const sampled = points?.filter((_, index) => index % stride === 0 || index === points.length - 1)
+  return {
+    distanceM,
+    durationS,
+    coordinates: sampled?.map(([lon, lat]) => [lat, lon]),
+  }
 }

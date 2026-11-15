@@ -17,10 +17,13 @@ export interface Route {
   vehicle: string
   plate: string
   weight: string
+  cubage_m3?: number | null
+  material_type?: string | null
   estimated_delivery: string
   pickup_date: string
   status: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
   company_name?: string | null
+  company_cnpj?: string | null
   company_responsible?: string | null
   company_phone?: string | null
   company_email?: string | null
@@ -43,6 +46,7 @@ export interface Route {
   commission_paid?: boolean
   payment_status?: string | null
   payment_type?: string | null
+  freight_type?: 'Dedicado' | 'Fracionado' | null
   driver_payment_status?: string | null
   driver_payment_type?: string | null
   nf_value?: number | null
@@ -74,11 +78,14 @@ export interface CreateRouteData {
   vehicle?: string
   plate?: string
   weight: string
+  cubage_m3?: number | null
+  material_type?: string | null
   /** ISO yyyy-mm-dd ou vazio se ainda não definido */
   estimated_delivery?: string
   pickup_date?: string
   status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
   company_name?: string
+  company_cnpj?: string | null
   company_responsible?: string
   company_phone?: string
   company_email?: string
@@ -98,6 +105,7 @@ export interface CreateRouteData {
   commission_paid?: boolean
   payment_status?: string | null
   payment_type?: string | null
+  freight_type?: 'Dedicado' | 'Fracionado' | null
   driver_payment_status?: string | null
   driver_payment_type?: string | null
   nf_value?: number | null
@@ -122,10 +130,13 @@ export interface UpdateRouteData {
   vehicle?: string
   plate?: string
   weight?: string
+  cubage_m3?: number | null
+  material_type?: string | null
   estimated_delivery?: string
   pickup_date?: string
   status?: 'pending' | 'inTransit' | 'pickedUp' | 'delivered' | 'documentation' | 'cancelled'
   company_name?: string | null
+  company_cnpj?: string | null
   company_responsible?: string | null
   company_phone?: string | null
   company_email?: string | null
@@ -145,6 +156,7 @@ export interface UpdateRouteData {
   commission_paid?: boolean
   payment_status?: string | null
   payment_type?: string | null
+  freight_type?: 'Dedicado' | 'Fracionado' | null
   driver_payment_status?: string | null
   driver_payment_type?: string | null
   nf_value?: number | null

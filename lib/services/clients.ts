@@ -132,6 +132,40 @@ export async function deleteClient(id: string): Promise<void> {
   }
 }
 
+export interface EnsureClientByCnpjInput {
+  cnpj: string
+  companyName: string
+  responsible?: string
+  phone?: string
+  email?: string
+  address?: string
+  city?: string
+  state?: string
+  neighborhood?: string
+}
+
+/** Reutiliza o cliente visível com o mesmo CNPJ; cadastra apenas se não existir. */
+export async function ensureClientByCnpj(input: EnsureClientByCnpjInput): Promise<{ client: Client; created: boolean }> {
+  const digits = input.cnpj.replace(/\D/g, '')
+  if (digits.length !== 14) throw new Error('CNPJ inválido')
+  const clients = await getClients()
+  const existing = clients.find((client) => client.cnpj?.replace(/\D/g, '') === digits)
+  if (existing) return { client: existing, created: false }
+
+  const client = await createClient({
+    cnpj: input.cnpj,
+    company_name: input.companyName.trim(),
+    responsible: input.responsible?.trim() || '',
+    whatsapp: input.phone?.trim() || '',
+    email: input.email?.trim() || '',
+    address: input.address?.trim() || '',
+    city: input.city?.trim() || '',
+    state: input.state?.trim() || '',
+    neighborhood: input.neighborhood?.trim() || '',
+  })
+  return { client, created: true }
+}
+
 /**
  * Garante que existe um registro em `clients` para uma empresa informada
  * no fluxo de criação/edição de rota.

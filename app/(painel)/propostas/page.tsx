@@ -1,187 +1,480 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Briefcase } from 'lucide-react'
-import PropostaEmitenteTabs from '@/components/propostas/PropostaEmitenteTabs'
-import PropostaFormulario from '@/components/propostas/PropostaFormulario'
-import PropostaPdfPreview from '@/components/propostas/PropostaPdfPreview'
-import type { PropostaEmitente } from '@/lib/constants/proposta-emitentes'
-import { getPropostaDoc } from '@/lib/constants/proposta-emitentes'
-import { defaultPropostaFormState } from '@/lib/types/proposta'
-import { calcularProposta, gerarCodigoProposta } from '@/lib/utils/proposta-calculo'
-import './proposta-print.css'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { supabase } from '@/lib/supabase/client'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
+import { extractCotacao } from '@/lib/utils/cotacao-extraction'
+import { isAnalysisCurrent } from '@/lib/utils/cotacao-analysis-current'
+import { defaultCotacaoTemplates, defaultCotacaoTitles, validateCotacaoTemplates, validateCotacaoTitles, type CotacaoMessageTemplates, type CotacaoMessageTitles } from '@/lib/utils/cotacao-messages'
+import { parseCotacaoTaxPercent } from '@/lib/utils/cotacao-tax'
+import type { CotacaoDraft } from '@/lib/types/cotacao-erp'
+import CotacaoAnalysisView from '@/components/cotacao/CotacaoAnalysisView'
+import CotacaoProposalDocument from '@/components/cotacao/CotacaoProposalDocument'
+import { buildCotacaoProposal, type ProposalKind } from '@/lib/utils/cotacao-proposal'
+import { searchCNPJ, type CNPJFormData } from '@/lib/services/cnpj'
+import { validateCNPJ } from '@/lib/utils/validation'
+import { applyCnpjLocation, type CotacaoCnpjParty } from '@/lib/utils/cotacao-cnpj'
+import { ANTT_REFERENCE_FLEET } from '@/lib/utils/cotacao-antt'
+import './cotacao-print.css'
+import './cotacao-map.css'
 
-type DistanciaStatus = 'idle' | 'loading' | 'ok' | 'erro'
-
-function createInitialForms(): Record<PropostaEmitente, ReturnType<typeof defaultPropostaFormState>> {
-  return {
-    empresa: defaultPropostaFormState(gerarCodigoProposta('empresa')),
-  }
+type QuoteRow = { id: string; owner_id: string; draft: CotacaoDraft; distance_km: number | null; distance_source: string | null; created_at: string }
+type Vehicle = { name: string; payloadKg: number; volumeM3: number; axles: number; pricePerKm?: number; anttCcd?: number; anttFixed?: number }
+type RuleSet = { vehicles?: Vehicle[]; anttSourceUrl?: string; anttEffectiveFrom?: string; selected_vehicle?: string } & { [key: string]: number | string | Vehicle[] | undefined }
+type Analysis = { id: string; result: { fracionado: Scenario; dedicado: Scenario }; snapshot: { draft: CotacaoDraft; distance_km: number; distance_source?: string; rules: RuleSet }; created_at: string }
+type Scenario = { floor: number; taxes: number; insurance: number; pgr: number; tolls: number; collection: number; total: number }
+const empty = () => extractCotacao('')
+const csvCell = (value: unknown) => {
+  const raw = String(value ?? '')
+  const safe = /^[=+@\-\t\r]/.test(raw) ? `'${raw}` : raw
+  return `"${safe.replace(/"/g, '""')}"`
 }
+const input = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
+const card = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900'
+// Valores iniciais reproduzidos da tabela enviada pelo usuário; não são preços comerciais aprovados.
+const fleetRatePerKm = [4.0738, 4.0738, 4.0738, 4.0738, 5.2177, 8.2727, 6.8284, 7.5347, 8.2727, 9.4114]
+const initialFleet = (): Vehicle[] => ANTT_REFERENCE_FLEET.map((vehicle, index) => ({ ...vehicle, payloadKg: vehicle.payloadKg ?? 0, volumeM3: vehicle.volumeM3 ?? 0, pricePerKm: fleetRatePerKm[index] }))
 
-export default function PropostasPage() {
-  const [activeEmitente, setActiveEmitente] = useState<PropostaEmitente>('empresa')
-  const [forms, setForms] = useState(createInitialForms)
-  const [statusDistanciaByEmitente, setStatusDistanciaByEmitente] = useState<
-    Record<PropostaEmitente, DistanciaStatus>
-  >({ empresa: 'idle' })
-  const abortRef = useRef<Partial<Record<PropostaEmitente, AbortController>>>({})
+export default function CotacaoPage() {
+  const { user } = useCurrentUser()
+  const isAdmin = user?.role === 'admin'
+  const [tab, setTab] = useState<'analisar' | 'historico'>('analisar')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'tributos' | 'precos' | 'mensagens'>('tributos')
+  const settingsDialogRef = useRef<HTMLElement>(null)
+  const settingsCloseRef = useRef<HTMLButtonElement>(null)
+  const settingsTriggerRef = useRef<HTMLButtonElement>(null)
+  const [raw, setRaw] = useState('')
+  const [draft, setDraft] = useState<CotacaoDraft>(empty)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  const [quoteId, setQuoteId] = useState<string | null>(null)
+  const [distance, setDistance] = useState('')
+  const [source, setSource] = useState<'route-api' | 'manual'>('manual')
+  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | null>(null)
+  const [routeDuration, setRouteDuration] = useState<number | null>(null)
+  const [quotes, setQuotes] = useState<QuoteRow[]>([])
+  const [analysis, setAnalysis] = useState<Analysis | null>(null)
+  const [analysisError, setAnalysisError] = useState('')
+  const [quoteSettingsReady, setQuoteSettingsReady] = useState(false)
+  const [fleetSettingsReady, setFleetSettingsReady] = useState(false)
+  const [printKind, setPrintKind] = useState<ProposalKind>('fracionado')
+  const [settingsDraft, setSettingsDraft] = useState<Record<string, string>>({})
+  const [templates, setTemplates] = useState<CotacaoMessageTemplates>(defaultCotacaoTemplates)
+  const [templateDraft, setTemplateDraft] = useState<CotacaoMessageTemplates>(defaultCotacaoTemplates)
+  const [titles, setTitles] = useState<CotacaoMessageTitles>(defaultCotacaoTitles)
+  const [titleDraft, setTitleDraft] = useState<CotacaoMessageTitles>(defaultCotacaoTitles)
+  const [vehiclesDraft, setVehiclesDraft] = useState<Vehicle[]>(initialFleet)
+  const [fleetVehicles, setFleetVehicles] = useState<Vehicle[]>(initialFleet)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [cnpjLoading, setCnpjLoading] = useState(false)
+  const [cnpjErrors, setCnpjErrors] = useState<Partial<Record<CotacaoCnpjParty, string>>>({})
+  const viewingAnotherUser = Boolean(quoteId && user?.id && quotes.some(q => q.id === quoteId && q.owner_id !== user.id))
 
-  const form = forms[activeEmitente]
-  const statusDistancia = statusDistanciaByEmitente[activeEmitente]
-  const docAtivo = getPropostaDoc(activeEmitente)
+  const refresh = useCallback(async () => {
+    if (!user?.id) return
+    const { data, error } = await supabase.from('erp_quotes').select('id,owner_id,draft,distance_km,distance_source,created_at').order('created_at', { ascending: false }).limit(100)
+    if (error) setMessage('Não foi possível carregar as cotações. Confirme se a migração do ERP foi aplicada.')
+    else setQuotes(data as QuoteRow[])
+  }, [user?.id])
+  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    if (!user?.id) return
+    let active = true
+    void supabase.from('erp_quote_settings').select('tax_percent,insurance_percent,driver_max_percent').eq('id', 1).maybeSingle().then(({ data }) => {
+      if (active && data) {
+        setSettingsDraft({ tax_percent: String(data.tax_percent), insurance_percent: String(data.insurance_percent), driver_max_percent: String(data.driver_max_percent) })
+        setQuoteSettingsReady(true)
+      }
+    })
+    return () => { active = false }
+  }, [user?.id])
+  useEffect(() => {
+    if (!user?.id) return
+    let active = true
+    void supabase.from('erp_fleet_settings').select('vehicles').eq('id', 1).maybeSingle().then(({ data }) => {
+      if (!active || !Array.isArray(data?.vehicles)) return
+      const saved = new Map((data.vehicles as Vehicle[]).map(vehicle => [vehicle.name, vehicle]))
+      const merged = initialFleet().map(vehicle => ({ ...vehicle, ...saved.get(vehicle.name), name: vehicle.name, pricePerKm: saved.get(vehicle.name)?.pricePerKm ?? vehicle.pricePerKm }))
+      setFleetVehicles(merged)
+      setVehiclesDraft(merged)
+      setFleetSettingsReady(true)
+    })
+    return () => { active = false }
+  }, [user?.id])
+  useEffect(() => {
+    if (!user?.id) return
+    let active = true
+    void supabase.from('erp_message_settings').select('templates,titles').eq('id', 1).maybeSingle().then(async ({ data, error }) => {
+      const settings = error ? (await supabase.from('erp_message_settings').select('templates').eq('id', 1).maybeSingle()).data : data
+      if (!active || !settings) return
+      const loaded = { ...defaultCotacaoTemplates, ...(settings.templates as Record<string, string>) } as CotacaoMessageTemplates
+      const loadedTitles = { ...defaultCotacaoTitles, ...(('titles' in settings ? settings.titles : {}) as Record<string, string>) } as CotacaoMessageTitles
+      if (!validateCotacaoTemplates(loaded)) { setTemplates(loaded); setTemplateDraft(loaded) }
+      if (!validateCotacaoTitles(loadedTitles)) { setTitles(loadedTitles); setTitleDraft(loadedTitles) }
+    })
+    return () => { active = false }
+  }, [user?.id])
+  useEffect(() => {
+    if (!settingsOpen || !isAdmin) return
+    const oldOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    settingsCloseRef.current?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSettingsOpen(false)
+      if (event.key !== 'Tab') return
+      const controls = settingsDialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href]')
+      if (!controls?.length) return
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = oldOverflow
+      window.removeEventListener('keydown', onKeyDown)
+      settingsTriggerRef.current?.focus()
+    }
+  }, [settingsOpen, isAdmin])
 
-  const setForm = (next: typeof form) => {
-    setForms((prev) => ({ ...prev, [activeEmitente]: next }))
+  const save = async (): Promise<string | null> => {
+    if (!user?.id) { setMessage('Aguarde a identificação da sua conta.'); return null }
+    if (viewingAnotherUser) { setMessage('Esta cotação pertence a outro usuário e está disponível somente para consulta.'); return null }
+    if (!draft.origem.trim() || !draft.destino.trim()) { setMessage('Informe origem e destino.'); return null }
+    const payload = { owner_id: user.id, draft, distance_km: distance ? Number(distance) : null, distance_source: distance ? source : null }
+    const request = quoteId
+      ? supabase.from('erp_quotes').update(payload).eq('id', quoteId).eq('owner_id', user.id).select('id').single()
+      : supabase.from('erp_quotes').insert(payload).select('id').single()
+    const { data, error } = await request
+    if (error) { setMessage('Não foi possível salvar a cotação.'); return null }
+    setQuoteId(data.id); setMessage('Cotação salva.'); void refresh(); return data.id
   }
 
-  useEffect(() => {
-    const emitente = activeEmitente
-    const co = form.cidadeOrigem.trim()
-    const cd = form.cidadeDestino.trim()
-    const uo = form.ufOrigem
-    const ud = form.ufDestino
+  const route = async () => {
+    if (!draft.origem || !draft.destino) { setMessage('Informe origem e destino.'); return }
+    setBusy(true)
+    try {
+      const query = new URLSearchParams({ origem: draft.origem, destino: draft.destino, map: '1' })
+      const response = await fetch(`/api/rotas/distancia?${query}`)
+      if (!response.ok) throw new Error('Rota indisponível')
+      const result = await response.json()
+      if (!Number.isFinite(Number(result.distanciaKm)) || Number(result.distanciaKm) <= 0) throw new Error('Distância inválida')
+      setDistance(String(result.distanciaKm)); setSource('route-api'); setAnalysis(null)
+      setRouteCoordinates(Array.isArray(result.coordinates) ? result.coordinates : null)
+      setRouteDuration(Number.isFinite(Number(result.duracaoMin)) ? Number(result.duracaoMin) : null)
+      setMessage('')
+    } catch { setMessage('Não foi possível calcular a rota. Confira as cidades ou informe a distância manualmente.') }
+    finally { setBusy(false) }
+  }
 
-    setForms((prev) => ({
-      ...prev,
-      [emitente]: { ...prev[emitente], distanciaKm: '' },
-    }))
-
-    if (!co || !cd) {
-      setStatusDistanciaByEmitente((prev) => ({ ...prev, [emitente]: 'idle' }))
+  const analyze = async () => {
+    if (!distance || !Number.isFinite(Number(distance)) || Number(distance) <= 0) { setAnalysisError('Calcule a rota ou informe uma distância válida.'); return }
+    if (draft.marginPercent == null || !Number.isFinite(draft.marginPercent) || draft.marginPercent < 0 || draft.marginPercent > 100) {
+      setAnalysisError('Informe a margem de lucro entre 0% e 100% no campo destacado.')
+      document.getElementById('cotacao-margem')?.focus()
       return
     }
-
-    setStatusDistanciaByEmitente((prev) => ({ ...prev, [emitente]: 'loading' }))
-
-    const timer = setTimeout(async () => {
-      abortRef.current[emitente]?.abort()
-      const controller = new AbortController()
-      abortRef.current[emitente] = controller
-
-      try {
-        // Usa /api/rotas/distancia (o mesmo da tela de Rotas): ele consulta o
-        // Nominatim em sequência, respeitando o limite de 1 req/s. A antiga
-        // /api/calcular-distancia disparava as duas cidades em paralelo e a
-        // segunda voltava vazia, resultando em "cidade não encontrada".
-        const params = new URLSearchParams({
-          origem: [co, uo].filter(Boolean).join(' '),
-          destino: [cd, ud].filter(Boolean).join(' '),
-        })
-        const res = await fetch(`/api/rotas/distancia?${params}`, { signal: controller.signal })
-        if (!res.ok) throw new Error('erro')
-        const data = await res.json()
-        setForms((prev) => ({
-          ...prev,
-          // A rota devolve uma casa decimal; a proposta sempre usou inteiro.
-          [emitente]: { ...prev[emitente], distanciaKm: String(Math.round(data.distanciaKm)) },
-        }))
-        setStatusDistanciaByEmitente((prev) => ({ ...prev, [emitente]: 'ok' }))
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') return
-        setStatusDistanciaByEmitente((prev) => ({ ...prev, [emitente]: 'erro' }))
-      }
-    }, 900)
-
-    return () => {
-      clearTimeout(timer)
-      abortRef.current[emitente]?.abort()
+    if (!quoteSettingsReady || !fleetSettingsReady) {
+      setAnalysisError(`Antes de analisar, ${isAdmin ? 'salve' : 'peça ao administrador para salvar'} ${!quoteSettingsReady ? 'os percentuais em Tributos e seguro' : ''}${!quoteSettingsReady && !fleetSettingsReady ? ' e ' : ''}${!fleetSettingsReady ? 'a frota em Preço e frota' : ''}.`)
+      return
     }
-  }, [
-    activeEmitente,
-    form.cidadeOrigem,
-    form.ufOrigem,
-    form.cidadeDestino,
-    form.ufDestino,
-  ])
-
-  const dataEmissao = new Date().toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-
-  const calc = useMemo(() => calcularProposta(form), [form])
-
-  const imprimir = () => {
-    window.print()
+    setAnalysisError('')
+    setBusy(true)
+    try {
+      const id = await save()
+      if (!id) return
+      const { data, error } = await supabase.rpc('erp_analyze_quote', { target_quote: id })
+      if (error) { setAnalysisError(`Análise indisponível: ${error.message}`); return }
+      setAnalysis(data as Analysis); setMessage('Análise registrada com a frota, percentuais e margem informados.')
+    } finally { setBusy(false) }
   }
 
-  const limparFormulario = () => {
-    setForms((prev) => ({
-      ...prev,
-      [activeEmitente]: defaultPropostaFormState(gerarCodigoProposta(activeEmitente)),
-    }))
-    setStatusDistanciaByEmitente((prev) => ({ ...prev, [activeEmitente]: 'idle' }))
+  const changeVehicle = async (name: string) => {
+    if (!analysis || !quoteId || !user?.id || viewingAnotherUser || busy || name === analysis.snapshot?.rules?.selected_vehicle) return
+    const previousDraft = draft
+    const nextDraft = { ...draft, selectedVehicleName: name }
+    const compatible = (analysis.snapshot?.rules?.vehicles ?? []).some(vehicle =>
+      vehicle.name === name && vehicle.payloadKg >= Number(draft.pesoKg) && vehicle.volumeM3 >= Number(draft.cubagemM3) && Number(vehicle.pricePerKm) > 0)
+    if (!compatible) { setAnalysisError('Escolha um veículo compatível com o peso e a cubagem.'); return }
+    setBusy(true)
+    setAnalysisError('')
+    let saved = false
+    try {
+      const { error: saveError } = await supabase.from('erp_quotes').update({ draft: nextDraft }).eq('id', quoteId).eq('owner_id', user.id).select('id').single()
+      if (saveError) throw saveError
+      saved = true
+      const { data, error } = await supabase.rpc('erp_analyze_quote', { target_quote: quoteId })
+      if (error) throw error
+      setDraft(nextDraft)
+      setAnalysis(data as Analysis)
+      setMessage(`Análise atualizada com ${name}.`)
+      void refresh()
+    } catch (error) {
+      if (saved) {
+        const { error: restoreError } = await supabase.from('erp_quotes').update({ draft: previousDraft }).eq('id', quoteId).eq('owner_id', user.id)
+        if (restoreError) setAnalysis(null)
+      }
+      setAnalysisError(`Não foi possível atualizar o veículo: ${error instanceof Error ? error.message : 'tente novamente'}.`)
+    } finally { setBusy(false) }
   }
 
-  return (
-    <div className="max-w-[1600px] mx-auto space-y-6 pb-10 print:max-w-none print:mx-0 print:space-y-0 print:pb-0">
-      <div className="print:hidden">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">Propostas</h1>
-            <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">
-              Preencha à esquerda e acompanhe o layout da proposta em A4 à direita —{' '}
-              <span className="font-medium text-gray-800 dark:text-slate-100">{docAtivo.nomeFantasia}</span>
-            </p>
-          </div>
-          <PropostaEmitenteTabs active={activeEmitente} onChange={setActiveEmitente} />
-        </div>
+  const openQuote = async (row: QuoteRow) => {
+    setCnpjErrors({})
+    setQuoteId(row.id); setDraft(row.draft); setRaw(row.draft.textoOriginal ?? ''); setDistance(String(row.distance_km ?? ''))
+    setSource(row.distance_source === 'route-api' ? 'route-api' : 'manual'); setRouteCoordinates(null); setRouteDuration(null); setTab('analisar')
+    const { data } = await supabase.from('erp_quote_analyses').select('id,result,snapshot,created_at').eq('quote_id', row.id).order('created_at', { ascending: false }).limit(1)
+    const latest = (data?.[0] as Analysis) ?? null
+    setAnalysis(isAnalysisCurrent(latest, row.draft, Number(row.distance_km)) ? latest : null)
+  }
 
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-8 items-start mt-6">
-          <div className="glass-card rounded-2xl border border-white/40 p-5 md:p-6 shadow-lg backdrop-blur-xl">
-            <PropostaFormulario value={form} onChange={setForm} statusDistancia={statusDistancia} />
-            <div className="mt-6 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={limparFormulario}
-                className="px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-500 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-              >
-                Limpar e novo código
-              </button>
-            </div>
-          </div>
+  const saveFleet = async () => {
+    if (!isAdmin || !user?.id) return
+    if (vehiclesDraft.some(vehicle => !Number.isFinite(vehicle.pricePerKm) || Number(vehicle.pricePerKm) <= 0 || !Number.isFinite(vehicle.payloadKg) || vehicle.payloadKg <= 0 || !Number.isFinite(vehicle.volumeM3) || vehicle.volumeM3 <= 0)) {
+      setMessage('Informe valor por km, peso máximo e cubagem máxima maiores que zero para todos os veículos.')
+      return
+    }
+    setBusy(true)
+    try {
+      const { error } = await supabase.from('erp_fleet_settings').upsert({ id: 1, vehicles: vehiclesDraft, updated_by: user.id, updated_at: new Date().toISOString() })
+      if (error) { setMessage('Não foi possível salvar a frota. Confirme se a migração da frota foi aplicada.'); return }
+      setFleetVehicles(vehiclesDraft.map(vehicle => ({ ...vehicle })))
+      setFleetSettingsReady(true)
+      setMessage('Frota salva. Novas análises usarão os valores por km e capacidades atualizados.')
+    } finally { setBusy(false) }
+  }
 
-          <div className="xl:sticky xl:top-4 space-y-4">
-            <button
-              type="button"
-              onClick={imprimir}
-              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-white uppercase tracking-wide text-sm shadow-lg hover:opacity-95 transition-opacity"
-              style={{ backgroundColor: '#0f2847' }}
-            >
-              <Briefcase className="w-5 h-5 shrink-0" aria-hidden />
-              Imprimir proposta (A4) — {docAtivo.tabLabel}
-            </button>
+  const saveQuoteSettings = async () => {
+    if (!isAdmin || !user?.id) return
+    const taxPercent = parseCotacaoTaxPercent(settingsDraft.tax_percent)
+    if (taxPercent === null) { setMessage('Informe o total de tributos entre 0% e 100%.'); return }
+    const insurance = parseCotacaoTaxPercent(settingsDraft.insurance_percent)
+    const driverMax = parseCotacaoTaxPercent(settingsDraft.driver_max_percent)
+    if (insurance === null || driverMax === null) { setMessage('Informe seguro e teto do motorista entre 0% e 100%.'); return }
+    setBusy(true)
+    try {
+      const { error } = await supabase.from('erp_quote_settings').upsert({ id: 1, tax_percent: taxPercent, insurance_percent: insurance, driver_max_percent: driverMax, updated_by: user.id, updated_at: new Date().toISOString() })
+      if (!error) setQuoteSettingsReady(true)
+      setMessage(error ? 'Não foi possível salvar os percentuais. Confirme se a migração da cotação foi aplicada.' : 'Percentuais salvos para as próximas análises.')
+    } finally { setBusy(false) }
+  }
 
-            <div className="rounded-2xl border border-gray-200 bg-[#f1f5f9]/95 dark:border-slate-500 dark:bg-[#f1f5f9]/95 p-4 md:p-5 shadow-inner overflow-auto max-h-[calc(100vh-8rem)]">
-              <p className="text-xs text-gray-500 mb-3 text-center xl:text-left">
-                Pré-visualização — {docAtivo.tabLabel} (escala reduzida no ecrã; impressão em A4 completo)
-              </p>
-              <div className="flex justify-center overflow-x-auto pb-4 pt-1">
-                <div className="inline-block shadow-2xl ring-1 ring-black/10 rounded-sm proposta-preview-zoom">
-                  <PropostaPdfPreview
-                    emitente={activeEmitente}
-                    form={form}
-                    calc={calc}
-                    dataEmissao={dataEmissao}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+  const saveTemplates = async () => {
+    if (!isAdmin || !user?.id) return
+    const errorText = validateCotacaoTemplates(templateDraft) || validateCotacaoTitles(titleDraft)
+    if (errorText) { setMessage(errorText); return }
+    const { error } = await supabase.from('erp_message_settings').upsert({ id: 1, templates: templateDraft, titles: titleDraft, updated_by: user.id, updated_at: new Date().toISOString() })
+    if (error) { setMessage('Não foi possível salvar os textos. A configuração do banco pode ainda não estar instalada.'); return }
+    setTemplates({ ...templateDraft })
+    setTitles({ ...titleDraft })
+    setMessage('Textos das mensagens salvos para todos os usuários.')
+  }
+
+  const download = (name: string, content: string, type: string) => {
+    const url = URL.createObjectURL(new Blob([content], { type }))
+    const link = document.createElement('a'); link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url)
+  }
+  const printDraft = analysis?.snapshot?.draft ?? draft
+  const printProposalData = (() => {
+    if (!analysis) return null
+    try { return buildCotacaoProposal(analysis, printKind) } catch { return null }
+  })()
+  const vehicles = analysis?.snapshot?.rules?.vehicles ?? fleetVehicles
+  const similar = quotes.filter(q => q.id !== quoteId && q.draft.origem?.toLowerCase() === draft.origem.toLowerCase() && q.draft.destino?.toLowerCase() === draft.destino.toLowerCase()).slice(0, 5)
+  const printProposal = (kind: ProposalKind) => {
+    try {
+      if (!analysis) throw new Error('Análise da cotação ausente.')
+      buildCotacaoProposal(analysis, kind)
+    } catch {
+      setMessage('Analise a cotação com dados completos antes de gerar o PDF.'); return
+    }
+    setPrintKind(kind)
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()))
+  }
+
+  const extract = () => {
+    setAnalysisError('')
+    setDraft(extractCotacao(raw))
+    setQuoteId(null)
+    setAnalysis(null)
+    setDistance('')
+    setRouteCoordinates(null)
+    setRouteDuration(null)
+    setSource('manual')
+    setCnpjErrors({})
+  }
+
+  const editField = (key: keyof CotacaoDraft, value: string | number | null) => {
+    setAnalysisError('')
+    setDraft(previous => {
+      const next = { ...previous, [key]: value }
+      if (key === 'remetenteCnpj') {
+        if (previous.remetenteEndereco) next.origem = ''
+        next.remetenteNome = ''; next.remetenteEndereco = ''
+      }
+      if (key === 'destinatarioCnpj') {
+        if (previous.destinatarioEndereco) next.destino = ''
+        next.destinatarioNome = ''; next.destinatarioEndereco = ''
+      }
+      if (key === 'pesoKg' || key === 'cubagemM3') delete next.selectedVehicleName
+      return next
+    })
+    setAnalysis(null)
+    if (key === 'remetenteCnpj' || key === 'destinatarioCnpj') {
+      setCnpjErrors(previous => ({ ...previous, [key === 'remetenteCnpj' ? 'remetente' : 'destinatario']: '' }))
+      setDistance(''); setSource('manual'); setRouteCoordinates(null); setRouteDuration(null)
+    }
+    if (key === 'origem' || key === 'destino') {
+      setRouteCoordinates(null)
+      setRouteDuration(null)
+      if (source === 'route-api') { setDistance(''); setSource('manual') }
+    }
+  }
+
+  const lookupCnpjs = async () => {
+    const targets = (['remetente', 'destinatario'] as const)
+      .map(party => ({ party, field: party === 'remetente' ? 'remetenteCnpj' as const : 'destinatarioCnpj' as const, typed: draft[party === 'remetente' ? 'remetenteCnpj' : 'destinatarioCnpj']?.trim() ?? '' }))
+      .filter(target => target.typed)
+    if (!targets.length) return
+    const errors: Partial<Record<CotacaoCnpjParty, string>> = {}
+    const valid = targets.filter(target => {
+      const check = validateCNPJ(target.typed)
+      if (!check.valid) errors[target.party] = check.error ?? 'CNPJ inválido'
+      return check.valid
+    })
+    setCnpjErrors(errors)
+    if (!valid.length) return
+    setCnpjLoading(true)
+    try {
+      const responses = await Promise.all(valid.map(async target => ({ target, result: await searchCNPJ(target.typed, { requireCep: false }) })))
+      const updates: { party: CotacaoCnpjParty; field: 'remetenteCnpj' | 'destinatarioCnpj'; typed: string; data: CNPJFormData }[] = []
+      for (const { target, result } of responses) {
+        if ((draftRef.current[target.field] ?? '').replace(/\D/g, '') !== target.typed.replace(/\D/g, '')) continue
+        if (!result.success) { errors[target.party] = result.error; continue }
+        try {
+          applyCnpjLocation(draftRef.current, target.party, result.data)
+          updates.push({ party: target.party, field: target.field, typed: target.typed, data: result.data })
+        } catch (error) { errors[target.party] = error instanceof Error ? error.message : 'Endereço cadastral incompleto.' }
+      }
+      setCnpjErrors(errors)
+      if (updates.length) {
+        setDraft(previous => updates.reduce((next, update) =>
+          (next[update.field] ?? '').replace(/\D/g, '') === update.typed.replace(/\D/g, '')
+            ? applyCnpjLocation(next, update.party, update.data) : next, previous))
+        setDistance('')
+        setSource('manual')
+        setRouteCoordinates(null)
+        setRouteDuration(null)
+        setAnalysis(null)
+        setMessage('Endereço cadastral carregado. Confira os locais de coleta e entrega e recalcule a rota.')
+      }
+    } catch {
+      setCnpjErrors(previous => ({ ...previous, remetente: previous.remetente || 'Não foi possível consultar os CNPJs. Tente novamente.' }))
+    } finally { setCnpjLoading(false) }
+  }
+
+  const editDistance = (value: string) => {
+    setAnalysisError('')
+    setDistance(value)
+    setSource('manual')
+    setRouteCoordinates(null)
+    setRouteDuration(null)
+    setAnalysis(null)
+  }
+
+  return <div className="cotacao-page mx-auto max-w-[1780px] space-y-5 pb-10 text-slate-900 dark:text-white">
+    <div className="flex flex-wrap items-center justify-between gap-4 print:hidden">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Cotação de frete</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Extraia, calcule e avalie uma carga em um só lugar.</p>
       </div>
-
-      <div className="hidden print:block print:m-0 print:p-0">
-        <PropostaPdfPreview
-          emitente={activeEmitente}
-          form={form}
-          calc={calc}
-          dataEmissao={dataEmissao}
-          className="proposta-a4-print mx-auto"
-        />
-      </div>
+      <nav className="flex flex-wrap items-center gap-2" aria-label="Seções da cotação">
+        <button type="button" onClick={() => setTab('analisar')} className={`rounded-lg px-3 py-2 text-sm ${tab === 'analisar' ? 'bg-[#2878ef] text-white' : 'border border-[#dce4ef] text-[#39526f] dark:border-slate-700 dark:text-white'}`}>Analisar</button>
+        <button type="button" onClick={() => setTab('historico')} className={`rounded-lg px-3 py-2 text-sm ${tab === 'historico' ? 'bg-[#2878ef] text-white' : 'border border-[#dce4ef] text-[#39526f] dark:border-slate-700 dark:text-white'}`}>Histórico</button>
+        {isAdmin && <button ref={settingsTriggerRef} type="button" aria-label="Configurações da cotação" title="Configurações da cotação" onClick={() => setSettingsOpen(true)} className="rounded-lg border border-[#dce4ef] px-3 py-2 text-[#173e91] hover:bg-blue-50 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800">⚙</button>}
+      </nav>
     </div>
-  )
+    {message && <p role="status" className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:bg-blue-900/30 dark:text-blue-100">{message}</p>}
+    {tab === 'analisar' && <CotacaoAnalysisView
+      raw={raw}
+      draft={draft}
+      distance={distance}
+      source={source}
+      routeCoordinates={routeCoordinates}
+      routeDuration={routeDuration}
+      busy={busy}
+      viewingAnotherUser={viewingAnotherUser}
+      cnpjLoading={cnpjLoading}
+      cnpjErrors={cnpjErrors}
+      analysis={analysis}
+      analysisError={analysisError}
+      quoteSettingsReady={quoteSettingsReady}
+      fleetSettingsReady={fleetSettingsReady}
+      isAdmin={isAdmin}
+      vehicles={vehicles}
+      anttSourceUrl={analysis?.snapshot?.rules?.anttSourceUrl}
+      anttEffectiveFrom={analysis?.snapshot?.rules?.anttEffectiveFrom}
+      templates={templates}
+      titles={titles}
+      similar={similar}
+      onRawChange={setRaw}
+      onExtract={extract}
+      onFieldChange={editField}
+      onLookupCnpjs={lookupCnpjs}
+      onDistanceChange={editDistance}
+      onRoute={route}
+      onAnalyze={analyze}
+      onVehicleChange={name => void changeVehicle(name)}
+      onOpenSettings={() => setSettingsOpen(true)}
+      onPrint={printProposal}
+      onDownloadJson={() => download(`cotacao-${quoteId}.json`, JSON.stringify({ draft: printDraft, analysis }, null, 2), 'application/json')}
+      onOpenQuote={id => { const quote = quotes.find(item => item.id === id); if (quote) void openQuote(quote) }}
+    />}
+    {tab === 'historico' && <section className={`${card} print:hidden`}><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Histórico de cotações</h2><button className="text-sm text-blue-600" onClick={() => download('cotacoes-jcn.csv', ['id;data;origem;destino;cliente;distancia_km', ...quotes.map(q => [q.id,q.created_at,q.draft.origem,q.draft.destino,q.draft.cliente,q.distance_km ?? ''].map(csvCell).join(';'))].join('\r\n'), 'text/csv;charset=utf-8')}>Exportar CSV</button></div><div className="space-y-2">{quotes.map(q => <button key={q.id} onClick={() => void openQuote(q)} className="flex w-full flex-wrap justify-between gap-2 rounded-lg border p-3 text-left text-sm dark:border-slate-700"><span>{q.draft.origem} → {q.draft.destino}</span><span>{q.draft.cliente || 'Cliente não informado'} · {new Date(q.created_at).toLocaleDateString('pt-BR')}</span></button>)}{quotes.length === 0 && <p className="text-sm text-slate-500">Nenhuma cotação salva.</p>}</div></section>}
+    {settingsOpen && isAdmin && <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/70 p-3 print:hidden sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}>
+      <section ref={settingsDialogRef} role="dialog" aria-modal="true" aria-labelledby="cotacao-settings-title" className="max-h-[calc(100vh-1.5rem)] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:max-h-[calc(100vh-3rem)]">
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-center justify-between gap-3"><h2 id="cotacao-settings-title" className="text-lg font-semibold">Configuração da cotação</h2><button ref={settingsCloseRef} type="button" onClick={() => setSettingsOpen(false)} aria-label="Fechar configurações" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800">Fechar ✕</button></div>
+        <div role="tablist" aria-label="Configurações da cotação" className="mt-4 flex flex-wrap gap-2">{([['tributos', 'Tributos e seguro'], ['precos', 'Preço e frota'], ['mensagens', 'Mensagens']] as const).map(([key, title]) => <button key={key} type="button" role="tab" aria-selected={settingsTab === key} onClick={() => setSettingsTab(key)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${settingsTab === key ? 'bg-[#2878ef] text-white' : 'border border-slate-300 text-slate-700 dark:border-slate-600 dark:text-slate-200'}`}>{title}</button>)}</div>
+      </div>
+      <div className="space-y-4 p-5">
+      {message && <p role="status" className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:bg-blue-900/30 dark:text-blue-100">{message}</p>}
+      {settingsTab === 'mensagens' && <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+        <h3 className="font-semibold">Layout das mensagens</h3>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Variáveis: {'{saudacao}'}, {'{cliente}'}, {'{origem}'}, {'{destino}'}, {'{peso}'}, {'{valorNota}'}. Preços apenas nos textos de apresentação e proposta: {'{precoFracionado}'} e {'{precoDedicado}'}.</p>
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">{(Object.keys(defaultCotacaoTemplates) as (keyof CotacaoMessageTemplates)[]).map(style => <div key={style} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700"><p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">{style}</p><label className="text-sm">Título<input className={`${input} mt-1`} maxLength={80} value={titleDraft[style]} onChange={event => setTitleDraft(previous => ({ ...previous, [style]: event.target.value }))} /></label><label className="mt-3 block text-sm">Corpo da mensagem<textarea className={`${input} mt-1 min-h-28`} value={templateDraft[style]} onChange={event => setTemplateDraft(previous => ({ ...previous, [style]: event.target.value }))} /></label></div>)}</div>
+        <button type="button" onClick={() => void saveTemplates()} className="mt-3 rounded-lg bg-[#2878ef] px-4 py-2 text-sm font-semibold text-white">Salvar títulos e mensagens</button>
+      </div>}
+      {settingsTab === 'tributos' && <div className="space-y-4">
+        <div><h3 className="font-semibold">Tributos e seguro</h3><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Informe o percentual total dos tributos, já somado pela empresa, e o percentual do seguro.</p></div>
+        <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Tributos totais (%)<input type="text" inputMode="decimal" className={`${input} mt-1`} value={settingsDraft.tax_percent ?? ''} onChange={event => setSettingsDraft(previous => ({ ...previous, tax_percent: event.target.value }))} placeholder="Ex.: 17,93" /></label><label className="text-sm">Seguro sobre a nota fiscal (%)<input type="text" inputMode="decimal" className={`${input} mt-1`} value={settingsDraft.insurance_percent ?? ''} onChange={event => setSettingsDraft(previous => ({ ...previous, insurance_percent: event.target.value }))} placeholder="Ex.: 0,2" /></label></div>
+        <label className="block max-w-sm text-sm">Teto do motorista (%)<input type="text" inputMode="decimal" className={`${input} mt-1`} value={settingsDraft.driver_max_percent ?? ''} onChange={event => setSettingsDraft(previous => ({ ...previous, driver_max_percent: event.target.value }))} placeholder="Ex.: 70" /><span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Percentual máximo do valor da proposta destinado ao motorista.</span></label>
+        <button type="button" disabled={busy} onClick={() => void saveQuoteSettings()} className="rounded-lg bg-[#2878ef] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Salvar percentuais</button>
+      </div>}
+      {settingsTab === 'precos' && <div className="space-y-4">
+        <h3 className="font-semibold">Frota — valores e capacidades</h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400">Edite o valor por km, o peso e a cubagem máximos de cada veículo. Novas análises usam a frota salva.</p>
+        <div className="grid gap-2">
+          {vehiclesDraft.map((vehicle, index) => <div key={vehicle.name} className="grid gap-3 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(110px,140px))] sm:items-end">
+            <span className="truncate text-sm font-medium" title={vehicle.name}>{vehicle.name}</span>
+            <label className="text-xs text-slate-500 dark:text-slate-400">R$/km
+              <input aria-label={`Valor por km de ${vehicle.name}`} className={`${input} mt-1`} type="number" min="0.0001" step="0.0001" value={vehicle.pricePerKm ?? ''} onChange={event => setVehiclesDraft(previous => previous.map((item, i) => i === index ? { ...item, pricePerKm: event.target.value === '' ? undefined : Number(event.target.value) } : item))} />
+            </label>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Peso máximo (kg)
+              <input aria-label={`Peso máximo de ${vehicle.name}`} className={`${input} mt-1`} type="number" min="1" step="1" value={vehicle.payloadKg || ''} onChange={event => setVehiclesDraft(previous => previous.map((item, i) => i === index ? { ...item, payloadKg: Number(event.target.value) } : item))} />
+            </label>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Cubagem máxima (m³)
+              <input aria-label={`Cubagem máxima de ${vehicle.name}`} className={`${input} mt-1`} type="number" min="0.01" step="0.01" value={vehicle.volumeM3 || ''} onChange={event => setVehiclesDraft(previous => previous.map((item, i) => i === index ? { ...item, volumeM3: Number(event.target.value) } : item))} />
+            </label>
+          </div>)}
+        </div>
+        <button type="button" disabled={busy} onClick={() => void saveFleet()} className="rounded-lg bg-[#2878ef] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Salvar frota</button>
+      </div>
+      }
+      </div>
+      </section>
+    </div>}
+    {printProposalData && <CotacaoProposalDocument proposal={printProposalData} />}
+  </div>
 }

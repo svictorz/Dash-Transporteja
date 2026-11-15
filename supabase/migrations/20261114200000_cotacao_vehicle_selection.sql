@@ -1,0 +1,80 @@
+-- Permite escolher um veículo compatível sem mudar a análise automática existente.
+CREATE OR REPLACE FUNCTION public.erp_analyze_quote(target_quote uuid)
+RETURNS public.erp_quote_analyses
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+  q public.erp_quotes;
+  settings public.erp_quote_settings;
+  fleet jsonb;
+  selected_vehicle jsonb;
+  requested_vehicle_name text;
+  result public.erp_quote_analyses;
+  km numeric;
+  invoice numeric;
+  weight_kg numeric;
+  volume_m3 numeric;
+  margin_rate numeric;
+  base_value numeric;
+  tax_value numeric;
+  insurance_value numeric;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Sessão obrigatória'; END IF;
+  SELECT * INTO q FROM public.erp_quotes WHERE id = target_quote;
+  IF NOT FOUND OR q.owner_id <> auth.uid() OR q.distance_km IS NULL THEN
+    RAISE EXCEPTION 'Cotação ou distância indisponível';
+  END IF;
+  SELECT * INTO settings FROM public.erp_quote_settings WHERE id = 1;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Configure tributos e seguro antes de analisar'; END IF;
+  SELECT vehicles INTO fleet FROM public.erp_fleet_settings WHERE id = 1;
+  IF fleet IS NULL THEN RAISE EXCEPTION 'Configure a frota antes de analisar'; END IF;
+
+  km := q.distance_km;
+  invoice := COALESCE(NULLIF(q.draft->>'valorNota', '')::numeric, 0);
+  weight_kg := COALESCE(NULLIF(q.draft->>'pesoKg', '')::numeric, 0);
+  volume_m3 := COALESCE(NULLIF(q.draft->>'cubagemM3', '')::numeric, 0);
+  margin_rate := NULLIF(q.draft->>'marginPercent', '')::numeric;
+  requested_vehicle_name := NULLIF(btrim(q.draft->>'selectedVehicleName'), '');
+  IF invoice < 0 OR weight_kg < 0 OR volume_m3 < 0 OR margin_rate IS NULL OR margin_rate < 0 OR margin_rate > 100 THEN
+    RAISE EXCEPTION 'Confira nota fiscal, carga e margem de lucro (0 a 100%%)';
+  END IF;
+
+  SELECT v.value INTO selected_vehicle FROM jsonb_array_elements(fleet) AS v(value)
+    WHERE (v.value->>'payloadKg')::numeric >= weight_kg
+      AND (v.value->>'volumeM3')::numeric >= volume_m3
+      AND (requested_vehicle_name IS NULL OR v.value->>'name' = requested_vehicle_name)
+    ORDER BY (v.value->>'payloadKg')::numeric, (v.value->>'volumeM3')::numeric
+    LIMIT 1;
+  IF selected_vehicle IS NULL THEN
+    IF requested_vehicle_name IS NOT NULL THEN
+      RAISE EXCEPTION 'Veículo selecionado indisponível ou incompatível com a carga';
+    END IF;
+    RAISE EXCEPTION 'Nenhum veículo comporta o peso e a cubagem';
+  END IF;
+  IF (selected_vehicle->>'pricePerKm')::numeric <= 0 THEN
+    RAISE EXCEPTION 'Valor por km do veículo inválido';
+  END IF;
+
+  base_value := round(km * (selected_vehicle->>'pricePerKm')::numeric, 2);
+  tax_value := round(base_value * settings.tax_percent / 100, 2);
+  insurance_value := round(invoice * settings.insurance_percent / 100, 2);
+
+  INSERT INTO public.erp_quote_analyses(quote_id, created_by, pricing_revision_id, snapshot, result)
+  VALUES (
+    q.id, auth.uid(), NULL,
+    jsonb_build_object('rules', jsonb_build_object('vehicles', fleet, 'tax_percent', settings.tax_percent,
+      'insurance_percent', settings.insurance_percent, 'driver_max_percent', settings.driver_max_percent,
+      'margin_percent', margin_rate, 'selected_vehicle', selected_vehicle->>'name'), 'draft', q.draft, 'distance_km', km, 'distance_source', q.distance_source),
+    jsonb_build_object(
+      'fracionado', jsonb_build_object('floor', base_value, 'taxes', tax_value,
+        'insurance', insurance_value, 'pgr', 0, 'tolls', 0, 'collection', 0,
+        'total', round((base_value + tax_value + insurance_value) * (1 + margin_rate / 100), 2)),
+      'dedicado', jsonb_build_object('floor', base_value, 'taxes', tax_value,
+        'insurance', insurance_value, 'pgr', 0, 'tolls', 0, 'collection', 0,
+        'total', round((base_value + tax_value + insurance_value) * (1 + margin_rate / 100), 2))
+    )
+  ) RETURNING * INTO result;
+  RETURN result;
+END $$;
+REVOKE ALL ON FUNCTION public.erp_analyze_quote(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.erp_analyze_quote(uuid) TO authenticated;
+NOTIFY pgrst, 'reload schema';

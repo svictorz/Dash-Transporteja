@@ -71,7 +71,8 @@ export function formatCNPJDisplay(cnpj: string): string {
  * Retorna dados formatados para o formulário de clientes.
  */
 export async function searchCNPJ(
-  cnpj: string
+  cnpj: string,
+  options: { requireCep?: boolean } = {}
 ): Promise<{ success: true; data: CNPJFormData } | { success: false; error: string }> {
   const raw = cleanCNPJ(cnpj)
   if (raw.length !== 14) {
@@ -97,7 +98,7 @@ export async function searchCNPJ(
       : data.razao_social.trim()
 
     const cep = (data.cep || '').replace(/\D/g, '')
-    if (cep.length !== 8) {
+    if (cep.length !== 8 && options.requireCep !== false) {
       return { success: false, error: 'CEP do CNPJ inválido ou não informado' }
     }
 
@@ -116,7 +117,7 @@ export async function searchCNPJ(
       neighborhood: data.bairro || '',
       city: data.municipio || '',
       state: (data.uf || '').toUpperCase(),
-      cep: `${cep.slice(0, 5)}-${cep.slice(5)}`,
+      cep: cep.length === 8 ? `${cep.slice(0, 5)}-${cep.slice(5)}` : '',
       phone: formattedPhone,
       email: data.email && data.email.trim() ? data.email.trim() : undefined,
     }
