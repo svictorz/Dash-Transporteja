@@ -16,6 +16,7 @@ assert.equal(quote.pesoKg, 487)
 assert.equal(quote.valorNota, 17900)
 assert.equal(quote.telefone, '(54) 99999-0000')
 assert.equal(extractCotacao('Olá, preciso de um frete').valorNota, null)
+assert.equal(extractCotacao('Metros lineares: 2,40').linearMeters, 2.4)
 const complete = extractCotacao(`Nova Cotação de Frete completo
 Origem: São Paulo, SP
 Destino: Alvorada, TO

@@ -4,7 +4,7 @@ export type CotacaoMessageStyle = 'Abordagem inicial' | 'Confirmação de dados'
 export type CotacaoMessageTemplates = Record<CotacaoMessageStyle | 'Anúncio Fretebrás', string>
 export type CotacaoMessageTitles = Record<keyof CotacaoMessageTemplates, string>
 type MessageDraft = Pick<CotacaoDraft, 'origem' | 'destino' | 'pesoKg' | 'valorNota' | 'cliente' | 'telefone'>
-type Prices = { fracionado: number; dedicado: number }
+type Prices = { fracionado?: number; dedicado?: number }
 const brl = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 export const defaultCotacaoTemplates: CotacaoMessageTemplates = {
   'Abordagem inicial': '{saudacao} A carga de {origem} para {destino} ainda está disponível? Posso enviar uma cotação?',
@@ -61,14 +61,16 @@ function render(template: string, draft: MessageDraft, prices?: Prices): string 
     destino: draft.destino || 'destino a confirmar',
     peso: draft.pesoKg ? `${draft.pesoKg.toLocaleString('pt-BR')} kg` : 'a confirmar',
     valorNota: draft.valorNota == null ? 'a confirmar' : brl(draft.valorNota),
-    precoFracionado: prices ? brl(prices.fracionado) : '',
-    precoDedicado: prices ? brl(prices.dedicado) : '',
+    precoFracionado: prices?.fracionado == null ? '' : brl(prices.fracionado),
+    precoDedicado: prices?.dedicado == null ? '' : brl(prices.dedicado),
   }
   return template.replace(/\{([^{}]+)\}/g, (_, key: string) => variables[key] ?? '')
 }
 
 export function cotacaoMessage(draft: MessageDraft, style: CotacaoMessageStyle, prices?: Prices, templates = defaultCotacaoTemplates): string {
-  if ((style === 'Apresentação de valores' || style.startsWith('Proposta ')) && !prices) return ''
+  if ((style === 'Apresentação de valores' && (prices?.fracionado == null || prices?.dedicado == null))
+    || (style === 'Proposta fracionado' && prices?.fracionado == null)
+    || (style === 'Proposta dedicado' && prices?.dedicado == null)) return ''
   return render(templates[style] || defaultCotacaoTemplates[style], draft, prices)
 }
 

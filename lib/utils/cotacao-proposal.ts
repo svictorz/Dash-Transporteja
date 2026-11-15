@@ -4,8 +4,8 @@ export type ProposalKind = 'fracionado' | 'dedicado'
 export type ProposalAnalysis = {
   id: string
   created_at: string
-  snapshot: { draft: CotacaoDraft; distance_km: number; distance_source?: string; rules?: { selected_vehicle?: string } }
-  result: Record<ProposalKind, { total: number }>
+  snapshot: { draft: CotacaoDraft; distance_km: number; distance_source?: string; rules?: { selected_vehicle?: string; fractional_vehicle?: string } }
+  result: Record<ProposalKind, { total: number | null }>
 }
 
 export function buildCotacaoProposal(analysis: ProposalAnalysis, kind: ProposalKind) {
@@ -19,7 +19,7 @@ export function buildCotacaoProposal(analysis: ProposalAnalysis, kind: ProposalK
     code: analysis.id.slice(0, 8).toUpperCase(),
     issuedAt: new Date().toISOString(),
     kind,
-    vehicleName: analysis.snapshot.rules?.selected_vehicle?.trim() || (kind === 'fracionado' ? draft.fractionalVehicleName?.trim() : draft.dedicatedVehicleName?.trim()) || null,
+    vehicleName: (kind === 'fracionado' ? analysis.snapshot.rules?.fractional_vehicle || analysis.snapshot.rules?.selected_vehicle : analysis.snapshot.rules?.selected_vehicle)?.trim() || (kind === 'fracionado' ? draft.fractionalVehicleName?.trim() : draft.dedicatedVehicleName?.trim()) || null,
     contact: draft.cliente?.trim() || 'Não informado',
     contactPhone: draft.telefone?.trim() || null,
     contactEmail: draft.email?.trim() || null,

@@ -4,6 +4,7 @@ export type CotacaoDraft = {
   pesoKg: number | null
   valorNota: number | null
   cubagemM3: number | null
+  linearMeters?: number | null
   pesoCubicoKg: number | null
   googleKm: number | null
   marginPercent?: number | null

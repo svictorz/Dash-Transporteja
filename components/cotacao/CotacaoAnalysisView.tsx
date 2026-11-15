@@ -8,7 +8,7 @@ import { ANTT_TABLE_A_SOURCE, ANTT_TABLE_A_VALID_FROM, anttMinimumForVehicle, an
 import RouteMap from './RouteMap'
 
 type Vehicle = AnttVehicle & { payloadKg: number; pricePerKm?: number }
-type Scenario = { floor: number; taxes: number; insurance: number; pgr: number; tolls: number; collection: number; total: number }
+type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; status?: string }
 type Analysis = { created_at: string; snapshot?: { draft?: CotacaoDraft; distance_km?: number; rules?: Record<string, unknown> }; result: { fracionado: Scenario; dedicado: Scenario } }
 type SimilarQuote = { id: string; draft: CotacaoDraft; created_at: string }
 
@@ -63,9 +63,9 @@ export default function CotacaoAnalysisView({
   const routeKm = Number(distance)
   const googleDiffers = googleKm > 0 && routeKm > 0 && Math.abs(googleKm - routeKm) / routeKm > 0.15
   const [messageStyle, setMessageStyle] = useState<CotacaoMessageStyle>('Abordagem inicial')
-  const prices = analysis ? { fracionado: analysis.result.fracionado.total, dedicado: analysis.result.dedicado.total } : undefined
+  const prices = analysis ? { fracionado: analysis.result.fracionado.total ?? undefined, dedicado: analysis.result.dedicado.total ?? undefined } : undefined
   const priceStyle = messageStyle === 'Apresentação de valores' || messageStyle.startsWith('Proposta ')
-  const selectedStyle = priceStyle && !analysis ? 'Abordagem inicial' : messageStyle
+  const selectedStyle = priceStyle && (!analysis || ((messageStyle === 'Proposta fracionado' || messageStyle === 'Apresentação de valores') && prices?.fracionado == null)) ? 'Abordagem inicial' : messageStyle
   const clientMessage = cotacaoMessage(draft, selectedStyle, prices, templates)
   const adText = cotacaoAd(draft, templates)
   const whatsappLink = cotacaoWhatsAppLink(draft.telefone, clientMessage)
@@ -108,7 +108,6 @@ export default function CotacaoAnalysisView({
         <label className={label}>Destino<input className={input} value={draft.destino} onChange={event => onFieldChange('destino', event.target.value)} placeholder="Cidade/UF" /></label>
         <label className={label}>Peso (kg)<input className={input} type="number" min="0" step="any" value={draft.pesoKg ?? ''} onChange={event => onFieldChange('pesoKg', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 3585" /></label>
         <label className={label}>Valor NF (R$)<input className={input} type="number" min="0" step="any" value={draft.valorNota ?? ''} onChange={event => onFieldChange('valorNota', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 14916,47" /></label>
-        <label className={`${label} rounded-xl border border-blue-300 bg-blue-50 p-2.5 font-semibold text-blue-900 dark:border-blue-500/50 dark:bg-blue-950/40 dark:text-blue-200`}>Margem de lucro (%)<input id="cotacao-margem" className={`${input} border-blue-200 bg-white font-bold text-blue-900 dark:border-blue-500/50 dark:bg-slate-900 dark:text-blue-100`} type="number" min="0" max="100" step="any" value={draft.marginPercent ?? ''} onChange={event => onFieldChange('marginPercent', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 20" /></label>
         <label className={label}>WhatsApp<input className={input} value={draft.telefone} onChange={event => onFieldChange('telefone', event.target.value)} placeholder="Ex.: (11) 9 6451-3724" /></label>
       </div>
 
@@ -152,6 +151,7 @@ export default function CotacaoAnalysisView({
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className={label}>Quantidade<input className={input} type="number" min="0" value={draft.quantidade ?? ''} onChange={event => onFieldChange('quantidade', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 172" /></label>
           <label className={label}>Cubagem (m³)<input className={input} type="number" min="0" step="any" value={draft.cubagemM3 ?? ''} onChange={event => onFieldChange('cubagemM3', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,81" /></label>
+          <label className={label}>Metros lineares (opcional)<input className={input} type="number" min="0" step="any" value={draft.linearMeters ?? ''} onChange={event => onFieldChange('linearMeters', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,4" /></label>
           <label className={label}>Peso cúbico (kg)<input className={input} type="number" min="0" step="any" value={draft.pesoCubicoKg ?? ''} onChange={event => onFieldChange('pesoCubicoKg', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 938,25" /></label>
           <label className={label}>Cliente<input className={input} value={draft.cliente} onChange={event => onFieldChange('cliente', event.target.value)} placeholder="Ex.: Nicole" /></label>
           <label className={label}>E-mail<input className={input} type="email" value={draft.email} onChange={event => onFieldChange('email', event.target.value)} placeholder="Ex.: nome@empresa.com" /></label>
@@ -159,7 +159,14 @@ export default function CotacaoAnalysisView({
         </div>
       </details>
 
-      {vehicles.length > 0 && (draft.pesoKg || draft.cubagemM3) && <div className="mt-5 border-t border-[#e5ebf2] pt-4 dark:border-slate-700">
+      <div className="mt-5 space-y-4 border-t border-[#e5ebf2] pt-4 dark:border-slate-700">
+        <label className={`${label} mx-auto w-full max-w-sm rounded-xl border-2 border-blue-400 bg-blue-50 p-3 text-sm font-semibold text-blue-900 dark:border-blue-400 dark:bg-blue-950/50 dark:text-blue-100`}>Margem de lucro (%)<input id="cotacao-margem" className={`${input} border-blue-300 bg-white font-bold text-blue-900 dark:border-blue-500 dark:bg-slate-900 dark:text-blue-100`} type="number" min="0" max="100" step="any" value={draft.marginPercent ?? ''} onChange={event => onFieldChange('marginPercent', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 20" /></label>
+        <div className="flex justify-center">
+          <button type="button" onClick={onAnalyze} disabled={viewingAnotherUser || busy} className="w-full rounded-lg bg-emerald-600 px-8 py-3 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 sm:w-auto sm:min-w-[240px]">Analisar Proposta</button>
+        </div>
+      </div>
+      {analysisError && <p role="alert" className="mt-2 text-center text-sm text-amber-700 dark:text-amber-300">{analysisError}</p>}
+      {analysis && vehicles.length > 0 && (draft.pesoKg || draft.cubagemM3) && <div className="mt-5 border-t border-[#e5ebf2] pt-4 dark:border-slate-700">
         <h3 className="text-sm font-bold uppercase text-[#294669] dark:text-blue-200">Ocupação de frota</h3>
         {vehicles.map(vehicle => {
           const weightPercent = draft.pesoKg && vehicle.payloadKg > 0 ? draft.pesoKg / vehicle.payloadKg * 100 : 0
@@ -174,11 +181,6 @@ export default function CotacaoAnalysisView({
           </div>
         })}
       </div>}
-
-      <div className="mt-5 flex justify-center border-t border-[#e5ebf2] pt-4 dark:border-slate-700">
-        <button type="button" onClick={onAnalyze} disabled={viewingAnotherUser || busy} className="w-full rounded-lg bg-emerald-600 px-8 py-3 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 sm:w-auto sm:min-w-[240px]">Analisar Proposta</button>
-      </div>
-      {analysisError && <p role="alert" className="mt-2 text-center text-sm text-amber-700 dark:text-amber-300">{analysisError}</p>}
     </section>
 
     <section className="min-h-[600px] overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
@@ -205,28 +207,29 @@ export default function CotacaoAnalysisView({
               const quotedDistance = Number(analysis.snapshot?.distance_km ?? distance)
               const taxPercent = Number(analysis.snapshot?.rules?.tax_percent)
               const driverMaxPercent = Number(analysis.snapshot?.rules?.driver_max_percent)
-              const driverCeiling = Number.isFinite(driverMaxPercent) && driverMaxPercent >= 0 ? item.total * driverMaxPercent / 100 : null
+              const driverCeiling = item.total != null && Number.isFinite(driverMaxPercent) && driverMaxPercent >= 0 ? item.total * driverMaxPercent / 100 : null
               const snapshotVehicles = Array.isArray(analysis.snapshot?.rules?.vehicles) ? analysis.snapshot.rules.vehicles as Vehicle[] : []
               const selectedVehicle = analysis.snapshot?.rules?.selected_vehicle
-              const minimumFreight = typeof selectedVehicle === 'string'
+              const isFractional = kind === 'fracionado'
+              const isFractionalV1 = isFractional && analysis.snapshot?.rules?.fractional_rule_id === 'FRACIONADO_JCN_V1'
+              const minimumFreight = isFractionalV1 ? item.minimum ?? null : typeof selectedVehicle === 'string'
                 ? anttMinimumForVehicle(snapshotVehicles, selectedVehicle, quotedDistance)
                 : null
-              const isFractional = kind === 'fracionado'
               return <article key={kind} className={`rounded-xl border border-slate-200 border-l-4 bg-white p-3.5 dark:border-slate-700 dark:bg-slate-900 ${isFractional ? 'border-l-blue-500 dark:border-l-blue-400' : 'border-l-violet-500 dark:border-l-violet-400'}`}>
                 <h3 className={`mb-3 border-b border-slate-200 pb-2 text-center text-sm font-bold uppercase dark:border-slate-700 ${isFractional ? 'text-blue-800 dark:text-blue-200' : 'text-violet-800 dark:text-violet-200'}`}>{isFractional ? '📦' : '🚚'} {kind}</h3>
                 <dl className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
-                  <div className="flex justify-between gap-2"><dt>Custo base (veículo)</dt><dd className="font-semibold">{brl(item.floor)}</dd></div>
-                  <div className="flex justify-between gap-2"><dt>Tributos{Number.isFinite(taxPercent) ? ` (${taxPercent.toLocaleString('pt-BR')}%)` : ''}</dt><dd className="font-semibold">{brl(item.taxes)}</dd></div>
-                  <div className="flex justify-between gap-2"><dt>Seguro sobre NF</dt><dd className="font-semibold">{brl(item.insurance)}</dd></div>
+                  <div className="flex justify-between gap-2"><dt>Custo base (veículo)</dt><dd className="font-semibold">{item.floor == null ? '—' : brl(item.floor)}</dd></div>
+                  <div className="flex justify-between gap-2"><dt>Tributos{Number.isFinite(taxPercent) ? ` (${taxPercent.toLocaleString('pt-BR')}%)` : ''}</dt><dd className="font-semibold">{item.taxes == null ? '—' : brl(item.taxes)}</dd></div>
+                  <div className="flex justify-between gap-2"><dt>Seguro sobre NF</dt><dd className="font-semibold">{item.insurance == null ? '—' : brl(item.insurance)}</dd></div>
                 </dl>
                 <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center dark:border-slate-700 dark:bg-slate-800">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Valor final · negociável</span>
-                  <strong className={`mt-0.5 block text-2xl ${isFractional ? 'text-blue-800 dark:text-blue-200' : 'text-violet-800 dark:text-violet-200'}`}>{brl(item.total)}</strong>
+                  <strong className={`mt-0.5 block text-2xl ${isFractional ? 'text-blue-800 dark:text-blue-200' : 'text-violet-800 dark:text-violet-200'}`}>{item.total == null ? item.status === 'INVALID_VOLUME' ? 'Informe a cubagem' : 'Não elegível para fracionado' : brl(item.total)}</strong>
                 </div>
                 <div className="mt-2 grid grid-cols-3 gap-1 border-t border-slate-200 pt-2 text-center text-[10px] font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">
-                  <span>{unitBrl(item.total / quotedDistance)}/km</span>
-                  <span>{unitBrl(item.total / Number(quotedDraft.pesoKg))}/kg</span>
-                  <span>{unitBrl(item.total / Number(quotedDraft.cubagemM3))}/m³</span>
+                  <span>{item.total == null ? '—' : unitBrl(item.total / quotedDistance)}/km</span>
+                  <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.pesoKg))}/kg</span>
+                  <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.cubagemM3))}/m³</span>
                 </div>
                 <div className="mt-2 rounded-lg border border-slate-200 bg-white/70 px-3 py-2 text-center dark:border-slate-600 dark:bg-slate-900/60">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Valor mínimo do frete</span>
@@ -255,14 +258,14 @@ export default function CotacaoAnalysisView({
           <p className="mt-3 text-sm text-[#59708f] dark:text-slate-300">Extraia os dados e calcule a rota.</p>
         </div>}
         {hasRoute && <div className="grid gap-2 sm:grid-cols-2" aria-label="Ações da proposta">
-          <button type="button" disabled={!analysis || busy} onClick={() => onPrint('fracionado')} className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Fracionado</button>
+          <button type="button" disabled={!analysis?.result.fracionado.total || busy} onClick={() => onPrint('fracionado')} className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Fracionado</button>
           <button type="button" disabled={!analysis || busy} onClick={() => onPrint('dedicado')} className="rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Dedicado</button>
-          <button type="button" disabled={!analysis || busy} onClick={() => prepareProposal('fracionado')} className="rounded-xl bg-emerald-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Fracionado</button>
+          <button type="button" disabled={!analysis?.result.fracionado.total || busy} onClick={() => prepareProposal('fracionado')} className="rounded-xl bg-emerald-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Fracionado</button>
           <button type="button" disabled={!analysis || busy} onClick={() => prepareProposal('dedicado')} className="rounded-xl bg-indigo-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Dedicado</button>
           {!analysis && <p className="text-xs text-amber-700 dark:text-amber-300 sm:col-span-2">PDFs com preço e propostas ficam disponíveis após a análise.</p>}
         </div>}
         {hasRoute && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700">
-          <h3 className="text-sm font-bold text-[#294669] dark:text-blue-200">Tabela ANTT · carga geral</h3>
+          <h3 className="text-sm font-bold text-[#294669] dark:text-blue-200">Tabela ANTT · referência para dedicado</h3>
           <p className="mt-1 text-xs text-[#59708f] dark:text-slate-300">Tabela A, carga lotação com composição veicular contratada · {routeKm.toLocaleString('pt-BR')} km. Piso de referência = km × CCD + CC.</p>
           <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[510px] text-left text-xs">
             <thead><tr className="border-b dark:border-slate-700"><th className="py-2">Veículo / capacidade</th><th>Eixos</th><th>CCD R$/km</th><th>CC</th><th>Referência</th></tr></thead>
@@ -275,7 +278,7 @@ export default function CotacaoAnalysisView({
         </div>}
         {(hasRoute || analysis) && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700">
           <h3 className="mb-2 text-sm font-bold uppercase text-[#294669] dark:text-blue-200">Mensagem ao cliente</h3>
-          <label className="mb-2 block text-xs text-[#59708f] dark:text-slate-300">Estilo de mensagem<select className={`${input} mt-1`} value={selectedStyle} onChange={event => setMessageStyle(event.target.value as CotacaoMessageStyle)}>{(['Abordagem inicial', 'Confirmação de dados', ...(analysis ? ['Apresentação de valores', 'Proposta fracionado', 'Proposta dedicado'] : []), 'Acompanhamento'] as CotacaoMessageStyle[]).map(style => <option key={style} value={style}>{titles[style]}</option>)}</select></label>
+          <label className="mb-2 block text-xs text-[#59708f] dark:text-slate-300">Estilo de mensagem<select className={`${input} mt-1`} value={selectedStyle} onChange={event => setMessageStyle(event.target.value as CotacaoMessageStyle)}>{(['Abordagem inicial', 'Confirmação de dados', ...(analysis?.result.fracionado.total ? ['Apresentação de valores', 'Proposta fracionado'] : []), ...(analysis ? ['Proposta dedicado'] : []), 'Acompanhamento'] as CotacaoMessageStyle[]).map(style => <option key={style} value={style}>{titles[style]}</option>)}</select></label>
           <textarea id="cotacao-mensagem" readOnly aria-label="Mensagem ao cliente" value={clientMessage} className={`${input} min-h-24`} />
           <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => navigator.clipboard.writeText(clientMessage)} className="rounded-lg border px-3 py-2 text-xs">Copiar mensagem</button>{whatsappLink && <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-emerald-700 px-3 py-2 text-xs text-white">Enviar no WhatsApp</a>}{analysis && <button type="button" onClick={onDownloadJson} className="rounded-lg border px-3 py-2 text-xs">Baixar memória JSON</button>}</div>
           {!whatsappLink && <p className="mt-2 text-xs text-amber-700">Preencha um WhatsApp válido com DDD para enviar.</p>}

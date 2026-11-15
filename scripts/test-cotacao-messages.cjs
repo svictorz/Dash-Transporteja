@@ -18,6 +18,9 @@ assert.equal(cotacaoWhatsAppLink('(11) 2768-5200', 'Teste'), 'https://wa.me/5511
 assert.equal(cotacaoWhatsAppLink('123', 'Teste'), null)
 assert.equal(cotacaoMessage(draft, 'Apresentação de valores'), '')
 assert.equal(cotacaoMessage(draft, 'Proposta fracionado'), '')
+assert.equal(cotacaoMessage(draft, 'Proposta fracionado', { dedicado: 12389.51 }), '')
+assert.equal(cotacaoMessage(draft, 'Apresentação de valores', { dedicado: 12389.51 }), '')
+assert.match(cotacaoMessage(draft, 'Proposta dedicado', { dedicado: 12389.51 }), /R\$\s?12\.389,51/)
 assert.match(cotacaoMessage(draft, 'Proposta fracionado', { fracionado: 7480.24, dedicado: 12389.51 }), /R\$\s?7\.480,24/)
 assert.doesNotMatch(cotacaoMessage(draft, 'Proposta fracionado', { fracionado: 7480.24, dedicado: 12389.51 }), /12\.389,51/)
 const templates = { ...defaultCotacaoTemplates, 'Abordagem inicial': 'Pedido de {origem} até {destino} para {cliente}.' }

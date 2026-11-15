@@ -24,6 +24,7 @@ export function extractCotacao(textoOriginal: string): CotacaoDraft {
     pesoKg: moneyOrWeight(capture(textoOriginal, 'peso')),
     valorNota: moneyOrWeight(capture(textoOriginal, 'valor\\s+(?:de\\s+)?nota|valor\\s+nf')),
     cubagemM3: moneyOrWeight(capture(textoOriginal, 'cubagem')),
+    linearMeters: moneyOrWeight(capture(textoOriginal, 'metros\\s+lineares|comprimento\\s+linear')),
     pesoCubicoKg: moneyOrWeight(capture(textoOriginal, 'peso\\s+c(?:u|ú)bico')),
     googleKm: null,
     quantidade: moneyOrWeight(capture(textoOriginal, 'quantidade')),
