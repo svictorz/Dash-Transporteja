@@ -218,6 +218,11 @@ export default function CotacaoPage() {
 
   const analyze = async () => {
     if (!distance || !Number.isFinite(Number(distance)) || Number(distance) <= 0) { setAnalysisError('Calcule a rota ou informe uma distância válida.'); return }
+    if (draft.cubagemM3 == null || !Number.isFinite(Number(draft.cubagemM3)) || Number(draft.cubagemM3) <= 0) {
+      setAnalysisError('Informe a cubagem da carga em m³, maior que zero, antes de analisar a proposta.')
+      document.getElementById('cotacao-cubagem')?.focus()
+      return
+    }
     if (draft.marginPercent == null || !Number.isFinite(draft.marginPercent) || draft.marginPercent < 0 || draft.marginPercent > 100) {
       setAnalysisError('Informe a margem de lucro entre 0% e 100% no campo destacado.')
       document.getElementById('cotacao-margem')?.focus()

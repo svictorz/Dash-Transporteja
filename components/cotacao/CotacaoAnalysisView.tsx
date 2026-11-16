@@ -4,7 +4,7 @@ import { useState } from 'react'
 import type { CotacaoDraft } from '@/lib/types/cotacao-erp'
 import type { CotacaoCnpjParty } from '@/lib/utils/cotacao-cnpj'
 import { cotacaoAd, cotacaoMessage, cotacaoWhatsAppLink, type CotacaoMessageStyle, type CotacaoMessageTemplates, type CotacaoMessageTitles } from '@/lib/utils/cotacao-messages'
-import { ANTT_TABLE_A_SOURCE, ANTT_TABLE_A_VALID_FROM, anttMinimumForVehicle, anttReferenceRows, type AnttVehicle } from '@/lib/utils/cotacao-antt'
+import { ANTT_TABLE_A_SOURCE, ANTT_TABLE_A_VALID_FROM, anttReferenceRows, type AnttVehicle } from '@/lib/utils/cotacao-antt'
 import RouteMap from './RouteMap'
 import SimilarFreights from './SimilarFreights'
 import type { SimilarFreight } from '@/lib/utils/cotacao-similar-freights'
@@ -65,9 +65,9 @@ export default function CotacaoAnalysisView({
   const routeKm = Number(distance)
   const googleDiffers = googleKm > 0 && routeKm > 0 && Math.abs(googleKm - routeKm) / routeKm > 0.15
   const [messageStyle, setMessageStyle] = useState<CotacaoMessageStyle>('Abordagem inicial')
-  const prices = analysis ? { fracionado: analysis.result.fracionado.total ?? undefined, dedicado: analysis.result.dedicado.total ?? undefined } : undefined
+  const prices = analysis ? { fracionado: Number(analysis.result.fracionado.total) >= 1500 ? analysis.result.fracionado.total ?? undefined : undefined, dedicado: Number(analysis.result.dedicado.total) >= 1500 ? analysis.result.dedicado.total ?? undefined : undefined } : undefined
   const priceStyle = messageStyle === 'Apresentação de valores' || messageStyle.startsWith('Proposta ')
-  const selectedStyle = priceStyle && (!analysis || ((messageStyle === 'Proposta fracionado' || messageStyle === 'Apresentação de valores') && prices?.fracionado == null)) ? 'Abordagem inicial' : messageStyle
+  const selectedStyle = priceStyle && (!analysis || ((messageStyle === 'Proposta fracionado' || messageStyle === 'Apresentação de valores') && prices?.fracionado == null) || (messageStyle === 'Proposta dedicado' && prices?.dedicado == null)) ? 'Abordagem inicial' : messageStyle
   const clientMessage = cotacaoMessage(draft, selectedStyle, prices, templates)
   const adText = cotacaoAd(draft, templates)
   const whatsappLink = cotacaoWhatsAppLink(draft.telefone, clientMessage)
@@ -101,7 +101,7 @@ export default function CotacaoAnalysisView({
         <label className={label}>Origem<input className={input} value={draft.origem} onChange={event => onFieldChange('origem', event.target.value)} placeholder="Cidade/UF" /></label>
         <label className={label}>Destino<input className={input} value={draft.destino} onChange={event => onFieldChange('destino', event.target.value)} placeholder="Cidade/UF" /></label>
         <label className={label}>Peso (kg)<input className={input} type="number" min="0" step="any" value={draft.pesoKg ?? ''} onChange={event => onFieldChange('pesoKg', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 3585" /></label>
-        <label className={label}>Cubagem (m³)<input className={input} type="number" min="0" step="any" value={draft.cubagemM3 ?? ''} onChange={event => onFieldChange('cubagemM3', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,81" /></label>
+        <label className={label}>Cubagem (m³) *<input id="cotacao-cubagem" className={input} type="number" min="0.01" step="any" required value={draft.cubagemM3 ?? ''} onChange={event => onFieldChange('cubagemM3', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,81" /></label>
         <label className={label}>Quantidade<input className={input} type="number" min="0" value={draft.quantidade ?? ''} onChange={event => onFieldChange('quantidade', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 172" /></label>
         <label className={label}>Metros lineares (opcional)<input className={input} type="number" min="0" step="any" value={draft.linearMeters ?? ''} onChange={event => onFieldChange('linearMeters', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,4" /></label>
         <label className={label}>Valor NF (R$)<input className={input} type="number" min="0" step="any" value={draft.valorNota ?? ''} onChange={event => onFieldChange('valorNota', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 14916,47" /></label>
@@ -201,22 +201,17 @@ export default function CotacaoAnalysisView({
               const taxPercent = Number(analysis.snapshot?.rules?.tax_percent)
               const driverMaxPercent = Number(analysis.snapshot?.rules?.driver_max_percent)
               const driverCeiling = item.total != null && Number.isFinite(driverMaxPercent) && driverMaxPercent >= 0 ? item.total * driverMaxPercent / 100 : null
-              const snapshotVehicles = Array.isArray(analysis.snapshot?.rules?.vehicles) ? analysis.snapshot.rules.vehicles as Vehicle[] : []
-              const selectedVehicle = analysis.snapshot?.rules?.selected_vehicle
               const isFractional = kind === 'fracionado'
-              const hasFractionalRule = isFractional && Boolean(analysis.snapshot?.rules?.fractional_rule_id)
-              const minimumFreight = hasFractionalRule ? item.minimum ?? null : typeof selectedVehicle === 'string'
-                ? anttMinimumForVehicle(snapshotVehicles, selectedVehicle, quotedDistance)
-                : null
-              return <article key={kind} className={`rounded-xl border border-slate-200 border-l-4 bg-white p-3.5 dark:border-slate-700 dark:bg-slate-900 ${isFractional ? 'border-l-blue-500 dark:border-l-blue-400' : 'border-l-violet-500 dark:border-l-violet-400'}`}>
+              const minimumFreight = 1500
+              return <article key={kind} className={`rounded-xl border border-slate-200 border-l-4 p-3.5 dark:border-slate-700 dark:bg-slate-900 ${isFractional ? 'border-l-blue-500 bg-blue-50/40 dark:border-l-blue-400' : 'border-l-violet-500 bg-violet-50/40 dark:border-l-violet-400'}`}>
                 <h3 className={`mb-3 border-b border-slate-200 pb-2 text-center text-sm font-bold uppercase dark:border-slate-700 ${isFractional ? 'text-blue-800 dark:text-blue-200' : 'text-violet-800 dark:text-violet-200'}`}>{isFractional ? '📦' : '🚚'} {kind}</h3>
                 {isFractional && <p className="mb-2 text-center text-[11px] text-slate-500 dark:text-slate-400">Veículo de referência: Truck</p>}
                 <dl className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
-                  <div className="flex justify-between gap-2"><dt>Custo base (veículo)</dt><dd className="font-semibold">{item.floor == null ? '—' : brl(item.floor)}</dd></div>
-                  <div className="flex justify-between gap-2"><dt>Tributos{Number.isFinite(taxPercent) ? ` (${taxPercent.toLocaleString('pt-BR')}%)` : ''}</dt><dd className="font-semibold">{item.taxes == null ? '—' : brl(item.taxes)}</dd></div>
-                  <div className="flex justify-between gap-2"><dt>Seguro sobre NF</dt><dd className="font-semibold">{item.insurance == null ? '—' : brl(item.insurance)}</dd></div>
+                  <div className="flex justify-between gap-2 rounded-md bg-slate-100/80 px-2 py-1 dark:bg-slate-800"><dt>Custo base (veículo)</dt><dd className="font-semibold">{item.floor == null ? '—' : brl(item.floor)}</dd></div>
+                  <div className="flex justify-between gap-2 rounded-md bg-indigo-50 px-2 py-1 dark:bg-indigo-500/10"><dt>Tributos{Number.isFinite(taxPercent) ? ` (${taxPercent.toLocaleString('pt-BR')}%)` : ''}</dt><dd className="font-semibold">{item.taxes == null ? '—' : brl(item.taxes)}</dd></div>
+                  <div className="flex justify-between gap-2 rounded-md bg-cyan-50 px-2 py-1 dark:bg-cyan-500/10"><dt>Seguro sobre NF</dt><dd className="font-semibold">{item.insurance == null ? '—' : brl(item.insurance)}</dd></div>
                 </dl>
-                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center dark:border-slate-700 dark:bg-slate-800">
+                <div className={`mt-3 rounded-lg border px-3 py-2 text-center dark:border-slate-700 dark:bg-slate-800 ${isFractional ? 'border-blue-200 bg-blue-100/70' : 'border-violet-200 bg-violet-100/70'}`}>
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Valor final · negociável</span>
                   <strong className={`mt-0.5 block text-2xl ${isFractional ? 'text-blue-800 dark:text-blue-200' : 'text-violet-800 dark:text-violet-200'}`}>{item.total == null ? item.status === 'INVALID_VOLUME' ? 'Informe a cubagem' : 'Não elegível para fracionado' : brl(item.total)}</strong>
                 </div>
@@ -225,26 +220,28 @@ export default function CotacaoAnalysisView({
                   <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.pesoKg))}/kg</span>
                   <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.cubagemM3))}/m³</span>
                 </div>
-                <div className="mt-2 rounded-lg border border-slate-200 bg-white/70 px-3 py-2 text-center dark:border-slate-600 dark:bg-slate-900/60">
+                <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center dark:border-emerald-800 dark:bg-emerald-500/10">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Valor mínimo do frete</span>
-                  <strong className="block text-sm text-slate-800 dark:text-slate-100">{minimumFreight === null ? '—' : brl(minimumFreight)}</strong>
+                  <strong className="block text-sm text-emerald-800 dark:text-emerald-200">{brl(minimumFreight)}</strong>
                 </div>
-                <div className="mt-2 rounded-lg border border-amber-200 bg-white/70 px-3 py-2 text-center dark:border-amber-700 dark:bg-slate-900/60">
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center dark:border-amber-700 dark:bg-amber-500/10">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">Teto motorista</span>
                   <strong className="block text-sm text-amber-800 dark:text-amber-200">{driverCeiling === null ? '—' : brl(driverCeiling)}</strong>
                 </div>
               </article>
             })}
           </div>
+          {(Number(analysis.result.fracionado.total) > 0 && Number(analysis.result.fracionado.total) < 1500 || Number(analysis.result.dedicado.total) > 0 && Number(analysis.result.dedicado.total) < 1500) &&
+            <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-500/10 dark:text-amber-200">Esta análise anterior contém valor abaixo do mínimo atual de R$ 1.500. Analise a proposta novamente para gerar PDF ou enviar o preço.</p>}
         </> : <div className="rounded-xl border border-[#e1e8f1] p-[18px] dark:border-slate-700">
           <h3 className="text-lg font-bold text-[#526c88] dark:text-slate-200">Pronto para analisar</h3>
           <p className="mt-3 text-sm text-[#59708f] dark:text-slate-300">Preencha a margem de lucro e clique em Analisar Proposta para ver o diagnóstico.</p>
         </div>}
         {analysis && <div className="grid gap-2 sm:grid-cols-2" aria-label="Ações da proposta">
-          <button type="button" disabled={!analysis?.result.fracionado.total || busy} onClick={() => onPrint('fracionado')} className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Fracionado</button>
-          <button type="button" disabled={!analysis || busy} onClick={() => onPrint('dedicado')} className="rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Dedicado</button>
-          <button type="button" disabled={!analysis?.result.fracionado.total || busy} onClick={() => prepareProposal('fracionado')} className="rounded-xl bg-emerald-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Fracionado</button>
-          <button type="button" disabled={!analysis || busy} onClick={() => prepareProposal('dedicado')} className="rounded-xl bg-indigo-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Dedicado</button>
+          <button type="button" disabled={!prices?.fracionado || busy} onClick={() => onPrint('fracionado')} className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Fracionado</button>
+          <button type="button" disabled={!prices?.dedicado || busy} onClick={() => onPrint('dedicado')} className="rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Dedicado</button>
+          <button type="button" disabled={!prices?.fracionado || busy} onClick={() => prepareProposal('fracionado')} className="rounded-xl bg-emerald-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Fracionado</button>
+          <button type="button" disabled={!prices?.dedicado || busy} onClick={() => prepareProposal('dedicado')} className="rounded-xl bg-indigo-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Dedicado</button>
         </div>}
         {analysis && <SimilarFreights freights={similarFreights} loading={similarFreightsLoading} error={similarFreightsError} />}
         {analysis && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700">
@@ -261,7 +258,7 @@ export default function CotacaoAnalysisView({
         </div>}
         {analysis && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700">
           <h3 className="mb-2 text-sm font-bold uppercase text-[#294669] dark:text-blue-200">Mensagem ao cliente</h3>
-          <label className="mb-2 block text-xs text-[#59708f] dark:text-slate-300">Estilo de mensagem<select className={`${input} mt-1`} value={selectedStyle} onChange={event => setMessageStyle(event.target.value as CotacaoMessageStyle)}>{(['Abordagem inicial', 'Confirmação de dados', ...(analysis?.result.fracionado.total ? ['Apresentação de valores', 'Proposta fracionado'] : []), ...(analysis ? ['Proposta dedicado'] : []), 'Acompanhamento'] as CotacaoMessageStyle[]).map(style => <option key={style} value={style}>{titles[style]}</option>)}</select></label>
+          <label className="mb-2 block text-xs text-[#59708f] dark:text-slate-300">Estilo de mensagem<select className={`${input} mt-1`} value={selectedStyle} onChange={event => setMessageStyle(event.target.value as CotacaoMessageStyle)}>{(['Abordagem inicial', 'Confirmação de dados', ...(prices?.fracionado ? ['Apresentação de valores', 'Proposta fracionado'] : []), ...(prices?.dedicado ? ['Proposta dedicado'] : []), 'Acompanhamento'] as CotacaoMessageStyle[]).map(style => <option key={style} value={style}>{titles[style]}</option>)}</select></label>
           <textarea id="cotacao-mensagem" readOnly aria-label="Mensagem ao cliente" value={clientMessage} className={`${input} min-h-24`} />
           <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => navigator.clipboard.writeText(clientMessage)} className="rounded-lg border px-3 py-2 text-xs">Copiar mensagem</button>{whatsappLink && <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-emerald-700 px-3 py-2 text-xs text-white">Enviar no WhatsApp</a>}{analysis && <button type="button" onClick={onDownloadJson} className="rounded-lg border px-3 py-2 text-xs">Baixar memória JSON</button>}</div>
           {!whatsappLink && <p className="mt-2 text-xs text-amber-700">Preencha um WhatsApp válido com DDD para enviar.</p>}

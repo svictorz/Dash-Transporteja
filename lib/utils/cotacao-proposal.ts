@@ -12,7 +12,7 @@ export function buildCotacaoProposal(analysis: ProposalAnalysis, kind: ProposalK
   const draft = analysis.snapshot?.draft
   const distanceKm = Number(analysis.snapshot?.distance_km)
   const total = Number(analysis.result?.[kind]?.total)
-  if (!draft?.origem?.trim() || !draft?.destino?.trim() || !Number.isFinite(distanceKm) || distanceKm <= 0 || !Number.isFinite(total) || total <= 0) {
+  if (!draft?.origem?.trim() || !draft?.destino?.trim() || !Number.isFinite(distanceKm) || distanceKm <= 0 || !Number.isFinite(total) || total < 1500 || !Number.isFinite(Number(draft.cubagemM3)) || Number(draft.cubagemM3) <= 0) {
     throw new Error('Dados aprovados insuficientes para gerar a proposta.')
   }
   return {
