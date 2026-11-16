@@ -185,7 +185,7 @@ export default function CotacaoAnalysisView({
             <p className="mt-1 text-xs">Análise registrada em {new Date(analysis.created_at).toLocaleString('pt-BR')} com a frota, os percentuais e a margem informados.</p>
           </div>
           {compatibleVehicles.length > 0 && <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
-            <label htmlFor="cotacao-veiculo" className="text-xs font-semibold text-slate-600 dark:text-slate-300">Veículo</label>
+            <label htmlFor="cotacao-veiculo" className="text-xs font-semibold text-slate-600 dark:text-slate-300">Veículo dedicado</label>
             <select id="cotacao-veiculo" aria-label="Veículo da cotação" value={typeof analyzedVehicle === 'string' ? analyzedVehicle : ''} onChange={event => onVehicleChange(event.target.value)} disabled={busy || viewingAnotherUser} className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-white sm:max-w-[260px]">
               {typeof analyzedVehicle !== 'string' && <option value="" disabled>Selecione um veículo</option>}
               {compatibleVehicles.map(vehicle => <option key={vehicle.name} value={vehicle.name}>{vehicle.name}</option>)}
@@ -204,12 +204,13 @@ export default function CotacaoAnalysisView({
               const snapshotVehicles = Array.isArray(analysis.snapshot?.rules?.vehicles) ? analysis.snapshot.rules.vehicles as Vehicle[] : []
               const selectedVehicle = analysis.snapshot?.rules?.selected_vehicle
               const isFractional = kind === 'fracionado'
-              const isFractionalV1 = isFractional && analysis.snapshot?.rules?.fractional_rule_id === 'FRACIONADO_JCN_V1'
-              const minimumFreight = isFractionalV1 ? item.minimum ?? null : typeof selectedVehicle === 'string'
+              const hasFractionalRule = isFractional && Boolean(analysis.snapshot?.rules?.fractional_rule_id)
+              const minimumFreight = hasFractionalRule ? item.minimum ?? null : typeof selectedVehicle === 'string'
                 ? anttMinimumForVehicle(snapshotVehicles, selectedVehicle, quotedDistance)
                 : null
               return <article key={kind} className={`rounded-xl border border-slate-200 border-l-4 bg-white p-3.5 dark:border-slate-700 dark:bg-slate-900 ${isFractional ? 'border-l-blue-500 dark:border-l-blue-400' : 'border-l-violet-500 dark:border-l-violet-400'}`}>
                 <h3 className={`mb-3 border-b border-slate-200 pb-2 text-center text-sm font-bold uppercase dark:border-slate-700 ${isFractional ? 'text-blue-800 dark:text-blue-200' : 'text-violet-800 dark:text-violet-200'}`}>{isFractional ? '📦' : '🚚'} {kind}</h3>
+                {isFractional && <p className="mb-2 text-center text-[11px] text-slate-500 dark:text-slate-400">Veículo de referência: Truck</p>}
                 <dl className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                   <div className="flex justify-between gap-2"><dt>Custo base (veículo)</dt><dd className="font-semibold">{item.floor == null ? '—' : brl(item.floor)}</dd></div>
                   <div className="flex justify-between gap-2"><dt>Tributos{Number.isFinite(taxPercent) ? ` (${taxPercent.toLocaleString('pt-BR')}%)` : ''}</dt><dd className="font-semibold">{item.taxes == null ? '—' : brl(item.taxes)}</dd></div>

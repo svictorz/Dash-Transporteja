@@ -24,9 +24,6 @@ type Vehicle = { name: string; payloadKg: number; volumeM3: number; axles: numbe
 type RuleSet = { vehicles?: Vehicle[]; anttSourceUrl?: string; anttEffectiveFrom?: string; selected_vehicle?: string; fractional_rule_id?: string; fractional_vehicle?: string } & { [key: string]: number | string | Vehicle[] | undefined }
 type Analysis = { id: string; result: { fracionado: Scenario; dedicado: Scenario }; snapshot: { draft: CotacaoDraft; distance_km: number; distance_source?: string; rules: RuleSet }; created_at: string }
 type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; status?: string }
-type FractionalConfigKey = 'linear_capacity_m' | 'volumetric_factor_kg_m3' | 'fixed_trip_cost' | 'additional_trip_cost' | 'minimum_freight'
-const fractionalConfigKeys: FractionalConfigKey[] = ['linear_capacity_m','volumetric_factor_kg_m3','fixed_trip_cost','additional_trip_cost','minimum_freight']
-const emptyFractionalConfig = (): Record<FractionalConfigKey,string> => ({ linear_capacity_m:'', volumetric_factor_kg_m3:'', fixed_trip_cost:'', additional_trip_cost:'', minimum_freight:'' })
 const empty = () => extractCotacao('')
 const csvCell = (value: unknown) => {
   const raw = String(value ?? '')
@@ -36,7 +33,7 @@ const csvCell = (value: unknown) => {
 const input = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
 const card = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900'
 // Valores iniciais reproduzidos da tabela enviada pelo usuário; não são preços comerciais aprovados.
-const fleetRatePerKm = [4.0738, 4.0738, 4.0738, 4.0738, 5.2177, 8.2727, 6.8284, 7.5347, 8.2727, 9.4114]
+const fleetRatePerKm = [4.0738, 4.0738, 4.0738, 4.0738, 8.5, 8.2727, 6.8284, 7.5347, 8.2727, 9.4114]
 const initialFleet = (): Vehicle[] => ANTT_REFERENCE_FLEET.map((vehicle, index) => ({ ...vehicle, payloadKg: vehicle.payloadKg ?? 0, volumeM3: vehicle.volumeM3 ?? 0, pricePerKm: fleetRatePerKm[index] }))
 
 export default function CotacaoPage() {
@@ -73,7 +70,6 @@ export default function CotacaoPage() {
   const [titleDraft, setTitleDraft] = useState<CotacaoMessageTitles>(defaultCotacaoTitles)
   const [vehiclesDraft, setVehiclesDraft] = useState<Vehicle[]>(initialFleet)
   const [fleetVehicles, setFleetVehicles] = useState<Vehicle[]>(initialFleet)
-  const [fractionalConfigDraft, setFractionalConfigDraft] = useState<Record<FractionalConfigKey,string>>(emptyFractionalConfig)
   const [fractionalRevisionId, setFractionalRevisionId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -150,10 +146,6 @@ export default function CotacaoPage() {
     void (async () => {
       const { data: current } = await supabase.from('erp_fractional_truck_active').select('revision_id').eq('id',1).maybeSingle()
       if (!active || !current?.revision_id) return
-      const { data: revision } = await supabase.from('erp_fractional_truck_revisions').select('config').eq('id',current.revision_id).maybeSingle()
-      if (!active || !revision?.config) return
-      const config = revision.config as Record<string,number>
-      setFractionalConfigDraft(Object.fromEntries(fractionalConfigKeys.map(key => [key,String(config[key] ?? '')])) as Record<FractionalConfigKey,string>)
       setFractionalRevisionId(current.revision_id)
     })()
     return () => { active = false }
@@ -301,23 +293,6 @@ export default function CotacaoPage() {
         if (current?.revision_id) setFractionalRevisionId(current.revision_id)
       }
       setMessage('Frota salva. Novas análises usarão os valores por km e capacidades atualizados.')
-    } finally { setBusy(false) }
-  }
-
-  const publishFractionalTruck = async () => {
-    if (!isAdmin || !user?.id) return
-    const values = Object.fromEntries(fractionalConfigKeys.map(key => [key,Number(fractionalConfigDraft[key].trim().replace(',','.'))])) as Record<FractionalConfigKey,number>
-    if (fractionalConfigKeys.some(key => !fractionalConfigDraft[key].trim() || !Number.isFinite(values[key]) || values[key] < 0)
-      || values.linear_capacity_m <= 0 || values.volumetric_factor_kg_m3 <= 0) {
-      setMessage('Preencha todos os parâmetros do Truck. Capacidades e fator devem ser maiores que zero; custos e mínimo não podem ser negativos.')
-      return
-    }
-    setBusy(true)
-    try {
-      const { data, error } = await supabase.rpc('erp_publish_fractional_truck', { config: values })
-      if (error) { setMessage(`Não foi possível publicar o motor fracionado: ${error.message}`); return }
-      setFractionalRevisionId(data as string)
-      setMessage('Nova revisão do motor fracionado publicada. Somente novas análises usarão esses parâmetros.')
     } finally { setBusy(false) }
   }
 
@@ -548,21 +523,8 @@ export default function CotacaoPage() {
         <button type="button" disabled={busy} onClick={() => void saveFleet()} className="rounded-lg bg-[#2878ef] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Salvar frota</button>
         <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
           <h4 className="font-semibold">Motor fracionado · Truck</h4>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Usa o R$/km do Truck como custo variável, além do peso e da cubagem salvos acima. Publique uma revisão após preencher os parâmetros para ativar o novo cálculo em futuras análises.</p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {([
-              ['linear_capacity_m','Capacidade linear (m)'],
-              ['volumetric_factor_kg_m3','Fator de cubagem (kg/m³)'],
-              ['fixed_trip_cost','Custo fixo por viagem (R$)'],
-              ['additional_trip_cost','Adicionais por viagem (R$)'],
-              ['minimum_freight','Frete mínimo fracionado (R$)'],
-            ] as const).map(([key,title]) => <label key={key} className="text-xs text-slate-600 dark:text-slate-300">{title}
-              <input className={`${input} mt-1`} type="text" inputMode="decimal" value={fractionalConfigDraft[key]}
-                onChange={event => setFractionalConfigDraft(previous => ({ ...previous, [key]:event.target.value }))} placeholder="Informe o valor" />
-            </label>)}
-          </div>
-          <button type="button" disabled={busy || !fleetSettingsReady} onClick={() => void publishFractionalTruck()} className="mt-3 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Publicar motor fracionado</button>
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{fractionalRevisionId ? `Revisão ativa: ${fractionalRevisionId.slice(0,8)}` : 'Motor novo ainda não publicado. O cálculo atual continua ativo.'}</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">O Truck é o veículo padrão do fracionado. O cálculo usa o peso máximo, a cubagem máxima e o valor por km cadastrados na linha Truck acima. Ao salvar a frota, uma nova revisão valerá para as próximas análises.</p>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{fractionalRevisionId ? `Revisão ativa: ${fractionalRevisionId.slice(0,8)}` : 'Motor ainda não ativado no banco.'}</p>
         </div>
       </div>
       }
