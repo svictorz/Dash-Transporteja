@@ -153,6 +153,44 @@
     0 8px 10px -6px rgb(0 0 0 / 0.35);
 }
 
+/* O detalhe de Performance segue o tema do painel, inclusive campos calculados. */
+.dark .perf-detail-modal {
+  color-scheme: dark;
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+.dark .perf-detail-modal .bg-blue-50 { background-color: #172b48; }
+.dark .perf-detail-modal .bg-green-50 { background-color: #12352f; }
+.dark .perf-detail-modal .border-blue-200 { border-color: #31527a; }
+.dark .perf-detail-modal .border-green-200 { border-color: #316257; }
+.dark .perf-detail-modal label,
+.dark .perf-detail-modal .text-gray-900 { color: #f1f5f9; }
+.dark .perf-detail-modal .text-gray-700,
+.dark .perf-detail-modal .text-gray-600 { color: #cbd5e1; }
+.dark .perf-detail-modal .text-gray-500 { color: #94a3b8; }
+.dark .perf-detail-modal input,
+.dark .perf-detail-modal select,
+.dark .perf-detail-modal textarea {
+  background-color: #1e293b;
+  border-color: #475569;
+  color: #f1f5f9;
+}
+.dark .perf-detail-modal input:disabled,
+.dark .perf-detail-modal select:disabled,
+.dark .perf-detail-modal textarea:disabled {
+  background-color: #172033;
+  color: #e2e8f0;
+  opacity: 1;
+}
+.dark .perf-detail-modal input::placeholder,
+.dark .perf-detail-modal textarea::placeholder { color: #94a3b8; }
+.dark .perf-detail-modal .bg-gray-100,
+.dark .perf-detail-modal .bg-slate-100 {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+
 @layer utilities {
   /* FadeIn nativo — substitui framer-motion no componente <FadeIn>.
      Roda 100% na thread de composição (GPU), zero JS por animação. */

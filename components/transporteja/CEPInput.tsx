@@ -13,6 +13,7 @@ interface CEPInputProps {
   required?: boolean
   /** Se true (padrão), busca ao completar 8 dígitos e no blur. Se false, só ao clicar em Buscar. */
   autoSearch?: boolean
+  disabled?: boolean
   label?: string
 }
 
@@ -23,6 +24,7 @@ export default function CEPInput({
   error,
   required = false,
   autoSearch = true,
+  disabled = false,
   label = 'CEP *'
 }: CEPInputProps) {
   const [isSearching, setIsSearching] = useState(false)
@@ -31,6 +33,7 @@ export default function CEPInput({
 
 
   const handleSearchCEP = async (cepOverride?: string) => {
+    if (disabled) return
     const cepToSearch = cepOverride ?? value
 
     if (!cepToSearch || cepToSearch.length !== 8) {
@@ -122,6 +125,7 @@ export default function CEPInput({
           <input
             type="text"
             required={required}
+            disabled={disabled}
             value={displayValue}
             onChange={handleInputChange}
             onKeyPress={handleKeyPress}
@@ -143,7 +147,7 @@ export default function CEPInput({
         <button
           type="button"
           onClick={() => handleSearchCEP()}
-          disabled={isSearching || value.length !== 8}
+          disabled={disabled || isSearching || value.length !== 8}
           className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
           {isSearching ? (

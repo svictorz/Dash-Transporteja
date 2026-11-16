@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
 } from 'react'
+import type { ReactNode } from 'react'
 import {
   BarChart3,
   Building2,
@@ -19,6 +20,7 @@ import {
   Mail,
   MapPin,
   Phone,
+  Search,
   Route as RouteIcon,
   Truck,
   Upload,
@@ -26,7 +28,11 @@ import {
   X,
 } from 'lucide-react'
 import type { Route } from '@/lib/services/routes'
+import { formatCNPJDisplay } from '@/lib/services/cnpj'
+import { getClients } from '@/lib/services/clients'
+import { validateCNPJ } from '@/lib/utils/validation'
 import { supabase } from '@/lib/supabase/client'
+import CEPInput from '@/components/transporteja/CEPInput'
 import { DATE_BR_NUMERIC, formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import {
   ROUTE_PERIOD_FILTER_HINT,
@@ -344,6 +350,7 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     pickup_date: strField(r.pickup_date),
     status,
     company_name: nullableStr(r.company_name),
+    company_cnpj: nullableStr(r.company_cnpj),
     company_responsible: nullableStr(r.company_responsible),
     company_phone: nullableStr(r.company_phone),
     company_email: nullableStr(r.company_email),
@@ -352,6 +359,9 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     company_state: nullableStr(r.company_state),
     driver_name: nullableStr(r.driver_name),
     driver_phone: nullableStr(r.driver_phone),
+    cubage_m3: toNumberOrNull(r.cubage_m3),
+    material_type: nullableStr(r.material_type),
+    freight_type: r.freight_type === 'Dedicado' || r.freight_type === 'Fracionado' ? r.freight_type : null,
     distance_km: toNumberOrNull(r.distance_km),
     freight_value: toNumberOrNull(r.freight_value),
     driver_value: toNumberOrNull(r.driver_value),
@@ -383,6 +393,35 @@ function normalizeRouteFromApi(r: Record<string, unknown>): Route {
     created_at: strField(r.created_at),
     updated_at: strField(r.updated_at),
   }
+}
+
+type PerfEditBlockId = 'company' | 'payment' | 'driver' | 'dates' | 'origin' | 'destination' | 'cargo' | 'finance' | 'observation'
+
+function PerfEditBlock({ title, active, saving, canEdit, onEdit, onCancel, onSave, children }: {
+  title: string
+  active: boolean
+  saving: boolean
+  canEdit: boolean
+  onEdit: () => void
+  onCancel: () => void
+  onSave: () => void
+  children: ReactNode
+}) {
+  const routeTone = title === 'Origem / Coleta' ? 'bg-blue-50 border-blue-200' : title === 'Destino / Entrega' ? 'bg-green-50 border-green-200' : 'border-gray-200'
+  return (
+    <section className={`border-t pt-5 [&_label]:text-sm [&_label]:font-semibold [&_select]:rounded-lg [&_select]:border-gray-300 [&_select]:bg-gray-50 [&_select]:px-4 [&_select]:py-3 [&_select]:focus:ring-2 [&_select]:focus:ring-slate-800 ${title === 'Origem / Coleta' || title === 'Destino / Entrega' ? `rounded-lg border p-4 ${routeTone}` : routeTone}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className={`flex items-center gap-2 font-semibold text-gray-900 ${title === 'Origem / Coleta' || title === 'Destino / Entrega' ? 'text-lg' : 'text-sm'}`}>{title === 'Origem / Coleta' || title === 'Destino / Entrega' ? <MapPin className={`h-5 w-5 ${title === 'Origem / Coleta' ? 'text-blue-600' : 'text-green-600'}`} aria-hidden /> : null}{title}</h3>
+        {canEdit && (active ? (
+          <div className="flex gap-2">
+            <button type="button" onClick={onCancel} disabled={saving} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs hover:bg-gray-100">Cancelar</button>
+            <button type="button" onClick={onSave} disabled={saving} className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white hover:bg-slate-900 disabled:opacity-60">{saving ? 'Salvando...' : 'Salvar'}</button>
+          </div>
+        ) : <button type="button" onClick={onEdit} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs hover:bg-gray-100">Editar</button>)}
+      </div>
+      <div className="mt-4 space-y-4">{children}</div>
+    </section>
+  )
 }
 
 function perfDetailStatusLabel(s: Route['status']): string {
@@ -429,246 +468,6 @@ function moneyOrHidden(v: number | null | undefined, visible: boolean): string {
   return formatBRL(v)
 }
 
-function PerfFreightDetailPanel({
-  route,
-  visibleMoney,
-}: {
-  route: Route
-  visibleMoney: Record<MoneyFieldKey, boolean>
-}) {
-  const pct = getRouteTaxesPercent(route)
-  const baseFreight = route.freight_value ?? route.nf_value
-  const netFreight = getRouteNetFreightValue(route)
-  const waCompany = getWhatsAppWebUrl(route.company_phone ?? '')
-  const waDriver = getWhatsAppWebUrl(route.driver_phone ?? '')
-
-  return (
-    <div className="border-t border-slate-200/80 bg-slate-50/90 px-4 py-5 md:px-6 space-y-5 text-left !text-gray-900 [&_.text-gray-900]:!text-gray-900 [&_.text-gray-700]:!text-gray-700 [&_.text-gray-600]:!text-gray-700 [&_.text-gray-500]:!text-gray-700 [&_.bg-white]:!bg-white [&_.border-gray-200]:!border-gray-200">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Frete</p>
-          <p className="text-lg font-bold text-slate-900">
-            #{route.freight_id > 0 ? route.freight_id : '—'}{' '}
-            <span className="text-sm font-medium text-slate-600">· {perfDetailStatusLabel(route.status)}</span>
-          </p>
-        </div>
-        {route.distance_km != null && route.distance_km > 0 ? (
-          <p className="text-xs text-slate-600">
-            Distância: <span className="font-semibold tabular-nums">{formatNumber(route.distance_km)}</span> km
-          </p>
-        ) : null}
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Building2 className="w-4 h-4 shrink-0" aria-hidden />
-          Empresa
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Nome</p>
-            <p className="text-sm font-medium text-gray-900">{route.company_name?.trim() || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Responsável</p>
-            <p className="text-sm font-medium text-gray-900">{route.company_responsible?.trim() || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-              <Phone className="w-3 h-3" aria-hidden />
-              Telefone / WhatsApp
-            </p>
-            {waCompany ? (
-              <a
-                href={waCompany}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium text-green-700 hover:underline"
-              >
-                {route.company_phone || '—'}
-              </a>
-            ) : (
-              <p className="text-sm font-medium text-gray-900">{route.company_phone?.trim() || '—'}</p>
-            )}
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-              <Mail className="w-3 h-3" aria-hidden />
-              E-mail
-            </p>
-            <p className="text-sm font-medium text-gray-900 break-all">{route.company_email?.trim() || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Pagamento (cliente)</p>
-            <p className="text-sm font-medium text-gray-900">{route.payment_status?.trim() || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Tipo pagamento</p>
-            <p className="text-sm font-medium text-gray-900">{route.payment_type?.trim() || '—'}</p>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <RouteIcon className="w-4 h-4 shrink-0" aria-hidden />
-          Rota
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="rounded-lg border border-blue-200 bg-blue-50/80 p-3">
-            <div className="flex gap-2">
-              <MapPin className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" aria-hidden />
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">Origem</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {route.origin || '—'}
-                  {route.origin_state ? `, ${route.origin_state}` : ''}
-                </p>
-                {route.origin_address ? <p className="text-xs text-gray-600 mt-1">{route.origin_address}</p> : null}
-              </div>
-            </div>
-          </div>
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-3">
-            <div className="flex gap-2">
-              <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" aria-hidden />
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Destino</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {route.destination || '—'}
-                  {route.destination_state ? `, ${route.destination_state}` : ''}
-                </p>
-                {route.destination_address ? (
-                  <p className="text-xs text-gray-600 mt-1">{route.destination_address}</p>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Truck className="w-4 h-4 shrink-0" aria-hidden />
-          Veículo e motorista
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Veículo</p>
-            <p className="text-sm font-medium text-gray-900">{route.vehicle?.trim() || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Placa</p>
-            <p className="text-sm font-medium text-gray-900">{route.plate?.trim() || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Peso</p>
-            <p className="text-sm font-medium text-gray-900">{route.weight?.trim() || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Motorista</p>
-            <p className="text-sm font-medium text-gray-900">{route.driver_name?.trim() || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Celular motorista</p>
-            {waDriver ? (
-              <a href={waDriver} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-green-700 hover:underline">
-                {route.driver_phone || '—'}
-              </a>
-            ) : (
-              <p className="text-sm font-medium text-gray-900">{route.driver_phone?.trim() || '—'}</p>
-            )}
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Pag. motorista</p>
-            <p className="text-sm font-medium text-gray-900">{route.driver_payment_status?.trim() || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3 lg:col-span-2">
-            <p className="text-xs text-gray-500 mb-1">Tipo pag. motorista</p>
-            <p className="text-sm font-medium text-gray-900">{route.driver_payment_type?.trim() || '—'}</p>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Calendar className="w-4 h-4 shrink-0" aria-hidden />
-          Datas e valores
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Coleta</p>
-            <p className="text-sm font-medium text-gray-900">{formatDateDdMmYyyy(route.pickup_date) || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Previsão entrega</p>
-            <p className="text-sm font-medium text-gray-900">{formatDateDdMmYyyy(route.estimated_delivery) || '—'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Valor frete</p>
-            <p className="text-sm font-medium text-gray-900">{moneyOrHidden(baseFreight, visibleMoney.freight)}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">CTE</p>
-            <p className="text-sm font-medium text-gray-900">{moneyOrHidden(route.cte_value, visibleMoney.freight)}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Vale pedágio</p>
-            <p className="text-sm font-medium text-gray-900">{moneyOrHidden(route.vale_pedagio, visibleMoney.freight)}</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {isValePedagioIncluso(route.vale_pedagio_incluso) ? 'Incluso ❌' : 'Não incluso ✅'}
-            </p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Motorista</p>
-            <p className="text-sm font-medium text-gray-900">{moneyOrHidden(getRouteDriverTotalValue(route), visibleMoney.driver)}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Tributos ({pct}%)</p>
-            <p className="text-sm font-medium text-gray-900">
-              {moneyOrHidden(
-                route.taxes_value ?? calculateTaxesValue(baseFreight, pct),
-                visibleMoney.taxes,
-              )}
-            </p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Seguro ({getRouteSeguroPercent(route)}%)</p>
-            <p className="text-sm font-medium text-gray-900">
-              {moneyOrHidden(getRouteSeguroValue(route), visibleMoney.taxes)}
-            </p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Frete líquido</p>
-            <p className="text-sm font-medium text-gray-900">
-              {moneyOrHidden(
-                route.net_freight_value ?? netFreight,
-                visibleMoney.netFreight,
-              )}
-            </p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">Comissão</p>
-            <p className="text-sm font-medium text-gray-900">
-              {moneyOrHidden(
-                route.commission_value ?? calculateCommissionValue(route.net_freight_value ?? netFreight),
-                visibleMoney.commission,
-              )}
-            </p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500 mb-1">NF</p>
-            <p className="text-sm font-medium text-gray-900">{moneyOrHidden(route.nf_value, visibleMoney.nfTable)}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-3 sm:col-span-2">
-            <p className="text-xs text-gray-500 mb-1">Observação</p>
-            <p className="text-sm font-medium text-gray-900 whitespace-pre-wrap">{route.observation?.trim() || '—'}</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function PerformancePage() {
   const selectOptionClass = 'bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100'
   const [loading, setLoading] = useState(true)
@@ -688,6 +487,11 @@ export default function PerformancePage() {
   const [didInitSelectedComercial, setDidInitSelectedComercial] = useState(false)
   const [visibleMoney, setVisibleMoney] = useState<Record<MoneyFieldKey, boolean>>(ALL_MONEY_VISIBLE)
   const [selectedPerfRoute, setSelectedPerfRoute] = useState<Route | null>(null)
+  const [perfOriginCep, setPerfOriginCep] = useState('')
+  const [perfDestinationCep, setPerfDestinationCep] = useState('')
+  const [activePerfBlock, setActivePerfBlock] = useState<PerfEditBlockId | null>(null)
+  const [searchingPerfCompany, setSearchingPerfCompany] = useState(false)
+  const [perfCompanyLookupMessage, setPerfCompanyLookupMessage] = useState('')
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
   const [documents, setDocuments] = useState<Record<DocumentKey, RouteDocument[]>>(EMPTY_DOCUMENTS)
   const [documentsLoading, setDocumentsLoading] = useState(false)
@@ -695,10 +499,8 @@ export default function PerformancePage() {
   const [documentsRetry, setDocumentsRetry] = useState(0)
   const [uploadingDocument, setUploadingDocument] = useState<DocumentKey | null>(null)
   const [removingDocumentPath, setRemovingDocumentPath] = useState<string | null>(null)
-  const [editingObservation, setEditingObservation] = useState(false)
   const [savingObservation, setSavingObservation] = useState(false)
   const [editingObservationValue, setEditingObservationValue] = useState('')
-  const [editingFinancial, setEditingFinancial] = useState(false)
   const [savingFinancial, setSavingFinancial] = useState(false)
   const [editingFields, setEditingFields] = useState({
     cteValue: '',
@@ -708,10 +510,10 @@ export default function PerformancePage() {
     taxesPercent: '18',
     seguroPercent: '0.2',
   })
-  const [editingFreightInfo, setEditingFreightInfo] = useState(false)
   const [savingFreightInfo, setSavingFreightInfo] = useState(false)
   const [editingFreightInfoFields, setEditingFreightInfoFields] = useState({
     companyName: '',
+    companyCnpj: '',
     companyResponsible: '',
     companyPhone: '',
     companyEmail: '',
@@ -722,16 +524,18 @@ export default function PerformancePage() {
     destinationState: '',
     destinationAddress: '',
     weight: '',
+    cubageM3: '',
+    materialType: '',
     pickupDate: '',
     estimatedDelivery: '',
     paymentStatus: '',
     paymentType: '',
+    freightType: '',
+    status: 'pending' as RouteStatus,
     nfValue: '',
     freightValue: '',
   })
-  const [editingDriver, setEditingDriver] = useState(false)
   const [savingDriver, setSavingDriver] = useState(false)
-  const [savingRouteStatus, setSavingRouteStatus] = useState(false)
   const [editingDriverFields, setEditingDriverFields] = useState({
     driverName: '',
     driverPhone: '',
@@ -763,20 +567,17 @@ export default function PerformancePage() {
     setSelectedPhoto(null)
     setUploadingDocument(null)
     setRemovingDocumentPath(null)
-    setEditingFinancial(false)
   }, [periodo, customStart, customEnd, selectedComercial, clientPaymentStatusFilter, freightStatusFilter, driverPaymentStatusFilter])
 
   useEffect(() => {
     if (!selectedPerfRoute) {
+      setActivePerfBlock(null)
       setDocuments(EMPTY_DOCUMENTS)
       setDocumentsError(null)
       setDocumentsLoading(false)
       setSelectedPhoto(null)
       setUploadingDocument(null)
       setRemovingDocumentPath(null)
-      setEditingFinancial(false)
-      setEditingFreightInfo(false)
-      setEditingDriver(false)
       return
     }
 
@@ -801,6 +602,7 @@ export default function PerformancePage() {
     })
     setEditingFreightInfoFields({
       companyName: selectedPerfRoute.company_name ?? '',
+      companyCnpj: selectedPerfRoute.company_cnpj ?? '',
       companyResponsible: selectedPerfRoute.company_responsible ?? '',
       companyPhone: selectedPerfRoute.company_phone ?? '',
       companyEmail: selectedPerfRoute.company_email ?? '',
@@ -811,17 +613,22 @@ export default function PerformancePage() {
       destinationState: selectedPerfRoute.destination_state ?? '',
       destinationAddress: selectedPerfRoute.destination_address ?? '',
       weight: selectedPerfRoute.weight ?? '',
+      cubageM3: selectedPerfRoute.cubage_m3 != null ? String(selectedPerfRoute.cubage_m3).replace('.', ',') : '',
+      materialType: selectedPerfRoute.material_type ?? '',
       pickupDate: selectedPerfRoute.pickup_date ?? '',
       estimatedDelivery: selectedPerfRoute.estimated_delivery ?? '',
       paymentStatus: selectedPerfRoute.payment_status ?? '',
       paymentType: selectedPerfRoute.payment_type ?? '',
+      freightType: selectedPerfRoute.freight_type ?? '',
+      status: selectedPerfRoute.status,
       nfValue: selectedPerfRoute.nf_value != null ? String(selectedPerfRoute.nf_value).replace('.', ',') : '',
       freightValue: selectedPerfRoute.freight_value != null ? String(selectedPerfRoute.freight_value).replace('.', ',') : '',
     })
     setEditingObservationValue(selectedPerfRoute.observation ?? '')
-    setEditingObservation(false)
-    setEditingFreightInfo(false)
-    setEditingDriver(false)
+    setActivePerfBlock(null)
+    setPerfOriginCep('')
+    setPerfDestinationCep('')
+    setPerfCompanyLookupMessage('')
 
     let cancelled = false
     setDocuments(EMPTY_DOCUMENTS)
@@ -1059,10 +866,8 @@ export default function PerformancePage() {
       const owner = r.created_by_user_id ? userById.get(r.created_by_user_id) : null
       const isMine = r.created_by_user_id && r.created_by_user_id === currentUserId
       const sellerName = owner?.name || (isMine ? currentUserName : null) || 'Sem responsável'
-      const sellerEmail = owner?.email || (isMine ? '' : '')
-      const sellerRole = owner?.role || (isMine ? role || '' : '')
       const sellerCommissionRate = owner?.commission_rate ?? null
-      return { route: r, sellerName, sellerEmail, sellerRole, sellerCommissionRate }
+      return { route: r, sellerName, sellerCommissionRate }
     })
   }, [statusFilteredRows, userById, currentUserId, currentUserName, role])
 
@@ -1124,31 +929,6 @@ export default function PerformancePage() {
     [isStrictAdmin],
   )
 
-  const handleUpdateRouteStatus = useCallback(
-    async (status: RouteStatus) => {
-      if (!selectedPerfRoute || !canManagePerfModal || selectedPerfRoute.status === status) return
-      try {
-        setSavingRouteStatus(true)
-        const { data, error: updateError } = await supabase
-          .from('routes')
-          .update({ status })
-          .eq('id', selectedPerfRoute.id)
-          .select('*')
-          .single()
-
-        if (updateError) throw new Error(updateError.message)
-        const updatedRoute = normalizeRouteFromApi((data as Record<string, unknown>) || {})
-        setRows((prev) => prev.map((r) => (r.id === updatedRoute.id ? updatedRoute : r)))
-        setSelectedPerfRoute(updatedRoute)
-      } catch (err) {
-        alert(err instanceof Error ? err.message : 'Erro ao atualizar status da rota.')
-      } finally {
-        setSavingRouteStatus(false)
-      }
-    },
-    [selectedPerfRoute, canManagePerfModal],
-  )
-
   const handleSaveObservation = useCallback(async () => {
     if (!selectedPerfRoute || !canManagePerfModal) return
     try {
@@ -1162,7 +942,7 @@ export default function PerformancePage() {
       const updatedRoute = normalizeRouteFromApi((data as Record<string, unknown>) || {})
       setRows((prev) => prev.map((r) => (r.id === updatedRoute.id ? updatedRoute : r)))
       setSelectedPerfRoute(updatedRoute)
-      setEditingObservation(false)
+      setActivePerfBlock(null)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao salvar observações.')
     } finally {
@@ -1170,101 +950,87 @@ export default function PerformancePage() {
     }
   }, [selectedPerfRoute, canManagePerfModal, editingObservationValue])
 
-  const handleSaveFreightInfoFields = useCallback(async () => {
+  const handleSavePerfInfoBlock = useCallback(async (block: PerfEditBlockId) => {
     if (!selectedPerfRoute || !canManagePerfModal) return
-
-    const originState = editingFreightInfoFields.originState.trim().toUpperCase()
-    const destinationState = editingFreightInfoFields.destinationState.trim().toUpperCase()
-
-    if (!editingFreightInfoFields.companyName.trim()) {
-      alert('Informe o nome da empresa.')
-      return
-    }
-    if (!editingFreightInfoFields.origin.trim() || !originState) {
-      alert('Preencha cidade e UF de origem.')
-      return
-    }
-    if (originState.length !== 2) {
-      alert('UF de origem deve ter 2 letras (ex.: SP).')
-      return
-    }
-    if (!editingFreightInfoFields.destination.trim() || !destinationState) {
-      alert('Preencha cidade e UF de destino.')
-      return
-    }
-    if (destinationState.length !== 2) {
-      alert('UF de destino deve ter 2 letras (ex.: RJ).')
-      return
-    }
-    if (!editingFreightInfoFields.weight.trim()) {
-      alert('Preencha o peso do frete.')
-      return
-    }
-
+    const draft = editingFreightInfoFields
+    const updatePayload: Partial<Route> = {}
+    if (block === 'company') {
+      if (!draft.companyName.trim()) { alert('Informe o nome da empresa.'); return }
+      if (draft.companyCnpj.trim() && !validateCNPJ(draft.companyCnpj).valid) { alert('Informe um CNPJ válido.'); return }
+      updatePayload.company_name = draft.companyName.trim()
+      updatePayload.company_cnpj = draft.companyCnpj.trim() ? formatCNPJDisplay(draft.companyCnpj) : null
+      updatePayload.company_responsible = draft.companyResponsible.trim() || null
+      updatePayload.company_phone = draft.companyPhone.trim() || null
+      updatePayload.company_email = draft.companyEmail.trim() || null
+    } else if (block === 'payment') {
+      updatePayload.status = draft.status
+      updatePayload.payment_status = draft.paymentStatus || null
+      updatePayload.payment_type = draft.paymentType || null
+      updatePayload.freight_type = draft.freightType === 'Dedicado' || draft.freightType === 'Fracionado' ? draft.freightType : null
+    } else if (block === 'dates') {
+      updatePayload.pickup_date = draft.pickupDate
+      updatePayload.estimated_delivery = draft.estimatedDelivery
+    } else if (block === 'origin' || block === 'destination') {
+      const city = block === 'origin' ? draft.origin.trim() : draft.destination.trim()
+      const state = (block === 'origin' ? draft.originState : draft.destinationState).trim().toUpperCase()
+      if (!city || !/^[A-Z]{2}$/.test(state)) { alert('Preencha cidade e UF com 2 letras.'); return }
+      if (block === 'origin') {
+        updatePayload.origin = city
+        updatePayload.origin_state = state
+        updatePayload.origin_address = draft.originAddress.trim() || null
+      } else {
+        updatePayload.destination = city
+        updatePayload.destination_state = state
+        updatePayload.destination_address = draft.destinationAddress.trim() || null
+      }
+    } else if (block === 'cargo') {
+      if (!draft.weight.trim()) { alert('Preencha o peso do frete.'); return }
+      const cubageText = draft.cubageM3.trim()
+      const cubage = cubageText ? Number(cubageText.includes(',') ? cubageText.replace(/\./g, '').replace(',', '.') : cubageText) : null
+      if (cubageText && (cubage == null || !Number.isFinite(cubage) || cubage < 0 || cubage >= 1_000_000_000)) { alert('Informe uma cubagem válida.'); return }
+      const nfValue = parseCurrencyInput(draft.nfValue)
+      updatePayload.weight = draft.weight.trim()
+      updatePayload.cubage_m3 = cubage
+      updatePayload.material_type = draft.materialType.trim() || null
+      updatePayload.nf_value = nfValue
+      const baseFreight = selectedPerfRoute.freight_value ?? nfValue
+      const taxesPercent = getRouteTaxesPercent(selectedPerfRoute)
+      const seguroValue = calculateSeguroValue(nfValue, getRouteSeguroPercent(selectedPerfRoute))
+      const netValue = calculateNetFreightValue(baseFreight, selectedPerfRoute.driver_value, taxesPercent, seguroValue, selectedPerfRoute.vale_pedagio, selectedPerfRoute.vale_pedagio_incluso)
+      const sellerRate = selectedPerfRoute.created_by_user_id ? comerciais.find((u) => u.id === selectedPerfRoute.created_by_user_id)?.commission_rate ?? null : null
+      updatePayload.taxes_value = calculateTaxesValue(baseFreight, taxesPercent)
+      updatePayload.seguro_value = seguroValue
+      updatePayload.net_freight_value = netValue
+      updatePayload.commission_value = calculateCommissionValue(netValue, sellerRate)
+    } else return
     try {
       setSavingFreightInfo(true)
-      const nfValue = parseCurrencyInput(editingFreightInfoFields.nfValue)
-      const freightValue = parseCurrencyInput(editingFreightInfoFields.freightValue)
-      const baseFreight = freightValue ?? nfValue
-      const taxesPercent = getRouteTaxesPercent(selectedPerfRoute)
-      const seguroPercent = getRouteSeguroPercent(selectedPerfRoute)
-      const seguroValue = calculateSeguroValue(nfValue, seguroPercent)
-      const taxesValue = calculateTaxesValue(baseFreight, taxesPercent)
-      const netFreightValue = calculateNetFreightValue(
-        baseFreight,
-        selectedPerfRoute.driver_value,
-        taxesPercent,
-        seguroValue,
-        selectedPerfRoute.vale_pedagio,
-        selectedPerfRoute.vale_pedagio_incluso,
-      )
-      const sellerRate = selectedPerfRoute.created_by_user_id
-        ? (comerciais.find((u) => u.id === selectedPerfRoute.created_by_user_id)?.commission_rate ?? null)
-        : null
-      const commissionValue = calculateCommissionValue(netFreightValue, sellerRate)
-
-      const updatePayload: Partial<Route> = {
-        company_name: editingFreightInfoFields.companyName.trim(),
-        company_responsible: editingFreightInfoFields.companyResponsible.trim() || null,
-        company_phone: editingFreightInfoFields.companyPhone.trim() || null,
-        company_email: editingFreightInfoFields.companyEmail.trim() || null,
-        origin: editingFreightInfoFields.origin.trim(),
-        origin_state: originState,
-        origin_address: editingFreightInfoFields.originAddress.trim() || null,
-        destination: editingFreightInfoFields.destination.trim(),
-        destination_state: destinationState,
-        destination_address: editingFreightInfoFields.destinationAddress.trim() || null,
-        weight: editingFreightInfoFields.weight.trim(),
-        pickup_date: editingFreightInfoFields.pickupDate.trim(),
-        estimated_delivery: editingFreightInfoFields.estimatedDelivery.trim(),
-        payment_status: editingFreightInfoFields.paymentStatus.trim() || null,
-        payment_type: editingFreightInfoFields.paymentType.trim() || null,
-        nf_value: nfValue,
-        freight_value: freightValue,
-        taxes_value: taxesValue,
-        seguro_value: seguroValue,
-        net_freight_value: netFreightValue,
-        commission_value: commissionValue,
-      }
-
-      const { data, error: updateError } = await supabase
-        .from('routes')
-        .update(updatePayload)
-        .eq('id', selectedPerfRoute.id)
-        .select('*')
-        .single()
-
+      const { data, error: updateError } = await supabase.from('routes').update(updatePayload).eq('id', selectedPerfRoute.id).select('*').single()
       if (updateError) throw new Error(updateError.message)
       const updatedRoute = normalizeRouteFromApi((data as Record<string, unknown>) || {})
-      setRows((prev) => prev.map((r) => (r.id === updatedRoute.id ? updatedRoute : r)))
+      setRows((prev) => prev.map((r) => r.id === updatedRoute.id ? updatedRoute : r))
       setSelectedPerfRoute(updatedRoute)
-      setEditingFreightInfo(false)
+      setActivePerfBlock(null)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao salvar informações do frete.')
-    } finally {
-      setSavingFreightInfo(false)
-    }
+      alert(err instanceof Error ? err.message : 'Erro ao salvar o bloco.')
+    } finally { setSavingFreightInfo(false) }
   }, [selectedPerfRoute, canManagePerfModal, editingFreightInfoFields, parseCurrencyInput, comerciais])
+
+  const handleSearchPerfCompany = useCallback(async () => {
+    const digits = editingFreightInfoFields.companyCnpj.replace(/\D/g, '')
+    const validation = validateCNPJ(digits)
+    if (!validation.valid) { setPerfCompanyLookupMessage(validation.error || 'CNPJ inválido.'); return }
+    try {
+      setSearchingPerfCompany(true)
+      const clients = await getClients()
+      const client = clients.find((item) => item.cnpj?.replace(/\D/g, '') === digits)
+      if (!client) { setPerfCompanyLookupMessage('Empresa não encontrada. Preencha os campos para atualizar este frete.'); return }
+      setEditingFreightInfoFields((prev) => ({ ...prev, companyCnpj: formatCNPJDisplay(digits), companyName: client.company_name, companyResponsible: client.responsible || '', companyPhone: client.whatsapp || '', companyEmail: client.email || '' }))
+      setPerfCompanyLookupMessage('Empresa encontrada no cadastro.')
+    } catch { setPerfCompanyLookupMessage('Não foi possível consultar os clientes. Tente novamente.') }
+    finally { setSearchingPerfCompany(false) }
+  }, [editingFreightInfoFields.companyCnpj])
+
   const handleSaveFinancialFields = useCallback(async () => {
     if (!selectedPerfRoute || !canEditOperationalFields) return
     try {
@@ -1277,7 +1043,8 @@ export default function PerformancePage() {
       const valePedagioValue = parseCurrencyInput(editingFields.valePedagioValue)
       const valePedagioIncluso = editingFields.valePedagioIncluso === 'true'
       const driverValue = parseCurrencyInput(editingFields.driverValue)
-      const baseFreight = selectedPerfRoute.freight_value ?? selectedPerfRoute.nf_value
+      const freightValue = parseCurrencyInput(editingFreightInfoFields.freightValue)
+      const baseFreight = freightValue ?? selectedPerfRoute.nf_value
       const taxesValue = calculateTaxesValue(baseFreight, taxesPercent)
       const seguroValue = calculateSeguroValue(selectedPerfRoute.nf_value, seguroPercent)
       const netFreightValue = calculateNetFreightValue(
@@ -1294,6 +1061,7 @@ export default function PerformancePage() {
       const commissionValue = calculateCommissionValue(netFreightValue, sellerRate)
 
       const updatePayload: Partial<Route> = {
+        ...(canManagePerfModal ? { freight_value: freightValue } : {}),
         cte_value: cteValue,
         vale_pedagio: valePedagioValue,
         vale_pedagio_incluso: valePedagioIncluso,
@@ -1325,14 +1093,14 @@ export default function PerformancePage() {
       const updatedRoute = normalizeRouteFromApi((data as Record<string, unknown>) || {})
       setRows((prev) => prev.map((r) => (r.id === updatedRoute.id ? updatedRoute : r)))
       setSelectedPerfRoute(updatedRoute)
-      setEditingFinancial(false)
+      setActivePerfBlock(null)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao salvar campos financeiros.'
       alert(msg)
     } finally {
       setSavingFinancial(false)
     }
-  }, [selectedPerfRoute, canEditOperationalFields, editingFields, parseCurrencyInput, canEditPerfSeguro, comerciais, role])
+  }, [selectedPerfRoute, canEditOperationalFields, editingFields, editingFreightInfoFields.freightValue, parseCurrencyInput, canEditPerfSeguro, canManagePerfModal, comerciais, role])
 
   const handleSaveDriverFields = useCallback(async () => {
     if (!selectedPerfRoute || !canEditOperationalFields) return
@@ -1345,6 +1113,10 @@ export default function PerformancePage() {
         driver_payment_type: editingDriverFields.driverPaymentType.trim() || null,
         vehicle: editingDriverFields.vehicle.trim() || null,
         plate: editingDriverFields.plate.trim() || null,
+        ...(canManagePerfModal ? {
+          pickup_date: editingFreightInfoFields.pickupDate || null,
+          estimated_delivery: editingFreightInfoFields.estimatedDelivery || null,
+        } : {}),
       }
       const { data, error: updateError } = await supabase
         .from('routes')
@@ -1356,13 +1128,13 @@ export default function PerformancePage() {
       const updatedRoute = normalizeRouteFromApi((data as Record<string, unknown>) || {})
       setRows((prev) => prev.map((r) => (r.id === updatedRoute.id ? updatedRoute : r)))
       setSelectedPerfRoute(updatedRoute)
-      setEditingDriver(false)
+      setActivePerfBlock(null)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao salvar dados do motorista.')
     } finally {
       setSavingDriver(false)
     }
-  }, [selectedPerfRoute, canEditOperationalFields, editingDriverFields])
+  }, [selectedPerfRoute, canEditOperationalFields, canManagePerfModal, editingDriverFields, editingFreightInfoFields.pickupDate, editingFreightInfoFields.estimatedDelivery])
 
   const handleUploadDocuments = useCallback(
     async (documentKey: DocumentKey, files: FileList | null) => {
@@ -1408,14 +1180,12 @@ export default function PerformancePage() {
     ctx: {
       r: Route
       sellerName: string
-      sellerEmail: string
-      sellerRole: string
       statusLabel: string
       statusClass: string
       created: string
     },
   ) => {
-    const { r, sellerName, sellerEmail, sellerRole, statusLabel, statusClass, created } = ctx
+    const { r, sellerName, statusLabel, statusClass, created } = ctx
     switch (key) {
       case 'idFrete':
         return (
@@ -1440,29 +1210,24 @@ export default function PerformancePage() {
         )
       case 'rota':
         return (
-          <p
-            className="text-gray-900 dark:text-slate-100 text-sm font-semibold tabular-nums tracking-tight"
-            title={
-              [r.origin, r.origin_state].filter(Boolean).join(', ') +
-              ' → ' +
-              [r.destination, r.destination_state].filter(Boolean).join(', ')
-            }
-          >
-            {routeStatesShort(r.origin_state || null, r.destination_state || null)}
-          </p>
+          <div>
+            <p
+              className="text-gray-900 dark:text-slate-100 text-sm font-semibold tabular-nums tracking-tight"
+              title={
+                [r.origin, r.origin_state].filter(Boolean).join(', ') +
+                ' → ' +
+                [r.destination, r.destination_state].filter(Boolean).join(', ')
+              }
+            >
+              {routeStatesShort(r.origin_state || null, r.destination_state || null)}
+            </p>
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">
+              {r.freight_type || 'Tipo não informado'}
+            </p>
+          </div>
         )
       case 'vendedor':
-        return (
-          <>
-            <p className="font-medium text-gray-900 dark:text-slate-100">{sellerName}</p>
-            {sellerEmail ? <p className="text-xs text-gray-500 dark:text-slate-400">{sellerEmail}</p> : null}
-            {sellerRole ? (
-              <span className="inline-block mt-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400">
-                {sellerRole}
-              </span>
-            ) : null}
-          </>
-        )
+        return <p className="font-medium text-gray-900 dark:text-slate-100">{sellerName}</p>
       case 'status':
         return (
           <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-medium ${statusClass}`}>
@@ -1487,6 +1252,49 @@ export default function PerformancePage() {
         return null
     }
   }
+
+  const perfBlockProps = (block: PerfEditBlockId, title: string, allowed: boolean) => ({
+    title,
+    active: activePerfBlock === block,
+    saving: block === 'finance' ? savingFinancial : block === 'driver' ? savingDriver : block === 'observation' ? savingObservation : savingFreightInfo,
+    canEdit: allowed && (!activePerfBlock || activePerfBlock === block),
+    onEdit: () => setActivePerfBlock(block),
+    onCancel: () => { if (selectedPerfRoute) setSelectedPerfRoute({ ...selectedPerfRoute }); setActivePerfBlock(null) },
+    onSave: () => {
+      if (block === 'finance') void handleSaveFinancialFields()
+      else if (block === 'driver') void handleSaveDriverFields()
+      else if (block === 'observation') void handleSaveObservation()
+      else void handleSavePerfInfoBlock(block)
+    },
+  })
+  const perfInfoInput = (block: PerfEditBlockId, key: keyof typeof editingFreightInfoFields, label: string, options?: { type?: string; masked?: boolean }) => (
+    <label key={key} className="block min-w-0 text-sm font-semibold text-gray-900">
+      <span className="mb-2 block">{label}</span>
+      <input aria-label={label} type={options?.type ?? 'text'} value={options?.masked && activePerfBlock !== block ? '••••••' : editingFreightInfoFields[key]} onChange={(event) => setEditingFreightInfoFields((prev) => ({ ...prev, [key]: event.target.value }))} disabled={activePerfBlock !== block || (block === 'driver' ? savingDriver : savingFreightInfo) || (block === 'driver' && !canManagePerfModal)} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-sm font-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800 disabled:opacity-75" />
+    </label>
+  )
+  const perfDriverInput = (key: keyof typeof editingDriverFields, label: string) => (
+    <label key={key} className="block min-w-0 text-sm font-semibold text-gray-900">
+      <span className="mb-2 block">{label}</span>
+      <input aria-label={label} type="text" value={editingDriverFields[key]} onChange={(event) => setEditingDriverFields((prev) => ({ ...prev, [key]: event.target.value }))} disabled={activePerfBlock !== 'driver' || savingDriver} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-sm font-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800 disabled:opacity-75" />
+    </label>
+  )
+  const perfFinancialInput = (key: keyof typeof editingFields, label: string, masked = false) => (
+    <label key={key} className="block min-w-0 text-sm font-semibold text-gray-900">
+      <span className="mb-2 block">{label}</span>
+      <input aria-label={label} type="text" value={masked && activePerfBlock !== 'finance' ? '••••••' : editingFields[key]} onChange={(event) => setEditingFields((prev) => ({ ...prev, [key]: event.target.value }))} disabled={activePerfBlock !== 'finance' || savingFinancial} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-sm font-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800 disabled:opacity-75" />
+    </label>
+  )
+  const perfFinancePreview = selectedPerfRoute && activePerfBlock === 'finance' ? (() => {
+    const base = parseCurrencyInput(editingFreightInfoFields.freightValue) ?? selectedPerfRoute.nf_value
+    const taxPercent = normalizeTaxesPercent(Number(editingFields.taxesPercent))
+    const insurancePercent = canEditPerfSeguro ? normalizeSeguroPercent(Number(editingFields.seguroPercent)) : getRouteSeguroPercent(selectedPerfRoute)
+    const insurance = calculateSeguroValue(selectedPerfRoute.nf_value, insurancePercent)
+    const taxes = calculateTaxesValue(base, taxPercent)
+    const net = calculateNetFreightValue(base, parseCurrencyInput(editingFields.driverValue), taxPercent, insurance, parseCurrencyInput(editingFields.valePedagioValue), editingFields.valePedagioIncluso === 'true')
+    const sellerRate = selectedPerfRoute.created_by_user_id ? comerciais.find((user) => user.id === selectedPerfRoute.created_by_user_id)?.commission_rate ?? null : null
+    return { insurance, taxes, net, commission: calculateCommissionValue(net, sellerRate) }
+  })() : null
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
@@ -1852,7 +1660,7 @@ export default function PerformancePage() {
                 </tr>
               </thead>
               <tbody>
-                {detailedRows.map(({ route: r, sellerName, sellerEmail, sellerRole, sellerCommissionRate }) => {
+                {detailedRows.map(({ route: r, sellerName, sellerCommissionRate }) => {
                   const statusLabel =
                     r.status === 'delivered'
                       ? 'Entregue'
@@ -1874,7 +1682,7 @@ export default function PerformancePage() {
                   const created = r.created_at
                     ? new Date(r.created_at).toLocaleDateString('pt-BR', DATE_BR_NUMERIC)
                     : '—'
-                  const cellCtx = { r, sellerName, sellerEmail, sellerRole, statusLabel, statusClass, created }
+                  const cellCtx = { r, sellerName, statusLabel, statusClass, created }
                   return (
                     <tr key={r.id} className="border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
                         {listColumns.visibleKeys.map((key) => (
@@ -1910,11 +1718,10 @@ export default function PerformancePage() {
           onClick={() => setSelectedPerfRoute(null)}
         >
           <div
-            className="bg-white text-gray-900 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto dark:bg-white dark:text-gray-900 [&_.text-gray-900]:!text-gray-900 [&_.text-gray-700]:!text-gray-700 [&_.text-gray-600]:!text-gray-700 [&_.text-gray-500]:!text-gray-600 [&_.bg-white]:!bg-white [&_.bg-gray-50]:!bg-gray-50 [&_.border-gray-200]:!border-gray-200"
-            style={{ colorScheme: 'light' }}
+            className="perf-detail-modal bg-white text-gray-900 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto dark:bg-slate-900 dark:text-slate-100"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 dark:bg-white dark:border-gray-200">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 dark:bg-slate-900 dark:border-slate-700">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center">
                   <Truck className="w-6 h-6 text-white" aria-hidden />
@@ -1941,26 +1748,7 @@ export default function PerformancePage() {
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <div className={`w-2 h-2 rounded-full ${perfStatusDisplay(selectedPerfRoute.status).dotColor}`} />
-                    {canManagePerfModal ? (
-                      <select
-                        aria-label="Status do frete"
-                        value={selectedPerfRoute.status}
-                        onChange={(e) => void handleUpdateRouteStatus(e.target.value as RouteStatus)}
-                        disabled={savingRouteStatus}
-                        className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-800 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {PERF_ROUTE_STATUS_OPTIONS.map((status) => (
-                          <option key={status} value={status}>
-                            {perfDetailStatusLabel(status)}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-sm text-gray-600">{perfStatusDisplay(selectedPerfRoute.status).label}</span>
-                    )}
-                    {savingRouteStatus ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" aria-hidden />
-                    ) : null}
+                    <span className="text-sm text-gray-600">{perfStatusDisplay(selectedPerfRoute.status).label}</span>
                     {selectedPerfRoute.distance_km != null && selectedPerfRoute.distance_km > 0 ? (
                       <span className="text-xs text-gray-500">• {formatNumber(selectedPerfRoute.distance_km)} km</span>
                     ) : null}
@@ -1977,357 +1765,112 @@ export default function PerformancePage() {
               </button>
             </div>
             <div className="p-6">
-              <PerfFreightDetailPanel route={selectedPerfRoute} visibleMoney={visibleMoney} />
               {canViewPerfModalDetails ? (
-                <div className="mt-6 space-y-6">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <h3 className="text-sm font-semibold text-gray-900">Observações</h3>
-                      {editingObservation ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingObservation(false)
-                              setEditingObservationValue(selectedPerfRoute.observation ?? '')
-                            }}
-                            className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
-                            disabled={savingObservation}
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleSaveObservation}
-                            className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-60"
-                            disabled={savingObservation}
-                          >
-                            {savingObservation ? 'Salvando...' : 'Salvar'}
-                          </button>
-                        </div>
-                      ) : canManagePerfModal ? (
-                        <button
-                          type="button"
-                          onClick={() => setEditingObservation(true)}
-                          className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
-                        >
-                          Editar
-                        </button>
-                      ) : null}
+                <div className="space-y-6">
+                  <PerfEditBlock {...perfBlockProps('company', 'Empresa', canManagePerfModal)}>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div><div className="flex items-end gap-2">{perfInfoInput('company', 'companyCnpj', 'CNPJ da empresa')}<button type="button" aria-label="Buscar empresa pelo CNPJ" title="Buscar empresa pelo CNPJ" onClick={() => void handleSearchPerfCompany()} disabled={activePerfBlock !== 'company' || searchingPerfCompany} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white disabled:opacity-50">{searchingPerfCompany ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}</button></div>{perfCompanyLookupMessage && <p role="status" className="mt-1 text-xs text-gray-600">{perfCompanyLookupMessage}</p>}</div>
+                      {perfInfoInput('company', 'companyName', 'Nome da empresa')}
                     </div>
-                    <textarea
-                      value={editingObservationValue}
-                      onChange={(e) => setEditingObservationValue(e.target.value)}
-                      disabled={!editingObservation || savingObservation}
-                      rows={4}
-                      placeholder="Observações do frete"
-                      className="mt-4 w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
-                    />
-                  </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      {perfInfoInput('company', 'companyResponsible', 'Nome do responsável')}
+                      {perfInfoInput('company', 'companyPhone', 'Número de telefone')}
+                      {perfInfoInput('company', 'companyEmail', 'E-mail', { type: 'email' })}
+                    </div>
+                  </PerfEditBlock>
+
+                  <PerfEditBlock {...perfBlockProps('payment', 'Status e pagamento', canManagePerfModal)}>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <label className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Status de pagamento</span>
+                      <select value={editingFreightInfoFields.paymentStatus} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, paymentStatus: e.target.value }))} disabled={activePerfBlock !== 'payment'} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100">
+                        <option value="">—</option>{PAYMENT_STATUS_FILTER_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </label>
+                    <label className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Tipo de pagamento</span>
+                      <select value={editingFreightInfoFields.paymentType} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, paymentType: e.target.value }))} disabled={activePerfBlock !== 'payment'} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100">
+                        <option value="">—</option>{editingFreightInfoFields.paymentType && !['Pix', 'Link de Pagamento', 'Boleto'].includes(editingFreightInfoFields.paymentType) && <option value={editingFreightInfoFields.paymentType}>{editingFreightInfoFields.paymentType}</option>}{['Pix', 'Link de Pagamento', 'Boleto'].map((type) => <option key={type} value={type}>{type}</option>)}
+                      </select>
+                    </label>
+                    <label className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Tipo de frete</span>
+                      <select value={editingFreightInfoFields.freightType} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, freightType: e.target.value }))} disabled={activePerfBlock !== 'payment'} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100">
+                        <option value="">—</option><option value="Dedicado">Dedicado</option><option value="Fracionado">Fracionado</option>
+                      </select>
+                    </label>
+                    </div>
+                    <label className="block max-w-xs text-xs font-medium text-gray-700"><span className="mb-1 block">Status do frete</span>
+                      <select value={editingFreightInfoFields.status} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, status: e.target.value as RouteStatus }))} disabled={activePerfBlock !== 'payment'} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100">
+                        {PERF_ROUTE_STATUS_OPTIONS.map((status) => <option key={status} value={status}>{perfDetailStatusLabel(status)}</option>)}
+                      </select>
+                    </label>
+                  </PerfEditBlock>
+
+                  <PerfEditBlock {...perfBlockProps('driver', 'Dados do motorista e datas', canEditOperationalFields)}>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      {perfDriverInput('driverName', 'Nome do Motorista')}
+                      {perfDriverInput('driverPhone', 'Celular do Motorista')}
+                      <label className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Status Motorista</span>
+                        <select value={editingDriverFields.driverPaymentType} onChange={(e) => setEditingDriverFields((prev) => ({ ...prev, driverPaymentType: e.target.value }))} disabled={activePerfBlock !== 'driver'} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100"><option value="">Selecione</option>{['Pendente', '50%', '70%', '100%'].map((status) => <option key={status} value={status}>{status}</option>)}{editingDriverFields.driverPaymentType && !['Pendente', '50%', '70%', '100%'].includes(editingDriverFields.driverPaymentType) && <option value={editingDriverFields.driverPaymentType}>{editingDriverFields.driverPaymentType}</option>}</select>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      {perfInfoInput('driver', 'pickupDate', 'Data de coleta (opcional)', { type: 'date' })}
+                      {perfInfoInput('driver', 'estimatedDelivery', 'Previsão de entrega (opcional)', { type: 'date' })}
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      {perfDriverInput('vehicle', 'Veículo')}
+                      {perfDriverInput('plate', 'Placa')}
+                      <label className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Status de pagamento do motorista</span>
+                        <select value={editingDriverFields.driverPaymentStatus} onChange={(e) => setEditingDriverFields((prev) => ({ ...prev, driverPaymentStatus: e.target.value }))} disabled={activePerfBlock !== 'driver'} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100"><option value="">—</option>{PAYMENT_STATUS_FILTER_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}</select>
+                      </label>
+                    </div>
+                  </PerfEditBlock>
+
+                  <PerfEditBlock {...perfBlockProps('origin', 'Origem / Coleta', canManagePerfModal)}>
+                    <CEPInput value={perfOriginCep} onChange={setPerfOriginCep} disabled={activePerfBlock !== 'origin'} autoSearch={false} label="CEP de Origem (opcional — preenche cidade e endereço automaticamente)" onCEPFound={(data) => setEditingFreightInfoFields((prev) => ({ ...prev, origin: data.localidade || prev.origin, originState: data.uf || prev.originState, originAddress: data.logradouro || prev.originAddress }))} />
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div className="md:col-span-2">{perfInfoInput('origin', 'origin', 'Cidade de Origem')}</div>
+                      {perfInfoInput('origin', 'originState', 'Estado')}
+                    </div>
+                    {perfInfoInput('origin', 'originAddress', 'Endereço de Origem')}
+                  </PerfEditBlock>
+
+                  <PerfEditBlock {...perfBlockProps('destination', 'Destino / Entrega', canManagePerfModal)}>
+                    <CEPInput value={perfDestinationCep} onChange={setPerfDestinationCep} disabled={activePerfBlock !== 'destination'} autoSearch={false} label="CEP de Destino (opcional — preenche cidade e endereço automaticamente)" onCEPFound={(data) => setEditingFreightInfoFields((prev) => ({ ...prev, destination: data.localidade || prev.destination, destinationState: data.uf || prev.destinationState, destinationAddress: data.logradouro || prev.destinationAddress }))} />
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div className="md:col-span-2">{perfInfoInput('destination', 'destination', 'Cidade de Destino')}</div>
+                      {perfInfoInput('destination', 'destinationState', 'Estado')}
+                    </div>
+                    {perfInfoInput('destination', 'destinationAddress', 'Endereço de Destino')}
+                  </PerfEditBlock>
+
+                  <PerfEditBlock {...perfBlockProps('cargo', 'Dados da carga', canManagePerfModal)}>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      {perfInfoInput('cargo', 'weight', 'Peso')}
+                      {perfInfoInput('cargo', 'cubageM3', 'Metros cúbicos (m³)')}
+                      {perfInfoInput('cargo', 'materialType', 'Tipo de material')}
+                      {perfInfoInput('cargo', 'nfValue', 'Valor da nota fiscal', { masked: !visibleMoney.nfTable })}
+                    </div>
+                  </PerfEditBlock>
+
+                  <PerfEditBlock {...perfBlockProps('finance', 'Valores e custos', canEditOperationalFields)}>
+                    <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+                    {canManagePerfModal ? perfInfoInput('finance', 'freightValue', 'Valor do frete', { masked: !visibleMoney.freight }) : <div className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Valor do frete</span><div className="rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm">{moneyOrHidden(selectedPerfRoute.freight_value, visibleMoney.freight)}</div></div>}
+                    {perfFinancialInput('driverValue', 'Valor do motorista', !visibleMoney.driver)}
+                    <div className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Frete líquido</span><div className="rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm">{moneyOrHidden(perfFinancePreview?.net ?? getRouteNetFreightValue(selectedPerfRoute), visibleMoney.netFreight)}</div></div>
+                    <div className="space-y-2">{canEditPerfSeguro ? <label className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Seguro (% sobre NF)</span><select value={editingFields.seguroPercent} onChange={(e) => setEditingFields((prev) => ({ ...prev, seguroPercent: e.target.value }))} disabled={activePerfBlock !== 'finance'} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100"><option value="0">0%</option><option value="0.2">0,2%</option></select></label> : <div className="text-xs text-gray-700">Seguro: {getRouteSeguroPercent(selectedPerfRoute)}% sobre NF</div>}<div className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Valor do seguro</span><div className="rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm">{moneyOrHidden(perfFinancePreview?.insurance ?? getRouteSeguroValue(selectedPerfRoute), visibleMoney.taxes)}</div></div></div>
+                    <div className="space-y-2">{perfFinancialInput('taxesPercent', 'Tributos (%)')}<div className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Valor dos tributos</span><div className="rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm">{moneyOrHidden(perfFinancePreview?.taxes ?? selectedPerfRoute.taxes_value, visibleMoney.taxes)}</div></div></div>
+                    <div className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Comissão</span><div className="rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm">{moneyOrHidden(perfFinancePreview?.commission ?? selectedPerfRoute.commission_value, visibleMoney.commission)}</div></div>
+                    {perfFinancialInput('cteValue', 'Valor do CT-e', !visibleMoney.freight)}
+                    <div className="space-y-2">{perfFinancialInput('valePedagioValue', 'Vale pedágio', !visibleMoney.freight)}<label className="block text-xs font-medium text-gray-700"><span className="sr-only">Vale pedágio incluso</span><select value={editingFields.valePedagioIncluso} onChange={(e) => setEditingFields((prev) => ({ ...prev, valePedagioIncluso: e.target.value }))} disabled={activePerfBlock !== 'finance'} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100"><option value="true">Incluso</option><option value="false">Não incluso</option></select></label></div>
+                    </div>
+                  </PerfEditBlock>
+
+                  <PerfEditBlock {...perfBlockProps('observation', 'Observação', canManagePerfModal)}>
+                    <textarea aria-label="Observação" value={editingObservationValue} onChange={(e) => setEditingObservationValue(e.target.value)} disabled={activePerfBlock !== 'observation' || savingObservation} rows={3} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100 sm:col-span-2" />
+                  </PerfEditBlock>
 
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <h3 className="text-sm font-semibold text-gray-900">Informações do frete</h3>
-                      {editingFreightInfo ? (
-                        <div className="flex items-center gap-2">
-                          <button type="button" onClick={() => {
-                            setEditingFreightInfo(false)
-                            setEditingFreightInfoFields({
-                              companyName: selectedPerfRoute.company_name ?? '',
-                              companyResponsible: selectedPerfRoute.company_responsible ?? '',
-                              companyPhone: selectedPerfRoute.company_phone ?? '',
-                              companyEmail: selectedPerfRoute.company_email ?? '',
-                              origin: selectedPerfRoute.origin ?? '',
-                              originState: selectedPerfRoute.origin_state ?? '',
-                              originAddress: selectedPerfRoute.origin_address ?? '',
-                              destination: selectedPerfRoute.destination ?? '',
-                              destinationState: selectedPerfRoute.destination_state ?? '',
-                              destinationAddress: selectedPerfRoute.destination_address ?? '',
-                              weight: selectedPerfRoute.weight ?? '',
-                              pickupDate: selectedPerfRoute.pickup_date ?? '',
-                              estimatedDelivery: selectedPerfRoute.estimated_delivery ?? '',
-                              paymentStatus: selectedPerfRoute.payment_status ?? '',
-                              paymentType: selectedPerfRoute.payment_type ?? '',
-                              nfValue: selectedPerfRoute.nf_value != null ? String(selectedPerfRoute.nf_value).replace('.', ',') : '',
-                              freightValue: selectedPerfRoute.freight_value != null ? String(selectedPerfRoute.freight_value).replace('.', ',') : '',
-                            })
-                          }} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100" disabled={savingFreightInfo}>Cancelar</button>
-                          <button type="button" onClick={handleSaveFreightInfoFields} className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-60" disabled={savingFreightInfo}>{savingFreightInfo ? 'Salvando...' : 'Salvar'}</button>
-                        </div>
-                      ) : canManagePerfModal ? (
-                        <button type="button" onClick={() => setEditingFreightInfo(true)} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100">Editar</button>
-                      ) : null}
-                    </div>
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      <div><label className="block text-xs text-gray-600 mb-1">Nome da empresa</label><input type="text" value={editingFreightInfoFields.companyName} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, companyName: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Responsável</label><input type="text" value={editingFreightInfoFields.companyResponsible} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, companyResponsible: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Telefone / WhatsApp</label><input type="text" value={editingFreightInfoFields.companyPhone} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, companyPhone: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">E-mail</label><input type="email" value={editingFreightInfoFields.companyEmail} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, companyEmail: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Origem</label><input type="text" value={editingFreightInfoFields.origin} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, origin: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">UF origem</label><input type="text" value={editingFreightInfoFields.originState} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, originState: e.target.value.toUpperCase().slice(0, 2) }))} disabled={!editingFreightInfo || savingFreightInfo} maxLength={2} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Endereço origem</label><input type="text" value={editingFreightInfoFields.originAddress} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, originAddress: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Destino</label><input type="text" value={editingFreightInfoFields.destination} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, destination: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">UF destino</label><input type="text" value={editingFreightInfoFields.destinationState} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, destinationState: e.target.value.toUpperCase().slice(0, 2) }))} disabled={!editingFreightInfo || savingFreightInfo} maxLength={2} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Endereço destino</label><input type="text" value={editingFreightInfoFields.destinationAddress} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, destinationAddress: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Peso</label><input type="text" value={editingFreightInfoFields.weight} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, weight: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Coleta</label><input type="date" value={editingFreightInfoFields.pickupDate} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, pickupDate: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Previsão entrega</label><input type="date" value={editingFreightInfoFields.estimatedDelivery} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, estimatedDelivery: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Status pagamento cliente</label><select value={editingFreightInfoFields.paymentStatus} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, paymentStatus: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"><option value="">-</option>{PAYMENT_STATUS_FILTER_OPTIONS.map((status) => (<option key={status} value={status}>{status}</option>))}</select></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Tipo pagamento cliente</label><input type="text" value={editingFreightInfoFields.paymentType} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, paymentType: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">NF</label><input type="text" value={editingFreightInfoFields.nfValue} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, nfValue: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} placeholder="Ex.: 1234,56" className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                      <div><label className="block text-xs text-gray-600 mb-1">Valor frete</label><input type="text" value={editingFreightInfoFields.freightValue} onChange={(e) => setEditingFreightInfoFields((prev) => ({ ...prev, freightValue: e.target.value }))} disabled={!editingFreightInfo || savingFreightInfo} placeholder="Ex.: 1234,56" className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500" /></div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <h3 className="text-sm font-semibold text-gray-900">Campos financeiros</h3>
-                      {editingFinancial ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingFinancial(false)
-                              setEditingFields({
-                                cteValue:
-                                  selectedPerfRoute.cte_value != null
-                                    ? String(selectedPerfRoute.cte_value).replace('.', ',')
-                                    : '',
-                                valePedagioValue:
-                                  selectedPerfRoute.vale_pedagio != null
-                                    ? String(selectedPerfRoute.vale_pedagio).replace('.', ',')
-                                    : '',
-                                valePedagioIncluso: isValePedagioIncluso(selectedPerfRoute.vale_pedagio_incluso)
-                                  ? 'true'
-                                  : 'false',
-                                driverValue:
-                                  selectedPerfRoute.driver_value != null
-                                    ? String(selectedPerfRoute.driver_value).replace('.', ',')
-                                    : '',
-                                taxesPercent: String(getRouteTaxesPercent(selectedPerfRoute)),
-                                seguroPercent: String(getRouteSeguroPercent(selectedPerfRoute)),
-                              })
-                            }}
-                            className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
-                            disabled={savingFinancial}
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleSaveFinancialFields}
-                            className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-60"
-                            disabled={savingFinancial}
-                          >
-                            {savingFinancial ? 'Salvando...' : 'Salvar'}
-                          </button>
-                        </div>
-                      ) : canEditOperationalFields ? (
-                        <button
-                          type="button"
-                          onClick={() => setEditingFinancial(true)}
-                          className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
-                        >
-                          Editar
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Valor de CTE</label>
-                        <input
-                          type="text"
-                          value={editingFields.cteValue}
-                          onChange={(e) => setEditingFields((prev) => ({ ...prev, cteValue: e.target.value }))}
-                          disabled={!editingFinancial || savingFinancial}
-                          placeholder="Ex.: 1234,56"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Vale pedágio</label>
-                        <input
-                          type="text"
-                          value={editingFields.valePedagioValue}
-                          onChange={(e) => setEditingFields((prev) => ({ ...prev, valePedagioValue: e.target.value }))}
-                          disabled={!editingFinancial || savingFinancial}
-                          placeholder="Ex.: 150,00"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        />
-                        <select
-                          value={editingFields.valePedagioIncluso}
-                          onChange={(e) => setEditingFields((prev) => ({ ...prev, valePedagioIncluso: e.target.value }))}
-                          disabled={!editingFinancial || savingFinancial}
-                          aria-label="Vale pedágio incluso"
-                          className="mt-2 w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm disabled:bg-gray-100 disabled:text-gray-500"
-                        >
-                          <option value="true">❌ Incluso</option>
-                          <option value="false">✅ Não incluso</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Valor do motorista</label>
-                        <input
-                          type="text"
-                          value={editingFields.driverValue}
-                          onChange={(e) => setEditingFields((prev) => ({ ...prev, driverValue: e.target.value }))}
-                          disabled={!editingFinancial || savingFinancial}
-                          placeholder="Ex.: 980,50"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Tributos (%)</label>
-                        <select
-                          value={editingFields.taxesPercent}
-                          onChange={(e) => setEditingFields((prev) => ({ ...prev, taxesPercent: e.target.value }))}
-                          disabled={!editingFinancial || savingFinancial}
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        >
-                          {TAXES_PERCENT_CHOICES.map((pct) => (
-                            <option key={pct} value={String(pct)}>
-                              {pct}%
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">
-                          Seguro (%)
-                        </label>
-                        <select
-                          value={editingFields.seguroPercent}
-                          onChange={(e) => setEditingFields((prev) => ({ ...prev, seguroPercent: e.target.value }))}
-                          disabled={!editingFinancial || savingFinancial || !canEditPerfSeguro}
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        >
-                          {SEGURO_PERCENT_CHOICES.map((pct) => (
-                            <option key={pct} value={String(pct)}>
-                              {pct}%
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <h3 className="text-sm font-semibold text-gray-900">Dados do motorista</h3>
-                      {editingDriver ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingDriver(false)
-                              setEditingDriverFields({
-                                driverName: selectedPerfRoute.driver_name ?? '',
-                                driverPhone: selectedPerfRoute.driver_phone ?? '',
-                                driverPaymentStatus: selectedPerfRoute.driver_payment_status ?? '',
-                                driverPaymentType: selectedPerfRoute.driver_payment_type ?? '',
-                                vehicle: selectedPerfRoute.vehicle ?? '',
-                                plate: selectedPerfRoute.plate ?? '',
-                              })
-                            }}
-                            className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
-                            disabled={savingDriver}
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleSaveDriverFields}
-                            className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-60"
-                            disabled={savingDriver}
-                          >
-                            {savingDriver ? 'Salvando...' : 'Salvar'}
-                          </button>
-                        </div>
-                      ) : canEditOperationalFields ? (
-                        <button
-                          type="button"
-                          onClick={() => setEditingDriver(true)}
-                          className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100"
-                        >
-                          Editar
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Nome do motorista</label>
-                        <input
-                          type="text"
-                          value={editingDriverFields.driverName}
-                          onChange={(e) => setEditingDriverFields((prev) => ({ ...prev, driverName: e.target.value }))}
-                          disabled={!editingDriver || savingDriver}
-                          placeholder="Nome completo"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Celular do motorista</label>
-                        <input
-                          type="text"
-                          value={editingDriverFields.driverPhone}
-                          onChange={(e) => setEditingDriverFields((prev) => ({ ...prev, driverPhone: e.target.value }))}
-                          disabled={!editingDriver || savingDriver}
-                          placeholder="(11) 99999-9999"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Status pagamento motorista</label>
-                        <select
-                          value={editingDriverFields.driverPaymentStatus}
-                          onChange={(e) => setEditingDriverFields((prev) => ({ ...prev, driverPaymentStatus: e.target.value }))}
-                          disabled={!editingDriver || savingDriver}
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        >
-                          <option value="">—</option>
-                          {PAYMENT_STATUS_FILTER_OPTIONS.map((status) => (
-                            <option key={status} value={status}>{status}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Tipo pagamento motorista</label>
-                        <input
-                          type="text"
-                          value={editingDriverFields.driverPaymentType}
-                          onChange={(e) => setEditingDriverFields((prev) => ({ ...prev, driverPaymentType: e.target.value }))}
-                          disabled={!editingDriver || savingDriver}
-                          placeholder="Ex.: PIX, Transferência"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Veículo</label>
-                        <input
-                          type="text"
-                          value={editingDriverFields.vehicle}
-                          onChange={(e) => setEditingDriverFields((prev) => ({ ...prev, vehicle: e.target.value }))}
-                          disabled={!editingDriver || savingDriver}
-                          placeholder="Ex.: Carreta"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Placa</label>
-                        <input
-                          type="text"
-                          value={editingDriverFields.plate}
-                          onChange={(e) => setEditingDriverFields((prev) => ({ ...prev, plate: e.target.value }))}
-                          disabled={!editingDriver || savingDriver}
-                          placeholder="Ex.: ABC-1234"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
                       <p className="text-xs text-gray-700 font-semibold uppercase tracking-wide">Anexos do frete</p>
                       <span className="text-[11px] text-gray-500">
                         {documents.freteDocs.length} {documents.freteDocs.length === 1 ? 'arquivo' : 'arquivos'}
