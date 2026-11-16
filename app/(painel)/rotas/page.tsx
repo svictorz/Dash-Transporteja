@@ -1598,9 +1598,9 @@ export default function RotasPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden"
           >
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between shrink-0 bg-white z-10">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center">
                   <Truck className="w-6 h-6 text-white" />
@@ -1621,23 +1621,23 @@ export default function RotasPage() {
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
+            <div className="px-6 py-0 flex-1 overflow-y-auto space-y-0">
               {/* Informações da Empresa */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Building2 className="w-5 h-5" />
+              <div className="py-5">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Building2 className="w-4 h-4" />
                   Empresa
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Nome da Empresa</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.company_name || selectedRoute.company_name || 'N/A'}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Responsável</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.responsible || selectedRoute.company_responsible || 'N/A'}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
                       <Phone className="w-3 h-3" />
                       WhatsApp
@@ -1651,7 +1651,7 @@ export default function RotasPage() {
                           href={href}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-sm font-medium text-green-700 hover:text-green-800 underline-offset-2 hover:underline"
+                          className="text-sm font-medium text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 underline-offset-2 hover:underline"
                         >
                           {raw}
                         </a>
@@ -1660,70 +1660,63 @@ export default function RotasPage() {
                       )
                     })()}
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
                       <Mail className="w-3 h-3" />
                       E-mail
                     </p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.email || selectedRoute.company_email || 'N/A'}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Status de Pagamento</p>
                     <p className="text-sm font-medium text-gray-900">
                       {selectedRoute.payment_status || '—'}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Tipo de Pagamento</p>
                     <p className="text-sm font-medium text-gray-900">
                       {selectedRoute.payment_type || '—'}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700 md:col-span-2">
                     <p className="text-xs text-gray-500 mb-1">Tipo de frete</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.freight_type || '—'}</p>
                   </div>
                 </div>
               </div>
 
+              <div className="border-t border-gray-200" />
+
               {/* Informações da Rota */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Route className="w-5 h-5" />
+              <div className="py-5">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Route className="w-4 h-4" />
                   Rota
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Origem - Lado Esquerdo */}
-                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                  {/* Origem */}
+                  <div className="bg-blue-50 dark:bg-blue-900/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
                     <div className="flex items-start gap-3">
-                      <MapPin className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1">
-                        <p className="text-xs text-blue-600 font-semibold mb-2 uppercase tracking-wide">De onde foi coletado</p>
-                        <p className="text-sm font-bold text-gray-900 !text-slate-900 mb-1">
-                          {selectedRoute.origin}, {selectedRoute.origin_state}
-                        </p>
+                      <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs text-blue-600 dark:text-blue-300 font-semibold mb-1.5 uppercase tracking-wide">De onde foi coletado</p>
+                        <p className="text-sm font-bold text-gray-900 dark:text-slate-100">{selectedRoute.origin}, {selectedRoute.origin_state}</p>
                         {selectedRoute.origin_address && (
-                          <p className="text-xs text-gray-600 !text-slate-700 mt-1">
-                            {selectedRoute.origin_address}
-                          </p>
+                          <p className="text-xs text-gray-600 dark:text-slate-300 mt-1">{selectedRoute.origin_address}</p>
                         )}
                       </div>
                     </div>
                   </div>
-
-                  {/* Destino - Lado Direito */}
-                  <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                  {/* Destino */}
+                  <div className="bg-green-50 dark:bg-green-900/30 rounded-xl p-4 border border-green-200 dark:border-green-800">
                     <div className="flex items-start gap-3">
-                      <MapPin className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1">
-                        <p className="text-xs text-green-600 font-semibold mb-2 uppercase tracking-wide">Lugar de entrega</p>
-                        <p className="text-sm font-bold text-gray-900 !text-slate-900 mb-1">
-                          {selectedRoute.destination}, {selectedRoute.destination_state}
-                        </p>
+                      <MapPin className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs text-green-600 dark:text-green-300 font-semibold mb-1.5 uppercase tracking-wide">Lugar de entrega</p>
+                        <p className="text-sm font-bold text-gray-900 dark:text-slate-100">{selectedRoute.destination}, {selectedRoute.destination_state}</p>
                         {selectedRoute.destination_address && (
-                          <p className="text-xs text-gray-600 !text-slate-700 mt-1">
-                            {selectedRoute.destination_address}
-                          </p>
+                          <p className="text-xs text-gray-600 dark:text-slate-300 mt-1">{selectedRoute.destination_address}</p>
                         )}
                       </div>
                     </div>
@@ -1731,47 +1724,49 @@ export default function RotasPage() {
                 </div>
               </div>
 
+              <div className="border-t border-gray-200" />
+
               {/* Informações do Veículo */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Truck className="w-5 h-5" />
+              <div className="py-5">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Truck className="w-4 h-4" />
                   Veículo
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Modelo</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.vehicle}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Placa</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.plate}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Peso</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.weight}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Metros cúbicos</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.cubage_m3 == null ? '—' : `${selectedRoute.cubage_m3.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} m³`}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Tipo de material</p>
                     <p className="text-sm font-medium text-gray-900 break-words">{selectedRoute.material_type || '—'}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Nome do Motorista</p>
                     <p className="text-sm font-medium text-gray-900">
                       {selectedRoute.driver_name || selectedRoute.driver?.name || '—'}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Celular do Motorista</p>
                     {getWhatsAppWebUrl(selectedRoute.driver_phone || selectedRoute.driver?.phone) ? (
                       <a
                         href={getWhatsAppWebUrl(selectedRoute.driver_phone || selectedRoute.driver?.phone) || undefined}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sm font-medium text-green-700 hover:text-green-800"
+                        className="text-sm font-medium text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300"
                       >
                         {selectedRoute.driver_phone || selectedRoute.driver?.phone}
                       </a>
@@ -1779,7 +1774,7 @@ export default function RotasPage() {
                       <p className="text-sm font-medium text-gray-900">—</p>
                     )}
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Status Motorista</p>
                     <p className="text-sm font-medium text-gray-900">
                       {selectedRoute.driver_payment_type || '—'}
@@ -1788,36 +1783,37 @@ export default function RotasPage() {
                 </div>
               </div>
 
+              <div className="border-t border-gray-200" />
               {/* Informações de Datas */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Calendar className="w-5 h-5" />
+              <div className="py-5">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
                   Datas
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Data de Coleta</p>
                     <p className="text-sm font-medium text-gray-900">{formatDateDdMmYyyy(selectedRoute.pickup_date)}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Previsão de Entrega</p>
                     <p className="text-sm font-medium text-gray-900">{formatDateDdMmYyyy(selectedRoute.estimated_delivery)}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                  <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Valor do Frete</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(selectedRoute.freight_value ?? selectedRoute.nf_value)}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Valor de CTE</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(selectedRoute.cte_value)}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Vale pedagio</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(selectedRoute.vale_pedagio)}
@@ -1826,13 +1822,13 @@ export default function RotasPage() {
                       {isValePedagioIncluso(selectedRoute.vale_pedagio_incluso) ? 'Incluso' : 'Não incluso'}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Valor do Motorista</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(getRouteDriverTotalValue(selectedRoute))}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Tribultos*</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(getRouteTaxesValue(selectedRoute))}
@@ -1841,7 +1837,7 @@ export default function RotasPage() {
                       Alíquota: {getRouteTaxesPercent(selectedRoute)}% sobre o frete
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Seguro</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(getRouteSeguroValue(selectedRoute))}
@@ -1850,25 +1846,25 @@ export default function RotasPage() {
                       Alíquota: {getRouteSeguroPercent(selectedRoute)}% sobre a NF
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Frete Líquido</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(getRouteNetFreightValue(selectedRoute))}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Comissão</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(getRouteCommissionValue(selectedRoute, commissionRate))}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Valor da NF</p>
                     <p className="text-sm font-medium text-gray-900">
                       {formatCurrencyBR(selectedRoute.nf_value)}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4 md:col-span-3">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700 md:col-span-3">
                     <p className="text-xs text-gray-500 mb-1">Observação</p>
                     <p className="text-sm font-medium text-gray-900 whitespace-pre-wrap">
                       {selectedRoute.observation || '—'}
@@ -1877,18 +1873,20 @@ export default function RotasPage() {
                 </div>
               </div>
 
+              <div className="border-t border-gray-200" />
+
               {/* Documentação do Frete */}
-              <div className="space-y-6">
+              <div className="py-5">
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                      <Truck className="w-5 h-5" />
-                      Informações do Frete
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                      <Truck className="w-4 h-4" />
+                      Documentos
                     </h3>
                     <span className="text-xs text-gray-500">Frete #{selectedRoute.freight_id}</span>
                   </div>
 
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
                       <p className="text-xs text-gray-700 font-semibold uppercase tracking-wide">
                         {canManageFreightDocuments ? 'Adicione fotos / documentos' : 'Documentos do frete'}
@@ -1954,6 +1952,33 @@ export default function RotasPage() {
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Rodapé de ações */}
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between gap-3 shrink-0 bg-gray-100">
+              <p className="text-xs text-gray-500">
+                Frete #{selectedRoute.freight_id} · {getStatusDisplay(selectedRoute.status).label}
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="px-5 py-2.5 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors font-medium"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCloseModal()
+                    handleOpenEdit(selectedRoute)
+                  }}
+                  className="px-5 py-2.5 bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 rounded-lg hover:bg-slate-900 dark:hover:bg-slate-300 transition-colors font-medium flex items-center gap-2"
+                >
+                  <Edit className="w-4 h-4" />
+                  Editar rota
+                </button>
               </div>
             </div>
           </motion.div>

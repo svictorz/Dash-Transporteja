@@ -9,6 +9,12 @@
 # next.js
 /.next/
 /out/
+.next-preview-*/
+.next-dev-*.log
+.next-preview-*.log
+
+# git bundles (deploy artifacts)
+*.bundle
 
 # production
 /build
