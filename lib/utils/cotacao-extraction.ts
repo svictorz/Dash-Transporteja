@@ -22,6 +22,7 @@ export function extractCotacao(textoOriginal: string): CotacaoDraft {
     origem: place(capture(textoOriginal, 'origem')),
     destino: place(capture(textoOriginal, 'destino')),
     pesoKg: moneyOrWeight(capture(textoOriginal, 'peso')),
+    marginPercent: 25,
     valorNota: moneyOrWeight(capture(textoOriginal, 'valor\\s+(?:de\\s+)?nota|valor\\s+nf')),
     cubagemM3: moneyOrWeight(capture(textoOriginal, 'cubagem')),
     linearMeters: moneyOrWeight(capture(textoOriginal, 'metros\\s+lineares|comprimento\\s+linear')),

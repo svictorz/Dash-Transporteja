@@ -15,6 +15,7 @@ import { searchCNPJ, type CNPJFormData } from '@/lib/services/cnpj'
 import { validateCNPJ } from '@/lib/utils/validation'
 import { applyCnpjLocation, type CotacaoCnpjParty } from '@/lib/utils/cotacao-cnpj'
 import { ANTT_REFERENCE_FLEET } from '@/lib/utils/cotacao-antt'
+import { similarFreightsQuery, type SimilarFreight } from '@/lib/utils/cotacao-similar-freights'
 import './cotacao-print.css'
 import './cotacao-map.css'
 
@@ -57,6 +58,9 @@ export default function CotacaoPage() {
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | null>(null)
   const [routeDuration, setRouteDuration] = useState<number | null>(null)
   const [quotes, setQuotes] = useState<QuoteRow[]>([])
+  const [similarFreights, setSimilarFreights] = useState<SimilarFreight[]>([])
+  const [similarFreightsLoading, setSimilarFreightsLoading] = useState(false)
+  const [similarFreightsError, setSimilarFreightsError] = useState('')
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [analysisError, setAnalysisError] = useState('')
   const [quoteSettingsReady, setQuoteSettingsReady] = useState(false)
@@ -84,6 +88,38 @@ export default function CotacaoPage() {
     else setQuotes(data as QuoteRow[])
   }, [user?.id])
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    if (!user?.id || !analysis) {
+      setSimilarFreights([])
+      setSimilarFreightsError('')
+      setSimilarFreightsLoading(false)
+      return
+    }
+    const params = similarFreightsQuery(analysis.snapshot.draft, Number(analysis.snapshot.distance_km))
+    if (!params) {
+      setSimilarFreights([])
+      setSimilarFreightsError('Informe cidade/UF na origem e no destino para comparar fretes.')
+      setSimilarFreightsLoading(false)
+      return
+    }
+    let active = true
+    setSimilarFreights([])
+    setSimilarFreightsError('')
+    setSimilarFreightsLoading(true)
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('erp_similar_freights', params)
+        if (!active) return
+        if (error) setSimilarFreightsError('Não foi possível consultar os fretes semelhantes. Tente novamente mais tarde.')
+        else setSimilarFreights((data ?? []) as SimilarFreight[])
+      } catch {
+        if (active) setSimilarFreightsError('Não foi possível consultar os fretes semelhantes. Tente novamente mais tarde.')
+      } finally {
+        if (active) setSimilarFreightsLoading(false)
+      }
+    })()
+    return () => { active = false }
+  }, [analysis, user?.id])
   useEffect(() => {
     if (!user?.id) return
     let active = true
@@ -321,7 +357,6 @@ export default function CotacaoPage() {
     try { return buildCotacaoProposal(analysis, printKind) } catch { return null }
   })()
   const vehicles = analysis?.snapshot?.rules?.vehicles ?? fleetVehicles
-  const similar = quotes.filter(q => q.id !== quoteId && q.draft.origem?.toLowerCase() === draft.origem.toLowerCase() && q.draft.destino?.toLowerCase() === draft.destino.toLowerCase()).slice(0, 5)
   const printProposal = (kind: ProposalKind) => {
     try {
       if (!analysis) throw new Error('Análise da cotação ausente.')
@@ -457,7 +492,9 @@ export default function CotacaoPage() {
       anttEffectiveFrom={analysis?.snapshot?.rules?.anttEffectiveFrom}
       templates={templates}
       titles={titles}
-      similar={similar}
+      similarFreights={similarFreights}
+      similarFreightsLoading={similarFreightsLoading}
+      similarFreightsError={similarFreightsError}
       onRawChange={setRaw}
       onExtract={extract}
       onFieldChange={editField}
@@ -469,7 +506,6 @@ export default function CotacaoPage() {
       onOpenSettings={() => setSettingsOpen(true)}
       onPrint={printProposal}
       onDownloadJson={() => download(`cotacao-${quoteId}.json`, JSON.stringify({ draft: printDraft, analysis }, null, 2), 'application/json')}
-      onOpenQuote={id => { const quote = quotes.find(item => item.id === id); if (quote) void openQuote(quote) }}
     />}
     {tab === 'historico' && <section className={`${card} print:hidden`}><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Histórico de cotações</h2><button className="text-sm text-blue-600" onClick={() => download('cotacoes-jcn.csv', ['id;data;origem;destino;cliente;distancia_km', ...quotes.map(q => [q.id,q.created_at,q.draft.origem,q.draft.destino,q.draft.cliente,q.distance_km ?? ''].map(csvCell).join(';'))].join('\r\n'), 'text/csv;charset=utf-8')}>Exportar CSV</button></div><div className="space-y-2">{quotes.map(q => <button key={q.id} onClick={() => void openQuote(q)} className="flex w-full flex-wrap justify-between gap-2 rounded-lg border p-3 text-left text-sm dark:border-slate-700"><span>{q.draft.origem} → {q.draft.destino}</span><span>{q.draft.cliente || 'Cliente não informado'} · {new Date(q.created_at).toLocaleDateString('pt-BR')}</span></button>)}{quotes.length === 0 && <p className="text-sm text-slate-500">Nenhuma cotação salva.</p>}</div></section>}
     {settingsOpen && isAdmin && <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/70 p-3 print:hidden sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}>

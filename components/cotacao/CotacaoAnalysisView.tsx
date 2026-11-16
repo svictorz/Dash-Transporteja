@@ -6,11 +6,12 @@ import type { CotacaoCnpjParty } from '@/lib/utils/cotacao-cnpj'
 import { cotacaoAd, cotacaoMessage, cotacaoWhatsAppLink, type CotacaoMessageStyle, type CotacaoMessageTemplates, type CotacaoMessageTitles } from '@/lib/utils/cotacao-messages'
 import { ANTT_TABLE_A_SOURCE, ANTT_TABLE_A_VALID_FROM, anttMinimumForVehicle, anttReferenceRows, type AnttVehicle } from '@/lib/utils/cotacao-antt'
 import RouteMap from './RouteMap'
+import SimilarFreights from './SimilarFreights'
+import type { SimilarFreight } from '@/lib/utils/cotacao-similar-freights'
 
 type Vehicle = AnttVehicle & { payloadKg: number; pricePerKm?: number }
 type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; status?: string }
 type Analysis = { created_at: string; snapshot?: { draft?: CotacaoDraft; distance_km?: number; rules?: Record<string, unknown> }; result: { fracionado: Scenario; dedicado: Scenario } }
-type SimilarQuote = { id: string; draft: CotacaoDraft; created_at: string }
 
 type Props = {
   raw: string
@@ -33,7 +34,9 @@ type Props = {
   anttEffectiveFrom?: string
   templates: CotacaoMessageTemplates
   titles: CotacaoMessageTitles
-  similar: SimilarQuote[]
+  similarFreights: SimilarFreight[]
+  similarFreightsLoading: boolean
+  similarFreightsError: string
   onRawChange: (value: string) => void
   onExtract: () => void
   onFieldChange: (key: keyof CotacaoDraft, value: string | number | null) => void
@@ -45,7 +48,6 @@ type Props = {
   onOpenSettings: () => void
   onPrint: (kind: 'fracionado' | 'dedicado') => void
   onDownloadJson: () => void
-  onOpenQuote: (id: string) => void
 }
 
 const brl = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -56,8 +58,8 @@ const subheading = 'mb-3 border-b border-gray-100 pb-3 text-sm font-semibold tex
 
 export default function CotacaoAnalysisView({
   raw, draft, distance, source, routeCoordinates, routeDuration,
-  busy, viewingAnotherUser, cnpjLoading, cnpjErrors, analysis, analysisError, quoteSettingsReady, fleetSettingsReady, isAdmin, vehicles, anttSourceUrl, anttEffectiveFrom, templates, titles, similar, onRawChange, onExtract, onFieldChange, onLookupCnpjs, onDistanceChange, onRoute,
-  onAnalyze, onVehicleChange, onOpenSettings, onPrint, onDownloadJson, onOpenQuote,
+  busy, viewingAnotherUser, cnpjLoading, cnpjErrors, analysis, analysisError, vehicles, anttSourceUrl, anttEffectiveFrom, templates, titles, similarFreights, similarFreightsLoading, similarFreightsError, onRawChange, onExtract, onFieldChange, onLookupCnpjs, onDistanceChange, onRoute,
+  onAnalyze, onVehicleChange, onPrint, onDownloadJson,
 }: Props) {
   const googleKm = Number(draft.googleKm)
   const routeKm = Number(distance)
@@ -69,14 +71,6 @@ export default function CotacaoAnalysisView({
   const clientMessage = cotacaoMessage(draft, selectedStyle, prices, templates)
   const adText = cotacaoAd(draft, templates)
   const whatsappLink = cotacaoWhatsAppLink(draft.telefone, clientMessage)
-  const hasRoute = Number.isFinite(routeKm) && routeKm > 0 && Boolean(draft.origem && draft.destino)
-  const marginReady = draft.marginPercent != null && Number.isFinite(draft.marginPercent) && draft.marginPercent >= 0 && draft.marginPercent <= 100
-  const settingsReady = quoteSettingsReady && fleetSettingsReady
-  const pendingReason = !marginReady
-    ? 'Preencha a margem de lucro e clique em Analisar Proposta.'
-    : !settingsReady
-      ? `${isAdmin ? 'Salve' : 'Peça ao administrador para salvar'} ${!quoteSettingsReady ? 'os percentuais' : ''}${!quoteSettingsReady && !fleetSettingsReady ? ' e ' : ''}${!fleetSettingsReady ? 'a frota' : ''} na engrenagem.`
-      : 'Clique em Analisar Proposta para calcular os valores.'
   const anttRows = anttReferenceRows(vehicles, routeKm, draft.pesoKg, draft.cubagemM3)
   const analysisVehicles = Array.isArray(analysis?.snapshot?.rules?.vehicles) ? analysis.snapshot.rules.vehicles as Vehicle[] : []
   const analyzedWeight = Number(analysis?.snapshot?.draft?.pesoKg)
@@ -107,8 +101,10 @@ export default function CotacaoAnalysisView({
         <label className={label}>Origem<input className={input} value={draft.origem} onChange={event => onFieldChange('origem', event.target.value)} placeholder="Cidade/UF" /></label>
         <label className={label}>Destino<input className={input} value={draft.destino} onChange={event => onFieldChange('destino', event.target.value)} placeholder="Cidade/UF" /></label>
         <label className={label}>Peso (kg)<input className={input} type="number" min="0" step="any" value={draft.pesoKg ?? ''} onChange={event => onFieldChange('pesoKg', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 3585" /></label>
+        <label className={label}>Cubagem (m³)<input className={input} type="number" min="0" step="any" value={draft.cubagemM3 ?? ''} onChange={event => onFieldChange('cubagemM3', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,81" /></label>
+        <label className={label}>Quantidade<input className={input} type="number" min="0" value={draft.quantidade ?? ''} onChange={event => onFieldChange('quantidade', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 172" /></label>
+        <label className={label}>Metros lineares (opcional)<input className={input} type="number" min="0" step="any" value={draft.linearMeters ?? ''} onChange={event => onFieldChange('linearMeters', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,4" /></label>
         <label className={label}>Valor NF (R$)<input className={input} type="number" min="0" step="any" value={draft.valorNota ?? ''} onChange={event => onFieldChange('valorNota', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 14916,47" /></label>
-        <label className={label}>WhatsApp<input className={input} value={draft.telefone} onChange={event => onFieldChange('telefone', event.target.value)} placeholder="Ex.: (11) 9 6451-3724" /></label>
       </div>
 
       <details className="mt-5 border-t border-[#e5ebf2] pt-4 dark:border-slate-700">
@@ -149,12 +145,9 @@ export default function CotacaoAnalysisView({
       <details className="mt-5 border-t border-[#e5ebf2] pt-4 dark:border-slate-700">
         <summary className="cursor-pointer text-sm font-semibold">Dados adicionais do pedido</summary>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className={label}>Quantidade<input className={input} type="number" min="0" value={draft.quantidade ?? ''} onChange={event => onFieldChange('quantidade', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 172" /></label>
-          <label className={label}>Cubagem (m³)<input className={input} type="number" min="0" step="any" value={draft.cubagemM3 ?? ''} onChange={event => onFieldChange('cubagemM3', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,81" /></label>
-          <label className={label}>Metros lineares (opcional)<input className={input} type="number" min="0" step="any" value={draft.linearMeters ?? ''} onChange={event => onFieldChange('linearMeters', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,4" /></label>
-          <label className={label}>Peso cúbico (kg)<input className={input} type="number" min="0" step="any" value={draft.pesoCubicoKg ?? ''} onChange={event => onFieldChange('pesoCubicoKg', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 938,25" /></label>
           <label className={label}>Cliente<input className={input} value={draft.cliente} onChange={event => onFieldChange('cliente', event.target.value)} placeholder="Ex.: Nicole" /></label>
           <label className={label}>E-mail<input className={input} type="email" value={draft.email} onChange={event => onFieldChange('email', event.target.value)} placeholder="Ex.: nome@empresa.com" /></label>
+          <label className={label}>WhatsApp<input className={input} value={draft.telefone} onChange={event => onFieldChange('telefone', event.target.value)} placeholder="Ex.: (11) 9 6451-3724" /></label>
           <label className={`${label} sm:col-span-2`}>Observações<textarea className={`${input} min-h-20`} value={draft.observacoes} onChange={event => onFieldChange('observacoes', event.target.value)} placeholder="Ex.: tipo da carga, medidas e instruções de coleta" /></label>
         </div>
       </details>
@@ -242,29 +235,18 @@ export default function CotacaoAnalysisView({
               </article>
             })}
           </div>
-          {similar.length > 0 && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700"><h3 className="text-sm font-bold">Rotas semelhantes</h3>{similar.map(quote => <button key={quote.id} type="button" onClick={() => onOpenQuote(quote.id)} className="mt-2 block text-left text-xs text-blue-600">{quote.draft.origem} → {quote.draft.destino} · {new Date(quote.created_at).toLocaleDateString('pt-BR')}</button>)}</div>}
-        </> : hasRoute ? <>
-          <div className="rounded-xl border-l-4 border-amber-500 bg-amber-50 p-4 text-[#102548] dark:bg-amber-950 dark:text-white">
-            <strong className="text-sm uppercase text-amber-800 dark:text-amber-200">◉ Análise financeira pendente</strong>
-            <p className="mt-2 font-semibold">Rota e dados da carga prontos</p>
-            <p className="mt-1 text-xs">{routeKm.toLocaleString('pt-BR')} km · {draft.pesoKg?.toLocaleString('pt-BR') ?? 'Peso não informado'} kg · NF {draft.valorNota == null ? 'não informada' : brl(draft.valorNota)}</p>
-            <p className="mt-2 text-xs">{pendingReason}</p>
-            {isAdmin && !settingsReady && <button type="button" onClick={onOpenSettings} className="mt-2 text-xs font-semibold underline">Abrir configurações da cotação</button>}
-            {analysisError && <p role="alert" className="mt-2 text-xs font-semibold">{analysisError}</p>}
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">{(['Fracionado', 'Dedicado'] as const).map(kind => <article key={kind} className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700"><h3 className="mb-3 border-b border-[#e5ecf3] pb-2 text-sm font-bold uppercase text-[#294669] dark:text-blue-200">{kind}</h3><p className="text-sm text-[#59708f] dark:text-slate-300">{pendingReason}</p></article>)}</div>
         </> : <div className="rounded-xl border border-[#e1e8f1] p-[18px] dark:border-slate-700">
           <h3 className="text-lg font-bold text-[#526c88] dark:text-slate-200">Pronto para analisar</h3>
-          <p className="mt-3 text-sm text-[#59708f] dark:text-slate-300">Extraia os dados e calcule a rota.</p>
+          <p className="mt-3 text-sm text-[#59708f] dark:text-slate-300">Preencha a margem de lucro e clique em Analisar Proposta para ver o diagnóstico.</p>
         </div>}
-        {hasRoute && <div className="grid gap-2 sm:grid-cols-2" aria-label="Ações da proposta">
+        {analysis && <div className="grid gap-2 sm:grid-cols-2" aria-label="Ações da proposta">
           <button type="button" disabled={!analysis?.result.fracionado.total || busy} onClick={() => onPrint('fracionado')} className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Fracionado</button>
           <button type="button" disabled={!analysis || busy} onClick={() => onPrint('dedicado')} className="rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Dedicado</button>
           <button type="button" disabled={!analysis?.result.fracionado.total || busy} onClick={() => prepareProposal('fracionado')} className="rounded-xl bg-emerald-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Fracionado</button>
           <button type="button" disabled={!analysis || busy} onClick={() => prepareProposal('dedicado')} className="rounded-xl bg-indigo-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Dedicado</button>
-          {!analysis && <p className="text-xs text-amber-700 dark:text-amber-300 sm:col-span-2">PDFs com preço e propostas ficam disponíveis após a análise.</p>}
         </div>}
-        {hasRoute && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700">
+        {analysis && <SimilarFreights freights={similarFreights} loading={similarFreightsLoading} error={similarFreightsError} />}
+        {analysis && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700">
           <h3 className="text-sm font-bold text-[#294669] dark:text-blue-200">Tabela ANTT · referência para dedicado</h3>
           <p className="mt-1 text-xs text-[#59708f] dark:text-slate-300">Tabela A, carga lotação com composição veicular contratada · {routeKm.toLocaleString('pt-BR')} km. Piso de referência = km × CCD + CC.</p>
           <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[510px] text-left text-xs">
@@ -276,7 +258,7 @@ export default function CotacaoAnalysisView({
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Capacidades cadastradas pela empresa; confirme peso, volume e tipo de carga antes da contratação. Esta tabela não define o preço comercial.</p>
           <a href={anttSourceUrl || ANTT_TABLE_A_SOURCE} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs text-blue-600 underline dark:text-blue-300">Fonte ANTT · vigência {anttEffectiveFrom || new Date(`${ANTT_TABLE_A_VALID_FROM}T12:00:00`).toLocaleDateString('pt-BR')}</a>
         </div>}
-        {(hasRoute || analysis) && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700">
+        {analysis && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700">
           <h3 className="mb-2 text-sm font-bold uppercase text-[#294669] dark:text-blue-200">Mensagem ao cliente</h3>
           <label className="mb-2 block text-xs text-[#59708f] dark:text-slate-300">Estilo de mensagem<select className={`${input} mt-1`} value={selectedStyle} onChange={event => setMessageStyle(event.target.value as CotacaoMessageStyle)}>{(['Abordagem inicial', 'Confirmação de dados', ...(analysis?.result.fracionado.total ? ['Apresentação de valores', 'Proposta fracionado'] : []), ...(analysis ? ['Proposta dedicado'] : []), 'Acompanhamento'] as CotacaoMessageStyle[]).map(style => <option key={style} value={style}>{titles[style]}</option>)}</select></label>
           <textarea id="cotacao-mensagem" readOnly aria-label="Mensagem ao cliente" value={clientMessage} className={`${input} min-h-24`} />
