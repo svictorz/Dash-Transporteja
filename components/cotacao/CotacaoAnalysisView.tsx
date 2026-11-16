@@ -202,7 +202,7 @@ export default function CotacaoAnalysisView({
               const driverMaxPercent = Number(analysis.snapshot?.rules?.driver_max_percent)
               const driverCeiling = item.total != null && Number.isFinite(driverMaxPercent) && driverMaxPercent >= 0 ? item.total * driverMaxPercent / 100 : null
               const isFractional = kind === 'fracionado'
-              const minimumFreight = 1500
+              const minimumFreight = item.minimum
               return <article key={kind} className={`rounded-xl border border-slate-200 border-l-4 p-3.5 dark:border-slate-700 dark:bg-slate-900 ${isFractional ? 'border-l-blue-500 bg-blue-50/40 dark:border-l-blue-400' : 'border-l-violet-500 bg-violet-50/40 dark:border-l-violet-400'}`}>
                 <h3 className={`mb-3 border-b border-slate-200 pb-2 text-center text-sm font-bold uppercase dark:border-slate-700 ${isFractional ? 'text-blue-800 dark:text-blue-200' : 'text-violet-800 dark:text-violet-200'}`}>{isFractional ? '📦' : '🚚'} {kind}</h3>
                 {isFractional && <p className="mb-2 text-center text-[11px] text-slate-500 dark:text-slate-400">Veículo de referência: Truck</p>}
@@ -222,7 +222,7 @@ export default function CotacaoAnalysisView({
                 </div>
                 <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center dark:border-emerald-800 dark:bg-emerald-500/10">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Valor mínimo do frete</span>
-                  <strong className="block text-sm text-emerald-800 dark:text-emerald-200">{brl(minimumFreight)}</strong>
+                  <strong className="block text-sm text-emerald-800 dark:text-emerald-200">{minimumFreight == null ? '—' : brl(minimumFreight)}</strong>
                 </div>
                 <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center dark:border-amber-700 dark:bg-amber-500/10">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">Teto motorista</span>
