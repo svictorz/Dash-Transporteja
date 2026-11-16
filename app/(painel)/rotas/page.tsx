@@ -1463,6 +1463,7 @@ export default function RotasPage() {
                       </div>
                     </td>
                     <td className="px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col items-start">
                       <span
                         className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight text-gray-900"
                         title={`${[route.origin, route.origin_state].filter(Boolean).join(', ')} → ${[route.destination, route.destination_state].filter(Boolean).join(', ')}`}
@@ -1475,6 +1476,8 @@ export default function RotasPage() {
                           {(route.destination_state || '—').toUpperCase()}
                         </span>
                       </span>
+                      <span className="mt-1 text-xs text-gray-500">{route.freight_type || 'Tipo não informado'}</span>
+                      </div>
                     </td>
                     <td className="hidden md:table-cell px-3 sm:px-4 lg:px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-900 tabular-nums">

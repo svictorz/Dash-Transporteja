@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // A prévia local usa um diretório separado para não perder seus chunks
+  // quando um build de produção é executado no mesmo checkout.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   output: 'standalone',
 
   // Compressão gzip/br no servidor Node (em Vercel já é tratado, mas inofensivo).

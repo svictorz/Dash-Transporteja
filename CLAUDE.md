@@ -53,7 +53,7 @@ components/
 
 - Auth via **Supabase Auth** com sessão mantida por cookie (SSR). O middleware em `middleware.ts` chama `updateSession` em todas as rotas não-estáticas em produção; em desenvolvimento passa direto.
 - A tabela `public.users` sincroniza com `auth.users` e armazena `role`: `admin` | `comercial` | `financeiro` | `driver`.
-- O layout `app/(painel)/layout.tsx` protege o CRM no cliente: verifica sessão (`useAuthState`) e role (`useCurrentUser`). Roles com acesso: `admin`, `comercial`, `financeiro` — motoristas usam um app separado.
+- O layout `app/(painel)/layout.tsx` protege o CRM no cliente: verifica sessão (`useAuthState`) e role (`useCurrentUser`). Os cargos do painel são `admin`, `comercial`, `financeiro`, `fiscal`, `supervisor` e `operacional`. O sistema registra dados de motoristas nos fretes, mas este projeto não contém um aplicativo separado de motoristas.
 - `SUPER_ADMIN_EMAIL` (hardcoded em `lib/utils/roles.ts`) tem acesso irrestrito mesmo com role inconsistente no banco.
 - Visibilidade de dados por role: `admin`/`financeiro` veem todos os comerciais; `comercial` vê apenas seus próprios registros (filtrado por `created_by_user_id`).
 

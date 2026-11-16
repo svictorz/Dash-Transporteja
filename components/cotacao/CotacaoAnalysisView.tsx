@@ -95,13 +95,17 @@ export default function CotacaoAnalysisView({
       <button type="button" onClick={onExtract} className="mt-2.5 w-full rounded-lg bg-[#2878ef] px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">
         ⌕ Extrair dados do frete
       </button>
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+        <p className="font-semibold">Modelo mínimo para extrair e gerar a proposta:</p>
+        <pre className="mt-2 whitespace-pre-wrap font-sans leading-relaxed">{'Origem: São Paulo, SP\nDestino: Alvorada, TO\nPeso: 3.585,00 kg\nCubagem: 2,81 m³\nValor de Nota: R$ 14.916,47'}</pre>
+      </div>
 
       <h2 className={`${subheading} mt-7`}>2. Dados da cotação</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={label}>Origem<input className={input} value={draft.origem} onChange={event => onFieldChange('origem', event.target.value)} placeholder="Cidade/UF" /></label>
         <label className={label}>Destino<input className={input} value={draft.destino} onChange={event => onFieldChange('destino', event.target.value)} placeholder="Cidade/UF" /></label>
         <label className={label}>Peso (kg)<input className={input} type="number" min="0" step="any" value={draft.pesoKg ?? ''} onChange={event => onFieldChange('pesoKg', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 3585" /></label>
-        <label className={label}>Cubagem (m³) *<input id="cotacao-cubagem" className={input} type="number" min="0.01" step="any" required value={draft.cubagemM3 ?? ''} onChange={event => onFieldChange('cubagemM3', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,81" /></label>
+        <label className={label}>Cubagem (m³) (Obrigatório)<input id="cotacao-cubagem" className={input} type="number" min="0.01" step="any" required value={draft.cubagemM3 ?? ''} onChange={event => onFieldChange('cubagemM3', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,81" /></label>
         <label className={label}>Quantidade<input className={input} type="number" min="0" value={draft.quantidade ?? ''} onChange={event => onFieldChange('quantidade', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 172" /></label>
         <label className={label}>Metros lineares (opcional)<input className={input} type="number" min="0" step="any" value={draft.linearMeters ?? ''} onChange={event => onFieldChange('linearMeters', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,4" /></label>
         <label className={label}>Valor NF (R$)<input className={input} type="number" min="0" step="any" value={draft.valorNota ?? ''} onChange={event => onFieldChange('valorNota', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 14916,47" /></label>

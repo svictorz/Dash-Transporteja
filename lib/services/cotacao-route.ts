@@ -5,6 +5,14 @@
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search'
 const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving'
+const STATE_NAMES: Record<string, string> = {
+  AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará',
+  DF: 'Distrito Federal', ES: 'Espírito Santo', GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso',
+  MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará', PB: 'Paraíba', PR: 'Paraná',
+  PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte',
+  RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina',
+  SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins',
+}
 
 const USER_AGENT =
   process.env.COTACAO_NOMINATIM_USER_AGENT ||
@@ -25,7 +33,15 @@ export async function nominatimSearchBrasil(query: string): Promise<GeocodeHit |
   if (!q) return null
 
   const url = new URL(NOMINATIM_BASE)
-  url.searchParams.set('q', q.includes('Brasil') || q.includes('BR') ? q : `${q}, Brasil`)
+  const cityAndState = q.match(/^(.+?)\s*[,/]\s*([A-Z]{2})$/i)
+  const stateName = cityAndState && STATE_NAMES[cityAndState[2].toUpperCase()]
+  if (cityAndState && stateName) {
+    url.searchParams.set('city', cityAndState[1].trim())
+    url.searchParams.set('state', stateName)
+    url.searchParams.set('country', 'Brasil')
+  } else {
+    url.searchParams.set('q', q.includes('Brasil') || q.includes('BR') ? q : `${q}, Brasil`)
+  }
   url.searchParams.set('format', 'json')
   url.searchParams.set('limit', '1')
   url.searchParams.set('countrycodes', 'br')
