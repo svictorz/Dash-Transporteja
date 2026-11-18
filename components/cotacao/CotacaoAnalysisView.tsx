@@ -157,7 +157,7 @@ export default function CotacaoAnalysisView({
       </details>
 
       <div className="mt-5 space-y-4 border-t border-[#e5ebf2] pt-4 dark:border-slate-700">
-        <label className={`${label} mx-auto w-full max-w-sm rounded-xl border-2 border-blue-400 bg-blue-50 p-3 text-sm font-semibold text-blue-900 dark:border-blue-400 dark:bg-blue-950/50 dark:text-blue-100`}>Margem de lucro (%)<input id="cotacao-margem" className={`${input} border-blue-300 bg-white font-bold text-blue-900 dark:border-blue-500 dark:bg-slate-900 dark:text-blue-100`} type="number" min="0" max="100" step="any" value={draft.marginPercent ?? ''} onChange={event => onFieldChange('marginPercent', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 20" /></label>
+        <label className={`${label} mx-auto w-full max-w-sm rounded-xl border-2 border-blue-400 bg-blue-50 p-3 text-sm font-semibold text-blue-900 dark:border-blue-400 dark:bg-blue-950/50 dark:text-blue-100`}>Margem de lucro (%)<input id="cotacao-margem" className={`${input} border-blue-300 bg-white font-bold text-blue-900 dark:border-blue-500 dark:bg-slate-900 dark:text-blue-100`} type="number" min="0" step="any" value={draft.marginPercent ?? ''} onChange={event => onFieldChange('marginPercent', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 20" /></label>
         <div className="flex justify-center">
           <button type="button" onClick={onAnalyze} disabled={viewingAnotherUser || busy} className="w-full rounded-lg bg-emerald-600 px-8 py-3 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 sm:w-auto sm:min-w-[240px]">Analisar Proposta</button>
         </div>
@@ -206,10 +206,11 @@ export default function CotacaoAnalysisView({
               const driverMaxPercent = Number(analysis.snapshot?.rules?.driver_max_percent)
               const driverCeiling = item.total != null && Number.isFinite(driverMaxPercent) && driverMaxPercent >= 0 ? item.total * driverMaxPercent / 100 : null
               const isFractional = kind === 'fracionado'
-              const minimumFreight = item.minimum
+              const fractionalOcc = isFractional && analysis?.snapshot ? Number((analysis.snapshot as { fractional_internal?: { ocupacao_aplicada?: unknown } }).fractional_internal?.ocupacao_aplicada) : Number.NaN
               return <article key={kind} className={`rounded-xl border border-slate-200 border-l-4 p-3.5 dark:border-slate-700 dark:bg-slate-900 ${isFractional ? 'border-l-blue-500 bg-blue-50/40 dark:border-l-blue-400' : 'border-l-violet-500 bg-violet-50/40 dark:border-l-violet-400'}`}>
                 <h3 className={`mb-3 border-b border-slate-200 pb-2 text-center text-sm font-bold uppercase dark:border-slate-700 ${isFractional ? 'text-blue-800 dark:text-blue-200' : 'text-violet-800 dark:text-violet-200'}`}>{isFractional ? '📦' : '🚚'} {kind}</h3>
                 {isFractional && <p className="mb-2 text-center text-[11px] text-slate-500 dark:text-slate-400">Veículo de referência: Truck</p>}
+                {isFractional && Number.isFinite(fractionalOcc) && fractionalOcc > 0 && <p className="mb-2 text-center text-[11px] font-medium text-blue-600 dark:text-blue-300">Ocupação: {(fractionalOcc * 100).toFixed(1)}% do Truck</p>}
                 <dl className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                   <div className="flex justify-between gap-2 rounded-md bg-slate-100/80 px-2 py-1 dark:bg-slate-800"><dt>Custo base (veículo)</dt><dd className="font-semibold">{item.floor == null ? '—' : brl(item.floor)}</dd></div>
                   <div className="flex justify-between gap-2 rounded-md bg-indigo-50 px-2 py-1 dark:bg-indigo-500/10"><dt>Tributos{Number.isFinite(taxPercent) ? ` (${taxPercent.toLocaleString('pt-BR')}%)` : ''}</dt><dd className="font-semibold">{item.taxes == null ? '—' : brl(item.taxes)}</dd></div>
@@ -223,10 +224,6 @@ export default function CotacaoAnalysisView({
                   <span>{item.total == null ? '—' : unitBrl(item.total / quotedDistance)}/km</span>
                   <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.pesoKg))}/kg</span>
                   <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.cubagemM3))}/m³</span>
-                </div>
-                <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center dark:border-emerald-800 dark:bg-emerald-500/10">
-                  <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Valor mínimo do frete</span>
-                  <strong className="block text-sm text-emerald-800 dark:text-emerald-200">{minimumFreight == null ? '—' : brl(minimumFreight)}</strong>
                 </div>
                 <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center dark:border-amber-700 dark:bg-amber-500/10">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">Teto motorista</span>

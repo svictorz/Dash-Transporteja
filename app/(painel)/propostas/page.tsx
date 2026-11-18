@@ -223,8 +223,8 @@ export default function CotacaoPage() {
       return
     }
     if (!distance || !Number.isFinite(Number(distance)) || Number(distance) <= 0) { setAnalysisError('Calcule a rota ou informe uma distância válida.'); return }
-    if (draft.marginPercent == null || !Number.isFinite(draft.marginPercent) || draft.marginPercent < 0 || draft.marginPercent > 100) {
-      setAnalysisError('Informe a margem de lucro entre 0% e 100% no campo destacado.')
+    if (draft.marginPercent == null || !Number.isFinite(draft.marginPercent) || draft.marginPercent < 0) {
+      setAnalysisError('Informe uma margem de lucro válida, igual ou maior que 0%, no campo destacado.')
       document.getElementById('cotacao-margem')?.focus()
       return
     }
