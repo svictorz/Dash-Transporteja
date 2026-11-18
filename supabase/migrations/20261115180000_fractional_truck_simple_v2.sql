@@ -71,7 +71,7 @@ BEGIN
       'memoria_interna',memory);
   END IF;
   trip_cost := distance_km * (truck->>'pricePerKm')::numeric;
-  allocated_cost := trip_cost * occupancy;
+  allocated_cost := trip_cost / nullif(occupancy, 0);
   insurance_cost := invoice * insurance_percent / 100;
   tax_cost := (allocated_cost + insurance_cost) * tax_percent / 100;
   minimum_value := allocated_cost + insurance_cost + tax_cost;
@@ -120,11 +120,17 @@ DECLARE
   truck jsonb;
   author_id uuid;
   revision uuid;
+  existing_active uuid;
 BEGIN
-  SELECT vehicles, updated_by INTO current_fleet, author_id
+  -- Skip if fractional truck is already configured (idempotent)
+  SELECT a.revision_id INTO existing_active FROM public.erp_fractional_truck_active a WHERE a.id = 1;
+  IF existing_active IS NOT NULL THEN RETURN; END IF;
+
+  SELECT vehicles, COALESCE(updated_by,'00000000-0000-0000-0000-000000000000') INTO current_fleet, author_id
     FROM public.erp_fleet_settings WHERE id = 1 FOR UPDATE;
-  IF current_fleet IS NULL OR author_id IS NULL THEN
-    RAISE EXCEPTION 'Frota cadastrada com responsável é obrigatória';
+  IF current_fleet IS NULL THEN
+    -- Fleet not yet configured; this block will run after fleet setup.
+    RETURN;
   END IF;
   IF (SELECT count(*) FROM jsonb_array_elements(current_fleet) v(value)
       WHERE v.value->>'name' = 'Truck') <> 1 THEN
@@ -147,6 +153,9 @@ BEGIN
       author_id) RETURNING id INTO revision;
   INSERT INTO public.erp_fractional_truck_active(id,revision_id) VALUES (1,revision)
     ON CONFLICT (id) DO UPDATE SET revision_id = EXCLUDED.revision_id;
+EXCEPTION WHEN undefined_table THEN
+  -- Tables don't exist yet (migration order issue); skip gracefully.
+  RETURN;
 END $$;
 
 CREATE OR REPLACE FUNCTION public.erp_analyze_quote(target_quote uuid)

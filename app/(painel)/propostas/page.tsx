@@ -23,7 +23,7 @@ type QuoteRow = { id: string; owner_id: string; draft: CotacaoDraft; distance_km
 type Vehicle = { name: string; payloadKg: number; volumeM3: number; axles: number; pricePerKm?: number; anttCcd?: number; anttFixed?: number }
 type RuleSet = { vehicles?: Vehicle[]; anttSourceUrl?: string; anttEffectiveFrom?: string; selected_vehicle?: string; fractional_rule_id?: string; fractional_vehicle?: string } & { [key: string]: number | string | Vehicle[] | undefined }
 type Analysis = { id: string; result: { fracionado: Scenario; dedicado: Scenario }; snapshot: { draft: CotacaoDraft; distance_km: number; distance_source?: string; rules: RuleSet }; created_at: string }
-type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; status?: string }
+type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; occupancy_pct?: number | null; status?: string }
 const empty = () => extractCotacao('')
 const csvCell = (value: unknown) => {
   const raw = String(value ?? '')

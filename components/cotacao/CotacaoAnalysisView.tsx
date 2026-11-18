@@ -10,7 +10,7 @@ import SimilarFreights from './SimilarFreights'
 import type { SimilarFreight } from '@/lib/utils/cotacao-similar-freights'
 
 type Vehicle = AnttVehicle & { payloadKg: number; pricePerKm?: number }
-type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; status?: string }
+type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; occupancy_pct?: number | null; status?: string }
 type Analysis = { created_at: string; snapshot?: { draft?: CotacaoDraft; distance_km?: number; rules?: Record<string, unknown> }; result: { fracionado: Scenario; dedicado: Scenario } }
 
 type Props = {
