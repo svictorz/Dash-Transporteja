@@ -165,7 +165,7 @@ BEGIN
   END IF;
   trip_cost := (config->>'fixed_trip_cost')::numeric + distance_km * (truck->>'pricePerKm')::numeric
     + (config->>'additional_trip_cost')::numeric;
-  allocated_cost := trip_cost * occupancy;
+  allocated_cost := trip_cost / nullif(occupancy, 0);
   IF COALESCE(NULLIF(quote_draft->>'collectionCost','')::numeric,0) < 0
      OR COALESCE(NULLIF(quote_draft->>'deliveryCost','')::numeric,0) < 0
      OR COALESCE(NULLIF(quote_draft->>'handlingCost','')::numeric,0) < 0

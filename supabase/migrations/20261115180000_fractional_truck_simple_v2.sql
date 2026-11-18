@@ -71,7 +71,7 @@ BEGIN
       'memoria_interna',memory);
   END IF;
   trip_cost := distance_km * (truck->>'pricePerKm')::numeric;
-  allocated_cost := trip_cost * occupancy;
+  allocated_cost := trip_cost / nullif(occupancy, 0);
   insurance_cost := invoice * insurance_percent / 100;
   tax_cost := (allocated_cost + insurance_cost) * tax_percent / 100;
   minimum_value := allocated_cost + insurance_cost + tax_cost;
