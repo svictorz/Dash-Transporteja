@@ -10,7 +10,7 @@ import SimilarFreights from './SimilarFreights'
 import type { SimilarFreight } from '@/lib/utils/cotacao-similar-freights'
 
 type Vehicle = AnttVehicle & { payloadKg: number; pricePerKm?: number }
-type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; status?: string }
+type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; occupancy_pct?: number | null; status?: string }
 type Analysis = { created_at: string; snapshot?: { draft?: CotacaoDraft; distance_km?: number; rules?: Record<string, unknown> }; result: { fracionado: Scenario; dedicado: Scenario } }
 
 type Props = {
@@ -209,6 +209,7 @@ export default function CotacaoAnalysisView({
               const minimumFreight = item.minimum
               return <article key={kind} className={`rounded-xl border border-slate-200 border-l-4 p-3.5 dark:border-slate-700 dark:bg-slate-900 ${isFractional ? 'border-l-blue-500 bg-blue-50/40 dark:border-l-blue-400' : 'border-l-violet-500 bg-violet-50/40 dark:border-l-violet-400'}`}>
                 <h3 className={`mb-3 border-b border-slate-200 pb-2 text-center text-sm font-bold uppercase dark:border-slate-700 ${isFractional ? 'text-blue-800 dark:text-blue-200' : 'text-violet-800 dark:text-violet-200'}`}>{isFractional ? '📦' : '🚚'} {kind}</h3>
+                {isFractional && item.occupancy_pct != null && <p className="mb-2 text-center text-[11px] text-slate-500 dark:text-slate-400">Ocupação: {item.occupancy_pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</p>}
                 {isFractional && <p className="mb-2 text-center text-[11px] text-slate-500 dark:text-slate-400">Veículo de referência: Truck</p>}
                 <dl className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                   <div className="flex justify-between gap-2 rounded-md bg-slate-100/80 px-2 py-1 dark:bg-slate-800"><dt>Custo base (veículo)</dt><dd className="font-semibold">{item.floor == null ? '—' : brl(item.floor)}</dd></div>
@@ -224,10 +225,10 @@ export default function CotacaoAnalysisView({
                   <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.pesoKg))}/kg</span>
                   <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.cubagemM3))}/m³</span>
                 </div>
-                <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center dark:border-emerald-800 dark:bg-emerald-500/10">
+                {!isFractional && <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center dark:border-emerald-800 dark:bg-emerald-500/10">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Valor mínimo do frete</span>
                   <strong className="block text-sm text-emerald-800 dark:text-emerald-200">{minimumFreight == null ? '—' : brl(minimumFreight)}</strong>
-                </div>
+                </div>}
                 <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center dark:border-amber-700 dark:bg-amber-500/10">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">Teto motorista</span>
                   <strong className="block text-sm text-amber-800 dark:text-amber-200">{driverCeiling === null ? '—' : brl(driverCeiling)}</strong>
