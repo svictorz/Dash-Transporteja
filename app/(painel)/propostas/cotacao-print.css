@@ -1,12 +1,13 @@
 @media print {
-  @page { size: A4 portrait; margin: 14mm; }
-  html, body { background: #fff !important; color: #0f172a !important; }
+  @page { size: A4 portrait; margin: 0; }
+  html, body { margin: 0 !important; background: #fff !important; color: #0f172a !important; }
   .cotacao-page { padding: 0 !important; margin: 0 !important; }
   .cotacao-page > .cotacao-proposal-print { margin: 0 !important; }
   .cotacao-proposal-print {
     display: block !important;
     width: 100%;
-    padding: 0 !important;
+    box-sizing: border-box;
+    padding: 14mm !important;
     background: #fff !important;
     color: #0f172a !important;
     font-family: Arial, sans-serif;

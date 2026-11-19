@@ -37,6 +37,65 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.erp_quote_antt_minimum(jsonb,text,numeric,numeric,numeric)
   FROM PUBLIC, anon, authenticated;
+CREATE OR REPLACE FUNCTION public.erp_calculate_fractional_truck_v2(
+  quote_draft jsonb, distance_km numeric, fleet jsonb,
+  tax_percent numeric, insurance_percent numeric, margin_percent numeric
+) RETURNS jsonb
+LANGUAGE plpgsql IMMUTABLE SET search_path = public, pg_temp AS $$
+DECLARE
+  truck jsonb;
+  weight_kg numeric;
+  volume_m3 numeric;
+  invoice numeric;
+  operational_volume numeric;
+  occupancy numeric;
+  trip_cost numeric;
+  allocated_cost numeric;
+  insurance_cost numeric;
+  tax_cost numeric;
+  antt_minimum numeric;
+  final_value numeric;
+  memory jsonb;
+BEGIN
+  IF distance_km IS NULL OR distance_km <= 0 THEN RAISE EXCEPTION 'INVALID_DISTANCE'; END IF;
+  weight_kg := NULLIF(quote_draft->>'pesoKg','')::numeric;
+  volume_m3 := NULLIF(quote_draft->>'cubagemM3','')::numeric;
+  invoice := COALESCE(NULLIF(quote_draft->>'valorNota','')::numeric,0);
+  IF weight_kg IS NULL OR weight_kg <= 0 THEN RAISE EXCEPTION 'INVALID_WEIGHT'; END IF;
+  IF volume_m3 IS NULL OR volume_m3 <= 0 THEN RAISE EXCEPTION 'INVALID_VOLUME'; END IF;
+  IF tax_percent IS NULL OR tax_percent < 0 OR tax_percent > 100
+     OR insurance_percent IS NULL OR insurance_percent < 0 OR insurance_percent > 100
+     OR margin_percent IS NULL OR margin_percent < 0 OR margin_percent > 100 THEN
+    RAISE EXCEPTION 'COST_CONFIG_NOT_FOUND';
+  END IF;
+  truck := public.erp_validate_fractional_truck_v2(fleet);
+  operational_volume := volume_m3 * 1.10;
+  occupancy := greatest(weight_kg / (truck->>'payloadKg')::numeric,
+    operational_volume / (truck->>'volumeM3')::numeric);
+  trip_cost := distance_km * (truck->>'pricePerKm')::numeric;
+  allocated_cost := trip_cost * occupancy;
+  insurance_cost := invoice * insurance_percent / 100;
+  tax_cost := (allocated_cost + insurance_cost) * tax_percent / 100;
+  antt_minimum := public.erp_quote_antt_minimum(fleet, 'Truck', distance_km, tax_percent, margin_percent);
+  final_value := greatest(antt_minimum, round((allocated_cost + insurance_cost + tax_cost) * (1 + margin_percent / 100), 2));
+  memory := jsonb_build_object('peso_real_kg',weight_kg,'cubagem_informada_m3',volume_m3,
+    'cubagem_operacional_m3',operational_volume,'ocupacao_peso',
+    weight_kg / (truck->>'payloadKg')::numeric,'ocupacao_volume',
+    operational_volume / (truck->>'volumeM3')::numeric,'ocupacao_aplicada',occupancy,
+    'custo_viagem_truck',trip_cost,'custo_rateado',allocated_cost,
+    'seguro_remessa',insurance_cost,'tributos',tax_cost,
+    'preco_antes_margem',allocated_cost + insurance_cost + tax_cost,
+    'piso_antt',antt_minimum);
+  RETURN jsonb_build_object('status','CALCULADO','modalidade','FRACIONADO',
+    'veiculo_referencia','Truck','regra_id','FRACIONADO_JCN_V2',
+    'preco_final',final_value,
+    'scenario',jsonb_build_object('floor',allocated_cost,'taxes',tax_cost,
+      'insurance',insurance_cost,'pgr',0,'tolls',0,'collection',0,
+      'minimum',antt_minimum,'total',final_value),
+    'memoria_interna',memory);
+END $$;
+REVOKE ALL ON FUNCTION public.erp_calculate_fractional_truck_v2(jsonb,numeric,jsonb,numeric,numeric,numeric)
+  FROM PUBLIC, anon, authenticated;
 CREATE OR REPLACE FUNCTION public.erp_analyze_quote(target_quote uuid)
 RETURNS public.erp_quote_analyses
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -110,7 +169,7 @@ BEGIN
       fractional_output := jsonb_build_object('status','INVALID_VOLUME','memoria_interna',NULL);
     ELSE
       fractional_output := public.erp_calculate_fractional_truck_v2(q.draft,km,
-        fractional_revision.fleet,settings.tax_percent,settings.insurance_percent);
+        fractional_revision.fleet,settings.tax_percent,settings.insurance_percent,margin_rate);
     END IF;
     rules := rules || jsonb_build_object('fractional_rule_id','FRACIONADO_JCN_V2');
   ELSE

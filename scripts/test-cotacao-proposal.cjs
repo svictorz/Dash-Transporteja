@@ -6,16 +6,26 @@ const ts = require('typescript')
 const filename = path.resolve(__dirname, '../lib/utils/cotacao-proposal.ts')
 const context = { exports: {}, require: () => ({}) }
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, context)
-const { buildCotacaoProposal } = context.exports
+const { buildCotacaoProposal, parseCotacaoPdfPrice } = context.exports
 const analysis = {
   id: '12345678-1234-1234-1234-123456789abc', created_at: '2026-11-14T12:00:00Z',
   snapshot: { distance_km: 1284.8, distance_source: 'route-api', rules: { selected_vehicle: '3/4' }, draft: { origem: 'São Paulo/SP', destino: 'Alvorada/TO', cliente: 'Nicole', telefone: '(11) 9 6451-3724', email: 'comercial3@frequenciax.com.br', remetenteCnpj: '57.938.158/0001-24', remetenteNome: 'RMX Proteção', remetenteEndereco: 'R. Volter Volthers, 10 · São Paulo/SP', destinatarioCnpj: '01.800.242/0001-22', destinatarioNome: 'Município de Alvorada', destinatarioEndereco: 'Alvorada/TO', pesoKg: 3585, cubagemM3: 2.81, quantidade: 172, valorNota: 14916.47 } },
-  result: { fracionado: { total: 7480.24 }, dedicado: { total: 12389.51 } },
+  result: { fracionado: { total: 7480.24, minimum: 3000 }, dedicado: { total: 12389.51, minimum: 9000 } },
 }
 const fractional = buildCotacaoProposal(analysis, 'fracionado')
 const dedicated = buildCotacaoProposal(analysis, 'dedicado')
 assert.equal(fractional.total, 7480.24)
 assert.equal(dedicated.total, 12389.51)
+assert.equal(parseCotacaoPdfPrice('10.250,75'), 10250.75)
+assert.equal(parseCotacaoPdfPrice('10250,75'), 10250.75)
+assert.equal(parseCotacaoPdfPrice(''), null)
+assert.equal(parseCotacaoPdfPrice('abc'), null)
+assert.equal(buildCotacaoProposal(analysis, 'dedicado', 11000).total, 11000)
+assert.equal(buildCotacaoProposal(analysis, 'dedicado', 11000).priceAdjusted, true)
+assert.equal(buildCotacaoProposal(analysis, 'fracionado', 5000).total, 5000)
+assert.equal(buildCotacaoProposal(analysis, 'fracionado').priceAdjusted, false)
+assert.throws(() => buildCotacaoProposal(analysis, 'dedicado', 8999.99), /mínimo/)
+assert.throws(() => buildCotacaoProposal(analysis, 'fracionado', 1499.99), /mínimo/)
 assert.equal(fractional.contact, 'Nicole')
 assert.equal(fractional.contactPhone, '(11) 9 6451-3724')
 assert.equal(fractional.contactEmail, 'comercial3@frequenciax.com.br')

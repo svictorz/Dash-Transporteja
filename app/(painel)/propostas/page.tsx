@@ -63,6 +63,8 @@ export default function CotacaoPage() {
   const [quoteSettingsReady, setQuoteSettingsReady] = useState(false)
   const [fleetSettingsReady, setFleetSettingsReady] = useState(false)
   const [printKind, setPrintKind] = useState<ProposalKind>('fracionado')
+  const [pdfPriceEdits, setPdfPriceEdits] = useState<{ analysisId: string; fracionado: string; dedicado: string } | null>(null)
+  const [printPrice, setPrintPrice] = useState<{ analysisId: string; kind: ProposalKind; amount: number } | null>(null)
   const [settingsDraft, setSettingsDraft] = useState<Record<string, string>>({})
   const [templates, setTemplates] = useState<CotacaoMessageTemplates>(defaultCotacaoTemplates)
   const [templateDraft, setTemplateDraft] = useState<CotacaoMessageTemplates>(defaultCotacaoTemplates)
@@ -332,18 +334,32 @@ export default function CotacaoPage() {
     const link = document.createElement('a'); link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url)
   }
   const printDraft = analysis?.snapshot?.draft ?? draft
+  const defaultPdfPrice = (kind: ProposalKind) => analysis?.result[kind].total == null ? '' : Number(analysis.result[kind].total).toFixed(2).replace('.', ',')
+  const pdfPriceInputs = analysis && pdfPriceEdits?.analysisId === analysis.id
+    ? { fracionado: pdfPriceEdits.fracionado, dedicado: pdfPriceEdits.dedicado }
+    : { fracionado: defaultPdfPrice('fracionado'), dedicado: defaultPdfPrice('dedicado') }
+  const editPdfPrice = (kind: ProposalKind, value: string) => {
+    if (!analysis) return
+    setPdfPriceEdits(previous => ({
+      analysisId: analysis.id,
+      fracionado: previous?.analysisId === analysis.id ? previous.fracionado : defaultPdfPrice('fracionado'),
+      dedicado: previous?.analysisId === analysis.id ? previous.dedicado : defaultPdfPrice('dedicado'),
+      [kind]: value,
+    }))
+  }
   const printProposalData = (() => {
     if (!analysis) return null
-    try { return buildCotacaoProposal(analysis, printKind) } catch { return null }
+    try { return buildCotacaoProposal(analysis, printKind, printPrice?.analysisId === analysis.id && printPrice.kind === printKind ? printPrice.amount : undefined) } catch { return null }
   })()
   const vehicles = analysis?.snapshot?.rules?.vehicles ?? fleetVehicles
-  const printProposal = (kind: ProposalKind) => {
+  const printProposal = (kind: ProposalKind, amount: number) => {
     try {
       if (!analysis) throw new Error('Análise da cotação ausente.')
-      buildCotacaoProposal(analysis, kind)
-    } catch {
-      setMessage('Analise a cotação com dados completos antes de gerar o PDF.'); return
+      buildCotacaoProposal(analysis, kind, amount)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível gerar o PDF.'); return
     }
+    setPrintPrice({ analysisId: analysis.id, kind, amount })
     setPrintKind(kind)
     requestAnimationFrame(() => requestAnimationFrame(() => window.print()))
   }
@@ -484,6 +500,8 @@ export default function CotacaoPage() {
       onAnalyze={analyze}
       onVehicleChange={name => void changeVehicle(name)}
       onOpenSettings={() => setSettingsOpen(true)}
+      pdfPriceInputs={pdfPriceInputs}
+      onPdfPriceChange={editPdfPrice}
       onPrint={printProposal}
       onDownloadJson={() => download(`cotacao-${quoteId}.json`, JSON.stringify({ draft: printDraft, analysis }, null, 2), 'application/json')}
     />}

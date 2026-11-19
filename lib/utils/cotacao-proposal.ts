@@ -5,15 +5,29 @@ export type ProposalAnalysis = {
   id: string
   created_at: string
   snapshot: { draft: CotacaoDraft; distance_km: number; distance_source?: string; rules?: { selected_vehicle?: string; fractional_vehicle?: string } }
-  result: Record<ProposalKind, { total: number | null }>
+  result: Record<ProposalKind, { total: number | null; minimum?: number | null }>
 }
 
-export function buildCotacaoProposal(analysis: ProposalAnalysis, kind: ProposalKind) {
+export function parseCotacaoPdfPrice(raw: string): number | null {
+  const value = raw.trim().replace(/^R\$\s*/, '')
+  const brazilian = /^\d+(?:,\d{1,2})?$/.test(value) || /^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(value)
+  const decimalDot = /^\d+\.\d{1,2}$/.test(value)
+  if (!brazilian && !decimalDot) return null
+  const amount = Number(brazilian ? value.replace(/\./g, '').replace(',', '.') : value)
+  return Number.isFinite(amount) ? amount : null
+}
+
+export function buildCotacaoProposal(analysis: ProposalAnalysis, kind: ProposalKind, pdfPrice?: number) {
   const draft = analysis.snapshot?.draft
   const distanceKm = Number(analysis.snapshot?.distance_km)
-  const total = Number(analysis.result?.[kind]?.total)
-  if (!draft?.origem?.trim() || !draft?.destino?.trim() || !Number.isFinite(distanceKm) || distanceKm <= 0 || !Number.isFinite(total) || total < 1500 || !Number.isFinite(Number(draft.cubagemM3)) || Number(draft.cubagemM3) <= 0) {
+  const analyzedTotal = Number(analysis.result?.[kind]?.total)
+  if (!draft?.origem?.trim() || !draft?.destino?.trim() || !Number.isFinite(distanceKm) || distanceKm <= 0 || !Number.isFinite(analyzedTotal) || analyzedTotal < 1500 || !Number.isFinite(Number(draft.cubagemM3)) || Number(draft.cubagemM3) <= 0) {
     throw new Error('Dados aprovados insuficientes para gerar a proposta.')
+  }
+  const total = pdfPrice ?? analyzedTotal
+  const minimum = Math.max(1500, Number(analysis.result[kind].minimum) || 1500)
+  if (!Number.isFinite(total) || total < minimum || Math.abs(total * 100 - Math.round(total * 100)) > 1e-6) {
+    throw new Error('Informe um valor válido, com até dois decimais, igual ou acima do mínimo da modalidade.')
   }
   return {
     code: analysis.id.slice(0, 8).toUpperCase(),
@@ -34,6 +48,7 @@ export function buildCotacaoProposal(analysis: ProposalAnalysis, kind: ProposalK
     distanceKm,
     distanceSource: analysis.snapshot.distance_source,
     total,
+    priceAdjusted: Math.abs(total - analyzedTotal) >= 0.01,
   }
 }
 

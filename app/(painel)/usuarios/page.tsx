@@ -49,43 +49,13 @@ interface CreateUserForm {
   commissionRate: string
 }
 
-const ROLE_OPTIONS: { value: AssignableRole; label: string; description: string; icon: typeof Shield }[] = [
-  {
-    value: 'operacional',
-    label: 'Operacional',
-    description: 'Vê todos os fretes na Performance e edita somente campos financeiros e dados do motorista.',
-    icon: Briefcase,
-  },
-  {
-    value: 'admin',
-    label: 'Administrador',
-    description: 'Acesso total ao sistema, vê todos os fretes e gerencia permissões.',
-    icon: Shield,
-  },
-  {
-    value: 'financeiro',
-    label: 'Financeiro',
-    description: 'Visão completa: vê fretes/rotas/performance de todos os comerciais.',
-    icon: Wallet,
-  },
-  {
-    value: 'fiscal',
-    label: 'Fiscal',
-    description: 'Mesmo acesso de administrador e financeiro na Performance, rotas e dados fiscais.',
-    icon: FileText,
-  },
-  {
-    value: 'supervisor',
-    label: 'Supervisor',
-    description: 'Vê Performance de todo o time com filtros globais, sem editar dados nem acessar financeiro/permissões.',
-    icon: BarChart3,
-  },
-  {
-    value: 'comercial',
-    label: 'Comercial',
-    description: 'Vê apenas os fretes, rotas e performance que ele mesmo cadastrou.',
-    icon: Briefcase,
-  },
+const ROLE_OPTIONS: { value: AssignableRole; label: string; icon: typeof Shield }[] = [
+  { value: 'operacional', label: 'Operacional', icon: Briefcase },
+  { value: 'admin', label: 'Administrador', icon: Shield },
+  { value: 'financeiro', label: 'Financeiro', icon: Wallet },
+  { value: 'fiscal', label: 'Fiscal', icon: FileText },
+  { value: 'supervisor', label: 'Supervisor', icon: BarChart3 },
+  { value: 'comercial', label: 'Comercial', icon: Briefcase },
 ]
 
 export default function UsuariosPage() {
@@ -427,26 +397,6 @@ export default function UsuariosPage() {
         <SummaryCard label="Operacional" value={counts.operacional} icon={Briefcase} tone="slate" />
         <SummaryCard label="Comerciais" value={counts.comercial} icon={Briefcase} tone="sky" />
       </div>
-
-      <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {ROLE_OPTIONS.map((opt) => {
-          const Icon = opt.icon
-          return (
-            <div
-              key={opt.value}
-              className="rounded-2xl border border-gray-200 bg-white p-4 flex gap-3"
-            >
-              <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center flex-shrink-0">
-                <Icon className="w-5 h-5" aria-hidden />
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900 text-sm">{opt.label}</h3>
-                <p className="text-xs text-gray-600 mt-1 leading-relaxed">{opt.description}</p>
-              </div>
-            </div>
-          )
-        })}
-      </section>
 
       <div className="glass-card rounded-2xl border border-white/40 p-4 md:p-5 shadow-lg backdrop-blur-xl space-y-4">
         <div className="flex flex-col md:flex-row md:items-center gap-3">

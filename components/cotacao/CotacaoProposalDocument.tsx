@@ -35,7 +35,7 @@ export default function CotacaoProposalDocument({ proposal }: { proposal: Cotaca
       <div><dt>Valor da nota fiscal</dt><dd>{proposal.invoiceValue == null ? 'A confirmar' : brl(proposal.invoiceValue)}</dd></div>
     </dl>
     <div className="cotacao-proposal-total"><span>Valor total do frete</span><strong>{brl(proposal.total)}</strong></div>
-    <p className="cotacao-proposal-note">Proposta válida por {doc.validadeDias} dias a partir da emissão. Prazo, disponibilidade de equipamento e janela de coleta sujeitos à confirmação antes da contratação. Valor calculado com a tarifa por km, tributos, seguro e margem registrados nesta cotação.</p>
+    <p className="cotacao-proposal-note">Proposta válida por {doc.validadeDias} dias a partir da emissão. Prazo, disponibilidade de equipamento e janela de coleta sujeitos à confirmação antes da contratação. {proposal.priceAdjusted ? 'Valor negociado para esta proposta.' : 'Valor calculado com a tarifa por km, tributos, seguro e margem registrados nesta cotação.'}</p>
     <footer><strong>{doc.slogan}</strong><span>{doc.rodape}</span></footer>
   </section>
 }

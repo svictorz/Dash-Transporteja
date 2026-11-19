@@ -22,6 +22,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { canManageFinancials, canOperacionalAccessPanelPath, canSupervisorAccessPanelPath, isSuperAdminEmail } from '@/lib/utils/roles'
+import { FINANCIAL_CONTROL_ENABLED } from '@/lib/constants/features'
 
 interface MenuItem {
   icon: LucideIcon
@@ -84,7 +85,7 @@ export default function SidebarTransporteja({ isMobileOpen = false, onMobileClos
     { icon: FileText, label: 'Cotação', path: '/propostas' },
     { icon: CalendarDays, label: 'Calendário', path: '/calendario' },
     { icon: BarChart3, label: 'Performance', path: '/performance' },
-    ...(hasFinancialAccess
+    ...(FINANCIAL_CONTROL_ENABLED && hasFinancialAccess
       ? [{ icon: Wallet, label: 'Controle Financeiro', path: '/controle-financeiro' } as MenuItem]
       : []),
     ...(isAdmin

@@ -69,6 +69,7 @@ import StickyScrollX from '@/components/transporteja/StickyScrollX'
 import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
 import { createFreightDocumentService, type FreightDocument } from '@/lib/services/freight-documents'
 import FreightDocumentGallery from '@/components/transporteja/FreightDocumentGallery'
+import { PerformanceCharts } from '@/components/performance/PerformanceCharts'
 
 /** Colunas da "Lista de fretes" (a coluna Detalhes fica fora do organizador). */
 const PERF_LIST_COLUMNS: ColumnDef[] = [
@@ -481,6 +482,7 @@ export default function PerformancePage() {
   const [rows, setRows] = useState<Route[]>([])
   const [comerciais, setComerciais] = useState<ComercialUser[]>([])
   const [selectedComercial, setSelectedComercial] = useState<'all' | string>('all')
+  const [commercialSummaryExpanded, setCommercialSummaryExpanded] = useState(true)
   const [clientPaymentStatusFilter, setClientPaymentStatusFilter] = useState<PaymentStatusFilter>('all')
   const [freightStatusFilter, setFreightStatusFilter] = useState<'all' | RouteStatus>('all')
   const [driverPaymentStatusFilter, setDriverPaymentStatusFilter] = useState<PaymentStatusFilter>('all')
@@ -774,6 +776,16 @@ export default function PerformancePage() {
       return matchesClientPayment && matchesFreightStatus && matchesDriverPayment
     })
   }, [periodRows, selectedComercial, clientPaymentStatusFilter, freightStatusFilter, driverPaymentStatusFilter])
+
+  // O gráfico de cadastros usa created_at dentro do período, enquanto os demais
+  // indicadores usam a data operacional da coleta (ou da entrega).
+  const activityRows = useMemo(() => rows.filter((route) => {
+    const owner = route.created_by_user_id ?? '__sem_responsavel__'
+    return (selectedComercial === 'all' || owner === selectedComercial)
+      && (clientPaymentStatusFilter === 'all' || paymentStatusFilterValue(route.payment_status) === clientPaymentStatusFilter)
+      && (freightStatusFilter === 'all' || route.status === freightStatusFilter)
+      && (driverPaymentStatusFilter === 'all' || paymentStatusFilterValue(route.driver_payment_status) === driverPaymentStatusFilter)
+  }), [rows, selectedComercial, clientPaymentStatusFilter, freightStatusFilter, driverPaymentStatusFilter])
 
   const byUser = useMemo(() => {
     const map = new Map<string, UserPerfAgg>()
@@ -1315,8 +1327,8 @@ export default function PerformancePage() {
               : `Métricas dos fretes no período — ${currentUserName}`}
             {' · '}
             <span className="font-medium text-gray-700">{PERIODO_LABELS[periodo]}</span>
-            {periodRows.length > 0 ? (
-              <span className="text-gray-500"> · {periodRows.length} fretes no período</span>
+            {filteredRows.length > 0 ? (
+              <span className="text-gray-500"> · {filteredRows.length} fretes no período</span>
             ) : null}
           </p>
           <p className="text-xs text-gray-500 mt-1 max-w-2xl">{ROUTE_PERIOD_FILTER_HINT}</p>
@@ -1527,9 +1539,23 @@ export default function PerformancePage() {
         </div>
       </div>
 
+      <PerformanceCharts
+        rows={filteredRows}
+        activityRows={activityRows}
+        allRows={rows}
+        sellers={comerciais}
+        selectedSeller={selectedComercial}
+        userId={currentUserId}
+        role={role}
+        bounds={periodBounds}
+        period={periodo}
+        showRevenue={visibleMoney.freight}
+        showGoal={visibleMoney.freight && visibleMoney.netFreight}
+      />
+
       {canViewGlobalPerformance ? (
         <div className="rounded-2xl border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-900 overflow-hidden">
-          <div className="px-4 md:px-5 py-4 border-b border-gray-100 dark:border-slate-500 flex items-center justify-between gap-2 flex-wrap">
+          <div className={`px-4 md:px-5 py-4 flex items-center justify-between gap-2 flex-wrap ${commercialSummaryExpanded ? 'border-b border-gray-100 dark:border-slate-500' : ''}`}>
             <div className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-gray-600 dark:text-slate-300" aria-hidden />
               <h2 className="text-sm font-semibold text-gray-800 dark:text-slate-100">
@@ -1548,9 +1574,19 @@ export default function PerformancePage() {
                   Limpar filtro
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => setCommercialSummaryExpanded((expanded) => !expanded)}
+                aria-expanded={commercialSummaryExpanded}
+                aria-controls="performance-commercial-summary"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${commercialSummaryExpanded ? 'rotate-180' : ''}`} aria-hidden />
+                {commercialSummaryExpanded ? 'Recolher' : 'Expandir'}
+              </button>
             </div>
           </div>
-          <div className="overflow-x-auto px-1 md:px-2">
+          <div id="performance-commercial-summary" hidden={!commercialSummaryExpanded} className="overflow-x-auto px-1 md:px-2">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-200">
                 <tr>

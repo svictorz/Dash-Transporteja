@@ -5,9 +5,9 @@ import { useMonthlySalesGoals } from '@/lib/hooks/useMonthlySalesGoals'
 import { dashboardMonthKey, monthlyGoalProgress } from '@/lib/utils/dashboard-metrics'
 import { formatBRL } from '@/lib/utils/freight-financials'
 
-export function MonthlyGoalView({ revenue, amount, netRevenue, netAmount, monthLabel, loading, error, onRetry, showValues = true }: {
+export function MonthlyGoalView({ revenue, amount, netRevenue, netAmount, monthLabel, loading, error, onRetry, showValues = true, goalLabel = 'Sua meta' }: {
   revenue: number; amount: number | null; netRevenue: number; netAmount: number | null; monthLabel: string; loading: boolean; error: string | null; onRetry?: () => void;
-  showValues?: boolean;
+  showValues?: boolean; goalLabel?: string;
 }) {
   const progress = monthlyGoalProgress(revenue, amount)
   const netProgress = monthlyGoalProgress(netRevenue, netAmount)
@@ -19,7 +19,7 @@ export function MonthlyGoalView({ revenue, amount, netRevenue, netAmount, monthL
         <div className="absolute inset-x-0 bottom-2 text-center"><strong className="text-3xl font-semibold tracking-tight">{progress.percentage === null ? '—' : `${progress.percentage.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}</strong><p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Faturamento {progress.percentage === null ? 'sem meta' : 'atingido'}</p><p className="mt-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-300">Lucro líquido {netProgress.percentage === null ? 'sem meta' : `${netProgress.percentage.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}</p></div>
       </div>
       <div className="mt-3 flex justify-between gap-3 border-b border-slate-100 pb-3 text-xs dark:border-slate-800"><span className="text-slate-500 dark:text-slate-400">Faturamento do mês</span><strong className="tabular-nums">{formatBRL(revenue)}</strong></div>
-      <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3"><dt className="text-slate-500 dark:text-slate-400">Sua meta</dt><dd className="font-medium tabular-nums">{amount != null && amount > 0 ? formatBRL(amount) : 'A definir'}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500 dark:text-slate-400">Falta para atingir</dt><dd className="font-medium tabular-nums">{progress.remaining === null ? '—' : formatBRL(progress.remaining)}</dd></div></dl>
+      <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3"><dt className="text-slate-500 dark:text-slate-400">{goalLabel}</dt><dd className="font-medium tabular-nums">{amount != null && amount > 0 ? formatBRL(amount) : 'A definir'}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500 dark:text-slate-400">Falta para atingir</dt><dd className="font-medium tabular-nums">{progress.remaining === null ? '—' : formatBRL(progress.remaining)}</dd></div></dl>
       <div className="mt-3 flex justify-between gap-3 border-t border-slate-100 pt-3 text-xs dark:border-slate-800"><span className="text-emerald-600 dark:text-emerald-300">Lucro líquido do mês</span><strong className="tabular-nums">{formatBRL(netRevenue)}</strong></div>
       <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3"><dt className="text-emerald-600 dark:text-emerald-300">Meta de lucro líquido</dt><dd className="font-medium tabular-nums">{netAmount != null && netAmount > 0 ? formatBRL(netAmount) : 'A definir'}</dd></div><div className="flex justify-between gap-3"><dt className="text-emerald-600 dark:text-emerald-300">Falta para atingir</dt><dd className="font-medium tabular-nums">{netProgress.remaining === null ? '—' : formatBRL(netProgress.remaining)}</dd></div></dl>
       {(progress.percentage === null || netProgress.percentage === null) && <p className="mt-4 text-[11px] leading-relaxed text-slate-400">O administrador define suas metas individuais para cada mês.</p>}

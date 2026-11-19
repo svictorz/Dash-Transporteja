@@ -8,6 +8,7 @@ import { ANTT_TABLE_A_SOURCE, ANTT_TABLE_A_VALID_FROM, anttReferenceRows, type A
 import RouteMap from './RouteMap'
 import SimilarFreights from './SimilarFreights'
 import type { SimilarFreight } from '@/lib/utils/cotacao-similar-freights'
+import { parseCotacaoPdfPrice } from '@/lib/utils/cotacao-proposal'
 
 type Vehicle = AnttVehicle & { payloadKg: number; pricePerKm?: number }
 type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; occupancy_pct?: number | null; status?: string }
@@ -46,7 +47,9 @@ type Props = {
   onAnalyze: () => void
   onVehicleChange: (name: string) => void
   onOpenSettings: () => void
-  onPrint: (kind: 'fracionado' | 'dedicado') => void
+  pdfPriceInputs: Record<'fracionado' | 'dedicado', string>
+  onPdfPriceChange: (kind: 'fracionado' | 'dedicado', value: string) => void
+  onPrint: (kind: 'fracionado' | 'dedicado', amount: number) => void
   onDownloadJson: () => void
 }
 
@@ -59,13 +62,19 @@ const subheading = 'mb-3 border-b border-gray-100 pb-3 text-sm font-semibold tex
 export default function CotacaoAnalysisView({
   raw, draft, distance, source, routeCoordinates, routeDuration,
   busy, viewingAnotherUser, cnpjLoading, cnpjErrors, analysis, analysisError, vehicles, anttSourceUrl, anttEffectiveFrom, templates, titles, similarFreights, similarFreightsLoading, similarFreightsError, onRawChange, onExtract, onFieldChange, onLookupCnpjs, onDistanceChange, onRoute,
-  onAnalyze, onVehicleChange, onPrint, onDownloadJson,
+  onAnalyze, onVehicleChange, pdfPriceInputs, onPdfPriceChange, onPrint, onDownloadJson,
 }: Props) {
   const googleKm = Number(draft.googleKm)
   const routeKm = Number(distance)
   const googleDiffers = googleKm > 0 && routeKm > 0 && Math.abs(googleKm - routeKm) / routeKm > 0.15
   const [messageStyle, setMessageStyle] = useState<CotacaoMessageStyle>('Abordagem inicial')
+  const [pdfValuesOpen, setPdfValuesOpen] = useState(true)
   const prices = analysis ? { fracionado: Number(analysis.result.fracionado.total) >= 1500 ? analysis.result.fracionado.total ?? undefined : undefined, dedicado: Number(analysis.result.dedicado.total) >= 1500 ? analysis.result.dedicado.total ?? undefined : undefined } : undefined
+  const pdfAmounts = { fracionado: parseCotacaoPdfPrice(pdfPriceInputs.fracionado), dedicado: parseCotacaoPdfPrice(pdfPriceInputs.dedicado) }
+  const canPrintPdf = (kind: 'fracionado' | 'dedicado') => {
+    const amount = pdfAmounts[kind]
+    return Boolean(analysis && prices?.[kind] && amount !== null && amount >= Math.max(1500, Number(analysis.result[kind].minimum) || 1500))
+  }
   const priceStyle = messageStyle === 'Apresentação de valores' || messageStyle.startsWith('Proposta ')
   const selectedStyle = priceStyle && (!analysis || ((messageStyle === 'Proposta fracionado' || messageStyle === 'Apresentação de valores') && prices?.fracionado == null) || (messageStyle === 'Proposta dedicado' && prices?.dedicado == null)) ? 'Abordagem inicial' : messageStyle
   const clientMessage = cotacaoMessage(draft, selectedStyle, prices, templates)
@@ -225,6 +234,10 @@ export default function CotacaoAnalysisView({
                   <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.pesoKg))}/kg</span>
                   <span>{item.total == null ? '—' : unitBrl(item.total / Number(quotedDraft.cubagemM3))}/m³</span>
                 </div>
+                {!isFractional && <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center dark:border-emerald-700 dark:bg-emerald-500/10">
+                  <span className="block text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Valor mínimo do frete</span>
+                  <strong className="block text-sm text-emerald-800 dark:text-emerald-200">{item.minimum == null ? '—' : brl(item.minimum)}</strong>
+                </div>}
                 <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center dark:border-amber-700 dark:bg-amber-500/10">
                   <span className="block text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">Teto motorista</span>
                   <strong className="block text-sm text-amber-800 dark:text-amber-200">{driverCeiling === null ? '—' : brl(driverCeiling)}</strong>
@@ -238,9 +251,26 @@ export default function CotacaoAnalysisView({
           <h3 className="text-lg font-bold text-[#526c88] dark:text-slate-200">Pronto para analisar</h3>
           <p className="mt-3 text-sm text-[#59708f] dark:text-slate-300">Preencha a margem de lucro e clique em Analisar Proposta para ver o diagnóstico.</p>
         </div>}
+        {analysis && <section aria-label="Valores para os PDFs" className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Valor para o PDF</h3>
+            <button type="button" aria-controls="cotacao-pdf-values" aria-expanded={pdfValuesOpen} onClick={() => setPdfValuesOpen(open => !open)} className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">{pdfValuesOpen ? 'Ocultar' : 'Mostrar'}</button>
+          </div>
+          {pdfValuesOpen && <div id="cotacao-pdf-values">
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Começa com o Valor Final. A alteração vale apenas para o PDF; não muda a análise nem as mensagens.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">{(['fracionado', 'dedicado'] as const).map(kind => {
+            const invalid = Boolean(prices?.[kind] && !canPrintPdf(kind))
+            return <label key={kind} className={`grid gap-1.5 rounded-lg border p-2.5 text-xs font-semibold ${kind === 'fracionado' ? 'border-blue-200 text-blue-800 dark:border-blue-700 dark:text-blue-200' : 'border-violet-200 text-violet-800 dark:border-violet-700 dark:text-violet-200'}`}>
+              {kind === 'fracionado' ? 'Fracionado' : 'Dedicado'} (R$)
+              <input type="text" inputMode="decimal" aria-label={`Valor para o PDF ${kind}`} aria-invalid={invalid} disabled={!prices?.[kind] || busy} value={pdfPriceInputs[kind]} onChange={event => onPdfPriceChange(kind, event.target.value)} className={`${input} ${invalid ? 'border-rose-400' : ''}`} />
+              {invalid && <span className="font-normal text-rose-600 dark:text-rose-300">Informe um valor válido igual ou acima do mínimo permitido.</span>}
+            </label>
+          })}</div>
+          </div>}
+        </section>}
         {analysis && <div className="grid gap-2 sm:grid-cols-2" aria-label="Ações da proposta">
-          <button type="button" disabled={!prices?.fracionado || busy} onClick={() => onPrint('fracionado')} className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Fracionado</button>
-          <button type="button" disabled={!prices?.dedicado || busy} onClick={() => onPrint('dedicado')} className="rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Dedicado</button>
+          <button type="button" disabled={!canPrintPdf('fracionado') || busy} onClick={() => onPrint('fracionado', pdfAmounts.fracionado!)} className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Fracionado</button>
+          <button type="button" disabled={!canPrintPdf('dedicado') || busy} onClick={() => onPrint('dedicado', pdfAmounts.dedicado!)} className="rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Dedicado</button>
           <button type="button" disabled={!prices?.fracionado || busy} onClick={() => prepareProposal('fracionado')} className="rounded-xl bg-emerald-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Fracionado</button>
           <button type="button" disabled={!prices?.dedicado || busy} onClick={() => prepareProposal('dedicado')} className="rounded-xl bg-indigo-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Dedicado</button>
         </div>}
