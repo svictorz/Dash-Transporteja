@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase/client'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { extractCotacao } from '@/lib/utils/cotacao-extraction'
 import { isAnalysisCurrent } from '@/lib/utils/cotacao-analysis-current'
-import { defaultCotacaoTemplates, defaultCotacaoTitles, validateCotacaoTemplates, validateCotacaoTitles, type CotacaoMessageTemplates, type CotacaoMessageTitles } from '@/lib/utils/cotacao-messages'
+import { defaultCotacaoTemplates, defaultCotacaoTitles, hydrateCotacaoTemplates, validateCotacaoTemplates, validateCotacaoTitles, type CotacaoMessageTemplates, type CotacaoMessageTitles } from '@/lib/utils/cotacao-messages'
 import { parseCotacaoTaxPercent } from '@/lib/utils/cotacao-tax'
 import type { CotacaoDraft } from '@/lib/types/cotacao-erp'
 import CotacaoAnalysisView from '@/components/cotacao/CotacaoAnalysisView'
@@ -69,6 +69,7 @@ export default function CotacaoPage() {
   const [templates, setTemplates] = useState<CotacaoMessageTemplates>(defaultCotacaoTemplates)
   const [templateDraft, setTemplateDraft] = useState<CotacaoMessageTemplates>(defaultCotacaoTemplates)
   const [titles, setTitles] = useState<CotacaoMessageTitles>(defaultCotacaoTitles)
+  const [userPhone, setUserPhone] = useState('')
   const [titleDraft, setTitleDraft] = useState<CotacaoMessageTitles>(defaultCotacaoTitles)
   const [vehiclesDraft, setVehiclesDraft] = useState<Vehicle[]>(initialFleet)
   const [fleetVehicles, setFleetVehicles] = useState<Vehicle[]>(initialFleet)
@@ -155,10 +156,18 @@ export default function CotacaoPage() {
   useEffect(() => {
     if (!user?.id) return
     let active = true
+    void supabase.from('users').select('phone').eq('id', user.id).maybeSingle().then(({ data }) => {
+      if (active) setUserPhone(typeof data?.phone === 'string' ? data.phone : '')
+    })
+    return () => { active = false }
+  }, [user?.id])
+  useEffect(() => {
+    if (!user?.id) return
+    let active = true
     void supabase.from('erp_message_settings').select('templates,titles').eq('id', 1).maybeSingle().then(async ({ data, error }) => {
       const settings = error ? (await supabase.from('erp_message_settings').select('templates').eq('id', 1).maybeSingle()).data : data
       if (!active || !settings) return
-      const loaded = { ...defaultCotacaoTemplates, ...(settings.templates as Record<string, string>) } as CotacaoMessageTemplates
+      const loaded = hydrateCotacaoTemplates(settings.templates as Record<string, string>)
       const loadedTitles = { ...defaultCotacaoTitles, ...(('titles' in settings ? settings.titles : {}) as Record<string, string>) } as CotacaoMessageTitles
       if (!validateCotacaoTemplates(loaded)) { setTemplates(loaded); setTemplateDraft(loaded) }
       if (!validateCotacaoTitles(loadedTitles)) { setTitles(loadedTitles); setTitleDraft(loadedTitles) }
@@ -166,7 +175,7 @@ export default function CotacaoPage() {
     return () => { active = false }
   }, [user?.id])
   useEffect(() => {
-    if (!settingsOpen || !isAdmin) return
+    if (!settingsOpen) return
     const oldOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     settingsCloseRef.current?.focus()
@@ -186,7 +195,7 @@ export default function CotacaoPage() {
       window.removeEventListener('keydown', onKeyDown)
       settingsTriggerRef.current?.focus()
     }
-  }, [settingsOpen, isAdmin])
+  }, [settingsOpen])
 
   const save = async (): Promise<string | null> => {
     if (!user?.id) { setMessage('Aguarde a identificação da sua conta.'); return null }
@@ -319,7 +328,7 @@ export default function CotacaoPage() {
   }
 
   const saveTemplates = async () => {
-    if (!isAdmin || !user?.id) return
+    if (!user?.id) return
     const errorText = validateCotacaoTemplates(templateDraft) || validateCotacaoTitles(titleDraft)
     if (errorText) { setMessage(errorText); return }
     const { error } = await supabase.from('erp_message_settings').upsert({ id: 1, templates: templateDraft, titles: titleDraft, updated_by: user.id, updated_at: new Date().toISOString() })
@@ -463,7 +472,7 @@ export default function CotacaoPage() {
       <nav className="flex flex-wrap items-center gap-2" aria-label="Seções da cotação">
         <button type="button" onClick={() => setTab('analisar')} className={`rounded-lg px-3 py-2 text-sm ${tab === 'analisar' ? 'bg-[#2878ef] text-white' : 'border border-[#dce4ef] text-[#39526f] dark:border-slate-700 dark:text-white'}`}>Analisar</button>
         <button type="button" onClick={() => setTab('historico')} className={`rounded-lg px-3 py-2 text-sm ${tab === 'historico' ? 'bg-[#2878ef] text-white' : 'border border-[#dce4ef] text-[#39526f] dark:border-slate-700 dark:text-white'}`}>Histórico</button>
-        {isAdmin && <button ref={settingsTriggerRef} type="button" aria-label="Configurações da cotação" title="Configurações da cotação" onClick={() => setSettingsOpen(true)} className="rounded-lg border border-[#dce4ef] px-3 py-2 text-[#173e91] hover:bg-blue-50 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800">⚙</button>}
+        <button ref={settingsTriggerRef} type="button" aria-label="Configurações da cotação" title="Configurações da cotação" onClick={() => { setSettingsTab(isAdmin ? 'tributos' : 'mensagens'); setSettingsOpen(true) }} className="rounded-lg border border-[#dce4ef] px-3 py-2 text-[#173e91] hover:bg-blue-50 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800">⚙</button>
       </nav>
     </div>
     {message && <p role="status" className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:bg-blue-900/30 dark:text-blue-100">{message}</p>}
@@ -488,6 +497,7 @@ export default function CotacaoPage() {
       anttEffectiveFrom={analysis?.snapshot?.rules?.anttEffectiveFrom}
       templates={templates}
       titles={titles}
+      messageContext={{ distanceKm: analysis?.snapshot?.distance_km, userName: user?.name, userPhone, userEmail: user?.email }}
       similarFreights={similarFreights}
       similarFreightsLoading={similarFreightsLoading}
       similarFreightsError={similarFreightsError}
@@ -506,27 +516,27 @@ export default function CotacaoPage() {
       onDownloadJson={() => download(`cotacao-${quoteId}.json`, JSON.stringify({ draft: printDraft, analysis }, null, 2), 'application/json')}
     />}
     {tab === 'historico' && <section className={`${card} print:hidden`}><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Histórico de cotações</h2><button className="text-sm text-blue-600" onClick={() => download('cotacoes-jcn.csv', ['id;data;origem;destino;cliente;distancia_km', ...quotes.map(q => [q.id,q.created_at,q.draft.origem,q.draft.destino,q.draft.cliente,q.distance_km ?? ''].map(csvCell).join(';'))].join('\r\n'), 'text/csv;charset=utf-8')}>Exportar CSV</button></div><div className="space-y-2">{quotes.map(q => <button key={q.id} onClick={() => void openQuote(q)} className="flex w-full flex-wrap justify-between gap-2 rounded-lg border p-3 text-left text-sm dark:border-slate-700"><span>{q.draft.origem} → {q.draft.destino}</span><span>{q.draft.cliente || 'Cliente não informado'} · {new Date(q.created_at).toLocaleDateString('pt-BR')}</span></button>)}{quotes.length === 0 && <p className="text-sm text-slate-500">Nenhuma cotação salva.</p>}</div></section>}
-    {settingsOpen && isAdmin && <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/70 p-3 print:hidden sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}>
+    {settingsOpen && <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/70 p-3 print:hidden sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}>
       <section ref={settingsDialogRef} role="dialog" aria-modal="true" aria-labelledby="cotacao-settings-title" className="max-h-[calc(100vh-1.5rem)] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:max-h-[calc(100vh-3rem)]">
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex items-center justify-between gap-3"><h2 id="cotacao-settings-title" className="text-lg font-semibold">Configuração da cotação</h2><button ref={settingsCloseRef} type="button" onClick={() => setSettingsOpen(false)} aria-label="Fechar configurações" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800">Fechar ✕</button></div>
-        <div role="tablist" aria-label="Configurações da cotação" className="mt-4 flex flex-wrap gap-2">{([['tributos', 'Tributos e seguro'], ['precos', 'Preço e frota'], ['mensagens', 'Mensagens']] as const).map(([key, title]) => <button key={key} type="button" role="tab" aria-selected={settingsTab === key} onClick={() => setSettingsTab(key)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${settingsTab === key ? 'bg-[#2878ef] text-white' : 'border border-slate-300 text-slate-700 dark:border-slate-600 dark:text-slate-200'}`}>{title}</button>)}</div>
+        <div role="tablist" aria-label="Configurações da cotação" className="mt-4 flex flex-wrap gap-2">{(isAdmin ? [['tributos', 'Tributos e seguro'], ['precos', 'Preço e frota'], ['mensagens', 'Mensagens']] as const : [['mensagens', 'Mensagens']] as const).map(([key, title]) => <button key={key} type="button" role="tab" aria-selected={settingsTab === key} onClick={() => setSettingsTab(key)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${settingsTab === key ? 'bg-[#2878ef] text-white' : 'border border-slate-300 text-slate-700 dark:border-slate-600 dark:text-slate-200'}`}>{title}</button>)}</div>
       </div>
       <div className="space-y-4 p-5">
       {message && <p role="status" className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:bg-blue-900/30 dark:text-blue-100">{message}</p>}
       {settingsTab === 'mensagens' && <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
         <h3 className="font-semibold">Layout das mensagens</h3>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Variáveis: {'{saudacao}'}, {'{cliente}'}, {'{origem}'}, {'{destino}'}, {'{peso}'}, {'{valorNota}'}. Preços apenas nos textos de apresentação e proposta: {'{precoFracionado}'} e {'{precoDedicado}'}.</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Variáveis: {'{saudacao}'}, {'{cliente}'}, {'{origem}'}, {'{destino}'}, {'{distanciaKm}'}, {'{volumes}'}, {'{peso}'}, {'{valorNota}'}, {'{usuario}'}, {'{telefoneUsuario}'}, {'{emailUsuario}'}. Preços nos textos de apresentação e proposta: {'{precoFracionado}'} e {'{precoDedicado}'}.</p>
         <div className="mt-3 grid gap-3 lg:grid-cols-2">{(Object.keys(defaultCotacaoTemplates) as (keyof CotacaoMessageTemplates)[]).map(style => <div key={style} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700"><p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">{style}</p><label className="text-sm">Título<input className={`${input} mt-1`} maxLength={80} value={titleDraft[style]} onChange={event => setTitleDraft(previous => ({ ...previous, [style]: event.target.value }))} /></label><label className="mt-3 block text-sm">Corpo da mensagem<textarea className={`${input} mt-1 min-h-28`} value={templateDraft[style]} onChange={event => setTemplateDraft(previous => ({ ...previous, [style]: event.target.value }))} /></label></div>)}</div>
         <button type="button" onClick={() => void saveTemplates()} className="mt-3 rounded-lg bg-[#2878ef] px-4 py-2 text-sm font-semibold text-white">Salvar títulos e mensagens</button>
       </div>}
-      {settingsTab === 'tributos' && <div className="space-y-4">
+      {isAdmin && settingsTab === 'tributos' && <div className="space-y-4">
         <div><h3 className="font-semibold">Tributos e seguro</h3><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Informe o percentual total dos tributos, já somado pela empresa, e o percentual do seguro.</p></div>
         <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Tributos totais (%)<input type="text" inputMode="decimal" className={`${input} mt-1`} value={settingsDraft.tax_percent ?? ''} onChange={event => setSettingsDraft(previous => ({ ...previous, tax_percent: event.target.value }))} placeholder="Ex.: 17,93" /></label><label className="text-sm">Seguro sobre a nota fiscal (%)<input type="text" inputMode="decimal" className={`${input} mt-1`} value={settingsDraft.insurance_percent ?? ''} onChange={event => setSettingsDraft(previous => ({ ...previous, insurance_percent: event.target.value }))} placeholder="Ex.: 0,2" /></label></div>
         <label className="block max-w-sm text-sm">Teto do motorista (%)<input type="text" inputMode="decimal" className={`${input} mt-1`} value={settingsDraft.driver_max_percent ?? ''} onChange={event => setSettingsDraft(previous => ({ ...previous, driver_max_percent: event.target.value }))} placeholder="Ex.: 70" /><span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Percentual máximo do valor da proposta destinado ao motorista.</span></label>
         <button type="button" disabled={busy} onClick={() => void saveQuoteSettings()} className="rounded-lg bg-[#2878ef] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Salvar percentuais</button>
       </div>}
-      {settingsTab === 'precos' && <div className="space-y-4">
+      {isAdmin && settingsTab === 'precos' && <div className="space-y-4">
         <h3 className="font-semibold">Frota — valores e capacidades</h3>
         <p className="text-xs text-slate-500 dark:text-slate-400">Edite o valor por km, o peso e a cubagem máximos de cada veículo. Novas análises usam a frota salva.</p>
         <div className="grid gap-2">

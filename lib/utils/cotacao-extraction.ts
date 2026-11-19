@@ -28,7 +28,7 @@ export function extractCotacao(textoOriginal: string): CotacaoDraft {
     linearMeters: moneyOrWeight(capture(textoOriginal, 'metros\\s+lineares|comprimento\\s+linear')),
     pesoCubicoKg: moneyOrWeight(capture(textoOriginal, 'peso\\s+c(?:u|ú)bico')),
     googleKm: null,
-    quantidade: moneyOrWeight(capture(textoOriginal, 'quantidade')),
+    quantidade: moneyOrWeight(capture(textoOriginal, 'quantidade|volumes?')),
     telefone: capture(textoOriginal, 'whatsapp') || capture(textoOriginal, 'telefone|celular'),
     cliente: capture(textoOriginal, 'nome|cliente'),
     email: capture(textoOriginal, 'e-mail|email'),

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { CotacaoDraft } from '@/lib/types/cotacao-erp'
 import type { CotacaoCnpjParty } from '@/lib/utils/cotacao-cnpj'
-import { cotacaoAd, cotacaoMessage, cotacaoWhatsAppLink, type CotacaoMessageStyle, type CotacaoMessageTemplates, type CotacaoMessageTitles } from '@/lib/utils/cotacao-messages'
+import { cotacaoAd, cotacaoMessage, cotacaoWhatsAppLink, type CotacaoMessageStyle, type CotacaoMessageTemplates, type CotacaoMessageTitles, type MessageContext } from '@/lib/utils/cotacao-messages'
 import { ANTT_TABLE_A_SOURCE, ANTT_TABLE_A_VALID_FROM, anttReferenceRows, type AnttVehicle } from '@/lib/utils/cotacao-antt'
 import RouteMap from './RouteMap'
 import SimilarFreights from './SimilarFreights'
@@ -35,6 +35,7 @@ type Props = {
   anttEffectiveFrom?: string
   templates: CotacaoMessageTemplates
   titles: CotacaoMessageTitles
+  messageContext: MessageContext
   similarFreights: SimilarFreight[]
   similarFreightsLoading: boolean
   similarFreightsError: string
@@ -61,7 +62,7 @@ const subheading = 'mb-3 border-b border-gray-100 pb-3 text-sm font-semibold tex
 
 export default function CotacaoAnalysisView({
   raw, draft, distance, source, routeCoordinates, routeDuration,
-  busy, viewingAnotherUser, cnpjLoading, cnpjErrors, analysis, analysisError, vehicles, anttSourceUrl, anttEffectiveFrom, templates, titles, similarFreights, similarFreightsLoading, similarFreightsError, onRawChange, onExtract, onFieldChange, onLookupCnpjs, onDistanceChange, onRoute,
+  busy, viewingAnotherUser, cnpjLoading, cnpjErrors, analysis, analysisError, vehicles, anttSourceUrl, anttEffectiveFrom, templates, titles, messageContext, similarFreights, similarFreightsLoading, similarFreightsError, onRawChange, onExtract, onFieldChange, onLookupCnpjs, onDistanceChange, onRoute,
   onAnalyze, onVehicleChange, pdfPriceInputs, onPdfPriceChange, onPrint, onDownloadJson,
 }: Props) {
   const googleKm = Number(draft.googleKm)
@@ -77,7 +78,7 @@ export default function CotacaoAnalysisView({
   }
   const priceStyle = messageStyle === 'Apresentação de valores' || messageStyle.startsWith('Proposta ')
   const selectedStyle = priceStyle && (!analysis || ((messageStyle === 'Proposta fracionado' || messageStyle === 'Apresentação de valores') && prices?.fracionado == null) || (messageStyle === 'Proposta dedicado' && prices?.dedicado == null)) ? 'Abordagem inicial' : messageStyle
-  const clientMessage = cotacaoMessage(draft, selectedStyle, prices, templates)
+  const clientMessage = cotacaoMessage(draft, selectedStyle, prices, templates, messageContext)
   const adText = cotacaoAd(draft, templates)
   const whatsappLink = cotacaoWhatsAppLink(draft.telefone, clientMessage)
   const anttRows = anttReferenceRows(vehicles, routeKm, draft.pesoKg, draft.cubagemM3)
@@ -271,8 +272,8 @@ export default function CotacaoAnalysisView({
         {analysis && <div className="grid gap-2 sm:grid-cols-2" aria-label="Ações da proposta">
           <button type="button" disabled={!canPrintPdf('fracionado') || busy} onClick={() => onPrint('fracionado', pdfAmounts.fracionado!)} className="rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Fracionado</button>
           <button type="button" disabled={!canPrintPdf('dedicado') || busy} onClick={() => onPrint('dedicado', pdfAmounts.dedicado!)} className="rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">▣ Gerar PDF Dedicado</button>
-          <button type="button" disabled={!prices?.fracionado || busy} onClick={() => prepareProposal('fracionado')} className="rounded-xl bg-emerald-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Fracionado</button>
-          <button type="button" disabled={!prices?.dedicado || busy} onClick={() => prepareProposal('dedicado')} className="rounded-xl bg-indigo-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Proposta Dedicado</button>
+          <button type="button" disabled={!prices?.fracionado || busy} onClick={() => prepareProposal('fracionado')} className="rounded-xl bg-emerald-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Formalizar proposta fracionada</button>
+          <button type="button" disabled={!prices?.dedicado || busy} onClick={() => prepareProposal('dedicado')} className="rounded-xl bg-indigo-700 px-3 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">→ Formalizar proposta dedicada</button>
         </div>}
         {analysis && <SimilarFreights freights={similarFreights} loading={similarFreightsLoading} error={similarFreightsError} />}
         {analysis && <div className="rounded-xl border border-[#dbe4ef] p-4 dark:border-slate-700">

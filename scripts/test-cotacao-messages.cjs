@@ -7,9 +7,10 @@ const ts = require('typescript')
 const filename = path.resolve(__dirname, '../lib/utils/cotacao-messages.ts')
 const context = { exports: {}, require: () => ({}) }
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, context)
-const { cotacaoMessage, cotacaoAd, cotacaoWhatsAppLink, defaultCotacaoTemplates, validateCotacaoTemplates, defaultCotacaoTitles, validateCotacaoTitles } = context.exports
+const { cotacaoMessage, cotacaoAd, cotacaoWhatsAppLink, defaultCotacaoTemplates, hydrateCotacaoTemplates, validateCotacaoTemplates, defaultCotacaoTitles, validateCotacaoTitles } = context.exports
 
-const draft = { origem: 'São Paulo/SP', destino: 'Alvorada/TO', pesoKg: 3585, valorNota: 14916.47, cliente: 'Nicole', telefone: '(11) 9 6451-3724' }
+const draft = { origem: 'São Paulo/SP', destino: 'Alvorada/TO', pesoKg: 3585, valorNota: 14916.47, quantidade: 172, cliente: 'Nicole', telefone: '(11) 9 6451-3724' }
+const seller = { distanceKm: 1284.8, userName: 'Victor Sousa', userPhone: '(11) 99999-0000', userEmail: 'victor@jcn.com.br' }
 assert.equal(cotacaoMessage(draft, 'Abordagem inicial'), 'Olá, Nicole! A carga de São Paulo/SP para Alvorada/TO ainda está disponível? Posso enviar uma cotação?')
 assert.match(cotacaoMessage(draft, 'Confirmação de dados'), /3\.585 kg/)
 assert.match(cotacaoAd(draft), /NF: R\$\s?14\.916,47/)
@@ -23,6 +24,16 @@ assert.equal(cotacaoMessage(draft, 'Apresentação de valores', { dedicado: 1238
 assert.match(cotacaoMessage(draft, 'Proposta dedicado', { dedicado: 12389.51 }), /R\$\s?12\.389,51/)
 assert.match(cotacaoMessage(draft, 'Proposta fracionado', { fracionado: 7480.24, dedicado: 12389.51 }), /R\$\s?7\.480,24/)
 assert.doesNotMatch(cotacaoMessage(draft, 'Proposta fracionado', { fracionado: 7480.24, dedicado: 12389.51 }), /12\.389,51/)
+const formal = cotacaoMessage(draft, 'Proposta fracionado', { fracionado: 7480.24, dedicado: 12389.51 }, defaultCotacaoTemplates, seller)
+assert.match(formal, /1\.284,8 km/)
+assert.match(formal, /172 volumes – 3\.585 kg/)
+assert.match(formal, /Victor Sousa – JCN Transportes/)
+assert.match(formal, /\(11\) 99999-0000 \| victor@jcn.com.br/)
+assert.match(formal, /70% na coleta \+ 30% na entrega/)
+assert.doesNotMatch(formal, /12\.389,51/)
+assert.match(cotacaoMessage(draft, 'Proposta dedicado', { dedicado: 12389.51 }, defaultCotacaoTemplates, seller), /12\.389,51/)
+assert.equal(hydrateCotacaoTemplates({ 'Proposta dedicado': '{saudacao} Segue a proposta de transporte dedicado de {origem} para {destino}, no valor de {precoDedicado}. Posso confirmar a operação?' })['Proposta dedicado'], defaultCotacaoTemplates['Proposta dedicado'])
+assert.equal(hydrateCotacaoTemplates({ 'Proposta dedicado': 'Texto personalizado {precoDedicado}' })['Proposta dedicado'], 'Texto personalizado {precoDedicado}')
 const templates = { ...defaultCotacaoTemplates, 'Abordagem inicial': 'Pedido de {origem} até {destino} para {cliente}.' }
 assert.equal(validateCotacaoTemplates(templates), null)
 assert.equal(cotacaoMessage(draft, 'Abordagem inicial', undefined, templates), 'Pedido de São Paulo/SP até Alvorada/TO para Nicole.')
