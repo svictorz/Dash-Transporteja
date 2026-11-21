@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CotacaoDraft } from '@/lib/types/cotacao-erp'
 import type { CotacaoCnpjParty } from '@/lib/utils/cotacao-cnpj'
 import { cotacaoAd, cotacaoMessage, cotacaoWhatsAppLink, type CotacaoMessageStyle, type CotacaoMessageTemplates, type CotacaoMessageTitles, type MessageContext } from '@/lib/utils/cotacao-messages'
@@ -9,6 +9,7 @@ import RouteMap from './RouteMap'
 import SimilarFreights from './SimilarFreights'
 import type { SimilarFreight } from '@/lib/utils/cotacao-similar-freights'
 import { parseCotacaoPdfPrice } from '@/lib/utils/cotacao-proposal'
+import { parseCotacaoNumber } from '@/lib/utils/cotacao-extraction'
 
 type Vehicle = AnttVehicle & { payloadKg: number; pricePerKm?: number }
 type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; occupancy_pct?: number | null; status?: string }
@@ -70,6 +71,9 @@ export default function CotacaoAnalysisView({
   const googleDiffers = googleKm > 0 && routeKm > 0 && Math.abs(googleKm - routeKm) / routeKm > 0.15
   const [messageStyle, setMessageStyle] = useState<CotacaoMessageStyle>('Abordagem inicial')
   const [pdfValuesOpen, setPdfValuesOpen] = useState(true)
+  const [nfInput, setNfInput] = useState(draft.valorNota == null ? '' : String(draft.valorNota))
+  const [nfInvalid, setNfInvalid] = useState(false)
+  useEffect(() => { setNfInput(draft.valorNota == null ? '' : String(draft.valorNota)); setNfInvalid(false) }, [draft.valorNota])
   const prices = analysis ? { fracionado: Number(analysis.result.fracionado.total) >= 1500 ? analysis.result.fracionado.total ?? undefined : undefined, dedicado: Number(analysis.result.dedicado.total) >= 1500 ? analysis.result.dedicado.total ?? undefined : undefined } : undefined
   const pdfAmounts = { fracionado: parseCotacaoPdfPrice(pdfPriceInputs.fracionado), dedicado: parseCotacaoPdfPrice(pdfPriceInputs.dedicado) }
   const canPrintPdf = (kind: 'fracionado' | 'dedicado') => {
@@ -118,7 +122,7 @@ export default function CotacaoAnalysisView({
         <label className={label}>Cubagem (m³) (Obrigatório)<input id="cotacao-cubagem" className={input} type="number" min="0.01" step="any" required value={draft.cubagemM3 ?? ''} onChange={event => onFieldChange('cubagemM3', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,81" /></label>
         <label className={label}>Quantidade<input className={input} type="number" min="0" value={draft.quantidade ?? ''} onChange={event => onFieldChange('quantidade', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 172" /></label>
         <label className={label}>Metros lineares (opcional)<input className={input} type="number" min="0" step="any" value={draft.linearMeters ?? ''} onChange={event => onFieldChange('linearMeters', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,4" /></label>
-        <label className={label}>Valor NF (R$)<input className={input} type="number" min="0" step="any" value={draft.valorNota ?? ''} onChange={event => onFieldChange('valorNota', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 14916,47" /></label>
+        <label className={label}>Valor NF (R$)<input className={input} type="text" inputMode="decimal" aria-invalid={nfInvalid} value={nfInput} onChange={event => { setNfInput(event.target.value); setNfInvalid(false) }} onBlur={() => { const parsed = nfInput.trim() ? parseCotacaoNumber(nfInput) : null; setNfInvalid(Boolean(nfInput.trim()) && parsed === null); onFieldChange('valorNota', parsed) }} placeholder="Ex.: 17.900,00 ou 17900.00" />{nfInvalid && <span className="text-rose-600">Informe um valor de nota válido.</span>}</label>
       </div>
 
       <details className="mt-5 border-t border-[#e5ebf2] pt-4 dark:border-slate-700">

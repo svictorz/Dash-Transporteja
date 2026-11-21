@@ -32,9 +32,9 @@ export async function nominatimSearchBrasil(query: string): Promise<GeocodeHit |
   const q = query.trim()
   if (!q) return null
 
-  const url = new URL(NOMINATIM_BASE)
   const cityAndState = q.match(/^(.+?)\s*[,/]\s*([A-Z]{2})$/i)
   const stateName = cityAndState && STATE_NAMES[cityAndState[2].toUpperCase()]
+  const url = new URL(NOMINATIM_BASE)
   if (cityAndState && stateName) {
     url.searchParams.set('city', cityAndState[1].trim())
     url.searchParams.set('state', stateName)
@@ -48,15 +48,22 @@ export async function nominatimSearchBrasil(query: string): Promise<GeocodeHit |
   url.searchParams.set('addressdetails', '1')
   url.searchParams.set('accept-language', 'pt-BR')
 
-  const res = await fetch(url.toString(), {
-    headers: { 'User-Agent': USER_AGENT },
-    next: { revalidate: 0 },
-  })
-
-  if (!res.ok) return null
-
-  const data = (await res.json()) as Array<{ lat?: string; lon?: string; display_name?: string }>
-  const first = data?.[0]
+  const search = async (target: URL) => {
+    const res = await fetch(target.toString(), { headers: { 'User-Agent': USER_AGENT }, next: { revalidate: 0 } })
+    return res.ok ? (await res.json()) as Array<{ lat?: string; lon?: string; display_name?: string }> : []
+  }
+  let data = await search(url)
+  if (!data.length && cityAndState && stateName) {
+    // Alguns municípios não aparecem na busca estruturada do Nominatim.
+    await sleep(1000)
+    const fallback = new URL(NOMINATIM_BASE)
+    fallback.searchParams.set('q', `${cityAndState[1].trim()}, ${stateName}, Brasil`)
+    for (const key of ['format', 'limit', 'countrycodes', 'addressdetails', 'accept-language']) {
+      fallback.searchParams.set(key, url.searchParams.get(key) || '')
+    }
+    data = await search(fallback)
+  }
+  const first = data[0]
   if (!first?.lat || !first?.lon) return null
 
   const lat = parseFloat(first.lat)

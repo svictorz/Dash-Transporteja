@@ -42,4 +42,31 @@ assert.equal(complete.cubagemM3, 2.81)
 assert.equal(complete.pesoCubicoKg, 938.25)
 assert.equal(complete.telefone, '(11) 9 6451-3724')
 assert.equal(complete.cliente, 'Nicole')
+const cargas = extractCotacao(`Nova Cotação de Frete completo
+Origem: Erechim, RS
+Destino: São João del Rei, MG
+
+Quantidade: 1 Un
+Peso: 487,00 Kg
+Valor de Nota: R$ 17.900,00
+Itens:
+- 1 un
+Observações: Caixas cadeira de escritório.
+
+Atenciosamente,
+Nome: Valeria Mara Resende
+Whatsapp: (32) 9 9814-2822
+E-mail: valcarvalho1712@gmail.com`)
+assert.equal(cargas.origem, 'Erechim/RS')
+assert.equal(cargas.destino, 'São João del Rei/MG')
+assert.equal(cargas.quantidade, 1)
+assert.equal(cargas.pesoKg, 487)
+assert.equal(cargas.valorNota, 17900)
+assert.equal(cargas.observacoes, 'Caixas cadeira de escritório.')
+assert.equal(cargas.cliente, 'Valeria Mara Resende')
+assert.equal(cargas.telefone, '(32) 9 9814-2822')
+assert.equal(cargas.email, 'valcarvalho1712@gmail.com')
+assert.equal(extractCotacao('Valor de Nota: R$ 17.900').valorNota, 17900)
+assert.equal(extractCotacao('Valor de Nota: R$ 17,900.00').valorNota, 17900)
+assert.equal(extractCotacao('Peso: 487.00 Kg').pesoKg, 487)
 console.log('PASS: extração inicial de cotação e campos ausentes')

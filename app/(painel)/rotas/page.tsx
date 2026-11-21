@@ -396,7 +396,7 @@ export default function RotasPage() {
     setCompanyInput(client?.company_name || route.company_name || '')
     companyLookupSequence.current += 1
     setCompanyLookup({
-      kind: client?.cnpj?.replace(/\D/g, '') === route.company_cnpj?.replace(/\D/g, '') && !!route.company_cnpj ? 'existing' : 'idle',
+      kind: route.company_cnpj ? 'existing' : 'idle',
       cnpj: route.company_cnpj?.replace(/\D/g, '') || '',
     })
     setFormData({
@@ -628,6 +628,7 @@ export default function RotasPage() {
 
   const handleCompanyCnpjChange = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 14)
+    if (digits === formData.companyCnpj.replace(/\D/g, '')) return
     companyLookupSequence.current += 1
     setCompanyInput('')
     setCompanyLookup({ kind: 'idle', cnpj: digits })
@@ -843,7 +844,8 @@ export default function RotasPage() {
       alert('Informe um CNPJ válido para a empresa.')
       return
     }
-    if (companyCnpj && (companyLookup.cnpj !== companyCnpj || !['existing', 'new'].includes(companyLookup.kind))) {
+    const unchangedCnpj = companyCnpj === (editingRoute?.company_cnpj || '').replace(/\D/g, '')
+    if (companyCnpj && !unchangedCnpj && (companyLookup.cnpj !== companyCnpj || !['existing', 'new'].includes(companyLookup.kind))) {
       alert('Clique em Buscar empresa antes de salvar o frete.')
       return
     }
@@ -1122,7 +1124,7 @@ export default function RotasPage() {
         </div>
         <label className="block text-sm font-semibold text-gray-900">
           <span className="mb-2 block">Nome da empresa <span className="text-red-500">*</span></span>
-          <input type="text" value={companyInput} readOnly={companyLookup.kind === 'existing'} onChange={(event) => setCompanyInput(event.target.value)} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-800 read-only:bg-slate-100" placeholder="Nome da empresa" />
+          <input type="text" value={companyInput} readOnly={companyLookup.kind === 'existing'} onChange={(event) => setCompanyInput(event.target.value)} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-800 read-only:bg-slate-100 read-only:text-slate-900" placeholder="Nome da empresa" />
         </label>
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -1598,7 +1600,7 @@ export default function RotasPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+            className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden"
           >
             <div className="p-6 border-b border-gray-200 flex items-center justify-between shrink-0 bg-white z-10">
               <div className="flex items-center gap-3">
@@ -1621,18 +1623,34 @@ export default function RotasPage() {
               </button>
             </div>
 
-            <div className="px-6 py-0 flex-1 overflow-y-auto space-y-0">
+            <div className="route-detail-form flex-1 overflow-y-auto p-6">
               {/* Informações da Empresa */}
               <div className="py-5">
                 <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Building2 className="w-4 h-4" />
                   Empresa
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
+                    <p className="text-xs text-gray-500 mb-1">CNPJ da empresa</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-slate-100">{selectedRoute.company_cnpj || '—'}</p>
+                  </div>
                   <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Nome da Empresa</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.company_name || selectedRoute.company_name || 'N/A'}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-slate-100">{selectedRoute.client?.company_name || selectedRoute.company_name || 'N/A'}</p>
                   </div>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
+                    <p className="text-xs text-gray-500 mb-1">Data de coleta</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-slate-100">{formatDateDdMmYyyy(selectedRoute.pickup_date)}</p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
+                    <p className="text-xs text-gray-500 mb-1">Previsão de entrega</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-slate-100">{formatDateDdMmYyyy(selectedRoute.estimated_delivery)}</p>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Responsável</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.responsible || selectedRoute.company_responsible || 'N/A'}</p>
@@ -1667,6 +1685,8 @@ export default function RotasPage() {
                     </p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.client?.email || selectedRoute.company_email || 'N/A'}</p>
                   </div>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Status de Pagamento</p>
                     <p className="text-sm font-medium text-gray-900">
@@ -1679,10 +1699,29 @@ export default function RotasPage() {
                       {selectedRoute.payment_type || '—'}
                     </p>
                   </div>
-                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700 md:col-span-2">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Tipo de frete</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.freight_type || '—'}</p>
                   </div>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200" />
+
+              <div className="py-5">
+                <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-slate-100">Dados do motorista</h3>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  {[
+                    ['Nome do motorista', selectedRoute.driver_name || selectedRoute.driver?.name || '—'],
+                    ['Celular do motorista', selectedRoute.driver_phone || selectedRoute.driver?.phone || '—'],
+                    ['Status motorista', selectedRoute.driver_payment_type || '—'],
+                    ['Pagamento ao motorista', selectedRoute.driver_payment_status || '—'],
+                  ].map(([field, value]) => (
+                    <div key={field} className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+                      <p className="mb-1 text-xs text-gray-500">{field}</p>
+                      <p className="text-sm font-medium text-gray-900">{value}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -1694,33 +1733,23 @@ export default function RotasPage() {
                   <Route className="w-4 h-4" />
                   Rota
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Origem */}
-                  <div className="bg-blue-50 dark:bg-blue-900/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
-                    <div className="flex items-start gap-3">
-                      <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <p className="text-xs text-blue-600 dark:text-blue-300 font-semibold mb-1.5 uppercase tracking-wide">De onde foi coletado</p>
-                        <p className="text-sm font-bold text-gray-900 dark:text-slate-100">{selectedRoute.origin}, {selectedRoute.origin_state}</p>
-                        {selectedRoute.origin_address && (
-                          <p className="text-xs text-gray-600 dark:text-slate-300 mt-1">{selectedRoute.origin_address}</p>
-                        )}
+                <div className="space-y-4">
+                  {[
+                    { title: 'Origem / Coleta', city: selectedRoute.origin, state: selectedRoute.origin_state, address: selectedRoute.origin_address, tone: 'blue' },
+                    { title: 'Destino / Entrega', city: selectedRoute.destination, state: selectedRoute.destination_state, address: selectedRoute.destination_address, tone: 'green' },
+                  ].map((place) => (
+                    <div key={place.title} className={`route-detail-place space-y-4 rounded-lg border p-4 ${place.tone === 'blue' ? 'border-blue-200 bg-blue-50' : 'border-green-200 bg-green-50'}`}>
+                      <h4 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                        <MapPin className={`h-5 w-5 ${place.tone === 'blue' ? 'text-blue-600' : 'text-green-600'}`} />
+                        {place.title}
+                      </h4>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <div className="md:col-span-2"><span>Cidade</span><p>{place.city || '—'}</p></div>
+                        <div><span>Estado</span><p>{place.state || '—'}</p></div>
                       </div>
+                      <div><span>Endereço</span><p>{place.address || '—'}</p></div>
                     </div>
-                  </div>
-                  {/* Destino */}
-                  <div className="bg-green-50 dark:bg-green-900/30 rounded-xl p-4 border border-green-200 dark:border-green-800">
-                    <div className="flex items-start gap-3">
-                      <MapPin className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <p className="text-xs text-green-600 dark:text-green-300 font-semibold mb-1.5 uppercase tracking-wide">Lugar de entrega</p>
-                        <p className="text-sm font-bold text-gray-900 dark:text-slate-100">{selectedRoute.destination}, {selectedRoute.destination_state}</p>
-                        {selectedRoute.destination_address && (
-                          <p className="text-xs text-gray-600 dark:text-slate-300 mt-1">{selectedRoute.destination_address}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </div>
 
@@ -1730,17 +1759,9 @@ export default function RotasPage() {
               <div className="py-5">
                 <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Truck className="w-4 h-4" />
-                  Veículo
+                  Dados da carga
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
-                    <p className="text-xs text-gray-500 mb-1">Modelo</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.vehicle}</p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
-                    <p className="text-xs text-gray-500 mb-1">Placa</p>
-                    <p className="text-sm font-medium text-gray-900">{selectedRoute.plate}</p>
-                  </div>
                   <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Peso</p>
                     <p className="text-sm font-medium text-gray-900">{selectedRoute.weight}</p>
@@ -1754,52 +1775,19 @@ export default function RotasPage() {
                     <p className="text-sm font-medium text-gray-900 break-words">{selectedRoute.material_type || '—'}</p>
                   </div>
                   <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
-                    <p className="text-xs text-gray-500 mb-1">Nome do Motorista</p>
-                    <p className="text-sm font-medium text-gray-900">
-                      {selectedRoute.driver_name || selectedRoute.driver?.name || '—'}
-                    </p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
-                    <p className="text-xs text-gray-500 mb-1">Celular do Motorista</p>
-                    {getWhatsAppWebUrl(selectedRoute.driver_phone || selectedRoute.driver?.phone) ? (
-                      <a
-                        href={getWhatsAppWebUrl(selectedRoute.driver_phone || selectedRoute.driver?.phone) || undefined}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300"
-                      >
-                        {selectedRoute.driver_phone || selectedRoute.driver?.phone}
-                      </a>
-                    ) : (
-                      <p className="text-sm font-medium text-gray-900">—</p>
-                    )}
-                  </div>
-                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
-                    <p className="text-xs text-gray-500 mb-1">Status Motorista</p>
-                    <p className="text-sm font-medium text-gray-900">
-                      {selectedRoute.driver_payment_type || '—'}
-                    </p>
+                    <p className="text-xs text-gray-500 mb-1">Valor da nota fiscal</p>
+                    <p className="text-sm font-medium text-gray-900">{formatCurrencyBR(selectedRoute.nf_value)}</p>
                   </div>
                 </div>
               </div>
 
               <div className="border-t border-gray-200" />
-              {/* Informações de Datas */}
+              {/* Valores e custos */}
               <div className="py-5">
                 <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
-                  Datas
+                  Valores e custos
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
-                    <p className="text-xs text-gray-500 mb-1">Data de Coleta</p>
-                    <p className="text-sm font-medium text-gray-900">{formatDateDdMmYyyy(selectedRoute.pickup_date)}</p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
-                    <p className="text-xs text-gray-500 mb-1">Previsão de Entrega</p>
-                    <p className="text-sm font-medium text-gray-900">{formatDateDdMmYyyy(selectedRoute.estimated_delivery)}</p>
-                  </div>
-                </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
                   <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
                     <p className="text-xs text-gray-500 mb-1">Valor do Frete</p>
@@ -1858,18 +1846,15 @@ export default function RotasPage() {
                       {formatCurrencyBR(getRouteCommissionValue(selectedRoute, commissionRate))}
                     </p>
                   </div>
-                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700">
-                    <p className="text-xs text-gray-500 mb-1">Valor da NF</p>
-                    <p className="text-sm font-medium text-gray-900">
-                      {formatCurrencyBR(selectedRoute.nf_value)}
-                    </p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 border border-gray-200 dark:border-slate-700 md:col-span-3">
-                    <p className="text-xs text-gray-500 mb-1">Observação</p>
-                    <p className="text-sm font-medium text-gray-900 whitespace-pre-wrap">
-                      {selectedRoute.observation || '—'}
-                    </p>
-                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200" />
+
+              <div className="py-5">
+                <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-slate-100">Observação</h3>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+                  <p className="whitespace-pre-wrap text-sm font-medium text-gray-900">{selectedRoute.observation || '—'}</p>
                 </div>
               </div>
 
@@ -2042,6 +2027,7 @@ export default function RotasPage() {
             <form onSubmit={handleCreateRoute} noValidate className="p-6 space-y-6">
               {/* CEP será adicionado antes dos campos de origem */}
               {renderCompanyFields()}
+              {renderRouteDates()}
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -2089,7 +2075,7 @@ export default function RotasPage() {
 
               <details className="group border-t border-gray-200 pt-4">
                 <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 [&::-webkit-details-marker]:hidden">
-                  Dados do motorista e datas
+                  Dados do motorista
                   <ChevronDown className="h-4 w-4 text-gray-500 transition-transform group-open:rotate-180" aria-hidden="true" />
                 </summary>
                 <div className="mt-4 space-y-4">
@@ -2145,13 +2131,12 @@ export default function RotasPage() {
                 </div>
               </div>
 
-              {renderRouteDates()}
                 </div>
               </details>
 
               {/* Origem - Começando pelo CEP */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <h3 className="text-lg font-semibold !text-slate-900 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-blue-600" />
                   Origem / Coleta
                 </h3>
@@ -2234,7 +2219,7 @@ export default function RotasPage() {
 
               {/* Destino - Começando pelo CEP */}
               <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <h3 className="text-lg font-semibold !text-slate-900 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-green-600" />
                   Destino / Entrega
                 </h3>
@@ -2371,6 +2356,7 @@ export default function RotasPage() {
 
             <form onSubmit={handleUpdateRoute} noValidate className="p-6 space-y-6">
               {renderCompanyFields()}
+              {renderRouteDates()}
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -2418,7 +2404,7 @@ export default function RotasPage() {
 
               <details className="group border-t border-gray-200 pt-4">
                 <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 [&::-webkit-details-marker]:hidden">
-                  Dados do motorista e datas
+                  Dados do motorista
                   <ChevronDown className="h-4 w-4 text-gray-500 transition-transform group-open:rotate-180" aria-hidden="true" />
                 </summary>
                 <div className="mt-4 space-y-4">
@@ -2474,13 +2460,12 @@ export default function RotasPage() {
                 </div>
               </div>
 
-              {renderRouteDates()}
                 </div>
               </details>
 
               {/* Origem - Começando pelo CEP */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <h3 className="text-lg font-semibold !text-slate-900 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-blue-600" />
                   Origem / Coleta
                 </h3>
@@ -2563,7 +2548,7 @@ export default function RotasPage() {
 
               {/* Destino - Começando pelo CEP */}
               <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200 [&_label]:!text-slate-900 [&_input]:!bg-white [&_input]:!text-slate-900 [&_input]:!border-slate-300">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <h3 className="text-lg font-semibold !text-slate-900 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-green-600" />
                   Destino / Entrega
                 </h3>

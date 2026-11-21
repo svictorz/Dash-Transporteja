@@ -82,10 +82,14 @@ export default function DadosPessoaisPage() {
       }
 
       if (userData) {
+        if (session.user.email && userData.email !== session.user.email) {
+          const { error: syncError } = await supabase.from('users').update({ email: session.user.email }).eq('id', session.user.id)
+          if (syncError) console.error('Erro ao sincronizar e-mail confirmado:', syncError)
+        }
         setProfile({
           id: userData.id,
           name: userData.name || null,
-          email: userData.email || session.user.email || '',
+          email: session.user.email || userData.email || '',
           phone: userData.phone || null,
           avatar_url: userData.avatar_url || null
         })
@@ -196,6 +200,11 @@ export default function DadosPessoaisPage() {
 
     try {
       setIsSaving(true)
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      if (authError || !authData.user) throw authError || new Error('Sessão expirada.')
+      const newEmail = profile.email.trim().toLowerCase()
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) throw new Error('Informe um e-mail válido.')
+      const emailChanged = newEmail !== (authData.user.email || '').toLowerCase()
       const { error } = await supabase
         .from('users')
         .update({
@@ -204,19 +213,26 @@ export default function DadosPessoaisPage() {
           updated_at: new Date().toISOString()
         })
         .eq('id', profile.id)
+        .select('id')
+        .single()
 
       if (error) {
         throw error
       }
 
+      if (emailChanged) {
+        const { error: emailError } = await supabase.auth.updateUser({ email: newEmail })
+        if (emailError) throw new Error(`Nome e telefone salvos. E-mail não alterado: ${emailError.message}`)
+      }
+
       window.dispatchEvent(new CustomEvent('transporteja:profile-updated', {
         detail: {
           name: profile.name,
-          email: profile.email,
+          email: authData.user.email,
           avatar_url: profile.avatar_url
         }
       }))
-      alert('Perfil atualizado com sucesso!')
+      alert(emailChanged ? 'Nome e telefone salvos. Confirme a mudança de e-mail pelos links enviados ao endereço atual e ao novo endereço.' : 'Perfil atualizado com sucesso!')
     } catch (error: any) {
       console.error('Erro ao salvar perfil:', error)
       alert(`Erro ao salvar perfil: ${error.message}`)
@@ -379,10 +395,10 @@ export default function DadosPessoaisPage() {
                 <input
                   type="email"
                   value={profile.email}
-                  disabled
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
+                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">O e-mail não pode ser alterado</p>
+                <p className="text-xs text-gray-500 mt-1">A mudança de e-mail precisa ser confirmada pelos links enviados.</p>
               </div>
 
               {/* Telefone */}
