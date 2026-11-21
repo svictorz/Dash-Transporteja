@@ -38,6 +38,11 @@ export default function DadosPessoaisPage() {
   const [showCropper, setShowCropper] = useState(false)
   const [cropperImage, setCropperImage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [emailConfirmation, setEmailConfirmation] = useState<{ current: string; next: string } | null>(null)
+  const [codeDestination, setCodeDestination] = useState<'current' | 'next'>('current')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [verificationMessage, setVerificationMessage] = useState('')
+  const [isVerifyingEmail, setIsVerifyingEmail] = useState(false)
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -223,6 +228,10 @@ export default function DadosPessoaisPage() {
       if (emailChanged) {
         const { error: emailError } = await supabase.auth.updateUser({ email: newEmail })
         if (emailError) throw new Error(`Nome e telefone salvos. E-mail não alterado: ${emailError.message}`)
+        setEmailConfirmation({ current: authData.user.email!.toLowerCase(), next: newEmail })
+        setCodeDestination('current')
+        setVerificationCode('')
+        setVerificationMessage('Use os códigos da solicitação que acabou de ser enviada. Um chega ao e-mail atual e outro ao novo.')
       }
 
       window.dispatchEvent(new CustomEvent('transporteja:profile-updated', {
@@ -232,12 +241,71 @@ export default function DadosPessoaisPage() {
           avatar_url: profile.avatar_url
         }
       }))
-      alert(emailChanged ? 'Nome e telefone salvos. Confirme os links mais recentes enviados ao e-mail atual e ao novo. Links de solicitações anteriores não funcionam.' : 'Perfil atualizado com sucesso!')
+      if (!emailChanged) alert('Perfil atualizado com sucesso!')
     } catch (error: any) {
       console.error('Erro ao salvar perfil:', error)
       alert(`Erro ao salvar perfil: ${error.message}`)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const openEmailConfirmation = async () => {
+    if (!profile) return
+    const { data, error } = await supabase.auth.getUser()
+    if (error || !data.user?.email) {
+      alert('Entre novamente para confirmar a alteração de e-mail.')
+      return
+    }
+    const current = data.user.email.toLowerCase()
+    const next = profile.email.trim().toLowerCase()
+    if (current === next || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) {
+      alert('Informe o novo e-mail no campo acima antes de inserir o código.')
+      return
+    }
+    setEmailConfirmation({ current, next })
+    setCodeDestination('current')
+    setVerificationCode('')
+    setVerificationMessage('Informe o código recebido no e-mail atual ou no novo. A troca só termina após confirmar ambos.')
+  }
+
+  const confirmEmailCode = async () => {
+    if (!emailConfirmation || isVerifyingEmail) return
+    const token = verificationCode.trim()
+    if (!/^\d{6}$/.test(token)) {
+      setVerificationMessage('Informe o código de 6 dígitos recebido por e-mail.')
+      return
+    }
+    setIsVerifyingEmail(true)
+    setVerificationMessage('')
+    try {
+      const email = codeDestination === 'current' ? emailConfirmation.current : emailConfirmation.next
+      const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email_change' })
+      if (error) {
+        setVerificationMessage('Código inválido ou expirado. Confira se ele pertence à solicitação mais recente.')
+        return
+      }
+      setVerificationCode('')
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError) throw userError
+      if (user?.email?.toLowerCase() === emailConfirmation.next) {
+        const { error: syncError } = await supabase.from('users').update({ email: user.email }).eq('id', user.id)
+        if (syncError) console.error('Erro ao sincronizar e-mail confirmado:', syncError)
+        setProfile((previous) => previous ? { ...previous, email: user.email! } : previous)
+        window.dispatchEvent(new CustomEvent('transporteja:profile-updated', {
+          detail: { name: profile?.name, email: user.email, avatar_url: profile?.avatar_url }
+        }))
+        setEmailConfirmation(null)
+        alert('E-mail alterado com sucesso!')
+      } else {
+        setCodeDestination(codeDestination === 'current' ? 'next' : 'current')
+        setVerificationMessage('Código confirmado. Agora informe o código enviado ao outro e-mail.')
+      }
+    } catch (error) {
+      console.error('Erro ao confirmar e-mail:', error)
+      setVerificationMessage('Não foi possível verificar a mudança. Tente novamente.')
+    } finally {
+      setIsVerifyingEmail(false)
     }
   }
 
@@ -398,7 +466,10 @@ export default function DadosPessoaisPage() {
                   onChange={(e) => setProfile({ ...profile, email: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">A mudança de e-mail precisa ser confirmada pelos links enviados.</p>
+                <p className="text-xs text-gray-500 mt-1">A mudança precisa ser confirmada no e-mail atual e no novo. Você pode usar os links ou os códigos enviados.</p>
+                <button type="button" onClick={openEmailConfirmation} className="mt-2 text-sm font-medium text-blue-600 hover:underline">
+                  Já recebi um código
+                </button>
               </div>
 
               {/* Telefone */}
@@ -542,6 +613,31 @@ export default function DadosPessoaisPage() {
           </div>
         </div>
       </FadeIn>
+
+      {emailConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="email-code-title" className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 text-gray-900 shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="email-code-title" className="text-lg font-semibold">Confirmar novo e-mail</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-slate-300">O Supabase exige confirmação nos dois endereços.</p>
+              </div>
+              <button type="button" onClick={() => setEmailConfirmation(null)} aria-label="Fechar" className="rounded p-1 hover:bg-gray-100 dark:hover:bg-slate-800"><X className="h-5 w-5" /></button>
+            </div>
+            <label htmlFor="code-destination" className="mt-5 block text-sm font-medium">Código recebido em</label>
+            <select id="code-destination" value={codeDestination} onChange={(event) => { setCodeDestination(event.target.value as 'current' | 'next'); setVerificationCode(''); setVerificationMessage('') }} className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+              <option value="current">E-mail atual: {emailConfirmation.current}</option>
+              <option value="next">Novo e-mail: {emailConfirmation.next}</option>
+            </select>
+            <label htmlFor="email-code" className="mt-4 block text-sm font-medium">Código de 6 dígitos</label>
+            <input id="email-code" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={(event) => { if (event.key === 'Enter') void confirmEmailCode() }} placeholder="000000" className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 tracking-widest text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" />
+            {verificationMessage && <p role="status" className="mt-3 text-sm text-gray-600 dark:text-slate-300">{verificationMessage}</p>}
+            <button type="button" onClick={confirmEmailCode} disabled={isVerifyingEmail || verificationCode.length !== 6} className="mt-5 w-full rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+              {isVerifyingEmail ? 'Confirmando...' : 'Confirmar código'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Recorte */}
       {showCropper && (
