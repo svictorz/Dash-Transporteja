@@ -38,8 +38,7 @@ export default function DadosPessoaisPage() {
   const [showCropper, setShowCropper] = useState(false)
   const [cropperImage, setCropperImage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [emailConfirmation, setEmailConfirmation] = useState<{ current: string; next: string } | null>(null)
-  const [codeDestination, setCodeDestination] = useState<'current' | 'next'>('current')
+  const [emailConfirmation, setEmailConfirmation] = useState<{ next: string } | null>(null)
   const [verificationCode, setVerificationCode] = useState('')
   const [verificationMessage, setVerificationMessage] = useState('')
   const [isVerifyingEmail, setIsVerifyingEmail] = useState(false)
@@ -228,10 +227,9 @@ export default function DadosPessoaisPage() {
       if (emailChanged) {
         const { error: emailError } = await supabase.auth.updateUser({ email: newEmail })
         if (emailError) throw new Error(`Nome e telefone salvos. E-mail não alterado: ${emailError.message}`)
-        setEmailConfirmation({ current: authData.user.email!.toLowerCase(), next: newEmail })
-        setCodeDestination('current')
+        setEmailConfirmation({ next: newEmail })
         setVerificationCode('')
-        setVerificationMessage('Use os códigos da solicitação que acabou de ser enviada. Um chega ao e-mail atual e outro ao novo.')
+        setVerificationMessage('Informe o código enviado ao novo e-mail nesta solicitação.')
       }
 
       window.dispatchEvent(new CustomEvent('transporteja:profile-updated', {
@@ -263,10 +261,9 @@ export default function DadosPessoaisPage() {
       alert('Informe o novo e-mail no campo acima antes de inserir o código.')
       return
     }
-    setEmailConfirmation({ current, next })
-    setCodeDestination('current')
+    setEmailConfirmation({ next })
     setVerificationCode('')
-    setVerificationMessage('Informe o código recebido no e-mail atual ou no novo. A troca só termina após confirmar ambos.')
+    setVerificationMessage('Informe o código da solicitação mais recente enviado ao novo e-mail.')
   }
 
   const confirmEmailCode = async () => {
@@ -279,8 +276,7 @@ export default function DadosPessoaisPage() {
     setIsVerifyingEmail(true)
     setVerificationMessage('')
     try {
-      const email = codeDestination === 'current' ? emailConfirmation.current : emailConfirmation.next
-      const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email_change' })
+      const { error } = await supabase.auth.verifyOtp({ email: emailConfirmation.next, token, type: 'email_change' })
       if (error) {
         setVerificationMessage('Código inválido ou expirado. Confira se ele pertence à solicitação mais recente.')
         return
@@ -298,8 +294,7 @@ export default function DadosPessoaisPage() {
         setEmailConfirmation(null)
         alert('E-mail alterado com sucesso!')
       } else {
-        setCodeDestination(codeDestination === 'current' ? 'next' : 'current')
-        setVerificationMessage('Código confirmado. Agora informe o código enviado ao outro e-mail.')
+        setVerificationMessage('A confirmação ainda não foi concluída. Solicite uma nova alteração e use o código enviado ao novo e-mail.')
       }
     } catch (error) {
       console.error('Erro ao confirmar e-mail:', error)
@@ -466,7 +461,7 @@ export default function DadosPessoaisPage() {
                   onChange={(e) => setProfile({ ...profile, email: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">A mudança precisa ser confirmada no e-mail atual e no novo. Você pode usar os links ou os códigos enviados.</p>
+                <p className="text-xs text-gray-500 mt-1">A mudança precisa ser confirmada no novo e-mail. Você pode usar o link ou o código enviado.</p>
                 <button type="button" onClick={openEmailConfirmation} className="mt-2 text-sm font-medium text-blue-600 hover:underline">
                   Já recebi um código
                 </button>
@@ -620,15 +615,11 @@ export default function DadosPessoaisPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 id="email-code-title" className="text-lg font-semibold">Confirmar novo e-mail</h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-slate-300">O Supabase exige confirmação nos dois endereços.</p>
+                <p className="mt-1 text-sm text-gray-500 dark:text-slate-300">Informe o código enviado ao novo e-mail.</p>
               </div>
               <button type="button" onClick={() => setEmailConfirmation(null)} aria-label="Fechar" className="rounded p-1 hover:bg-gray-100 dark:hover:bg-slate-800"><X className="h-5 w-5" /></button>
             </div>
-            <label htmlFor="code-destination" className="mt-5 block text-sm font-medium">Código recebido em</label>
-            <select id="code-destination" value={codeDestination} onChange={(event) => { setCodeDestination(event.target.value as 'current' | 'next'); setVerificationCode(''); setVerificationMessage('') }} className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
-              <option value="current">E-mail atual: {emailConfirmation.current}</option>
-              <option value="next">Novo e-mail: {emailConfirmation.next}</option>
-            </select>
+            <p className="mt-5 break-all text-sm font-medium text-blue-600 dark:text-blue-300">{emailConfirmation.next}</p>
             <label htmlFor="email-code" className="mt-4 block text-sm font-medium">Código de 6 dígitos</label>
             <input id="email-code" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={(event) => { if (event.key === 'Enter') void confirmEmailCode() }} placeholder="000000" className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 tracking-widest text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" />
             {verificationMessage && <p role="status" className="mt-3 text-sm text-gray-600 dark:text-slate-300">{verificationMessage}</p>}
