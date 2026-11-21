@@ -14,6 +14,7 @@ export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const senhaRedefinida = searchParams.get('senha_redefinida') === '1'
+  const confirmacaoEmailFalhou = searchParams.get('erro_confirmacao') === '1'
   const { session, loading: authLoading } = useAuthState()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,6 +23,13 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const redirectAttemptedRef = useRef(false)
   const [showForm, setShowForm] = useState(false)
+
+  useEffect(() => {
+    const erroNoLink = new URLSearchParams(window.location.hash.slice(1)).has('error_code')
+    if (confirmacaoEmailFalhou || erroNoLink) {
+      setError('O link de confirmação é inválido ou expirou. Entre com seu e-mail atual e solicite a alteração novamente. Confirme os dois links da nova solicitação.')
+    }
+  }, [confirmacaoEmailFalhou])
 
   useEffect(() => {
     const t = window.setTimeout(() => setShowForm(true), 1500)

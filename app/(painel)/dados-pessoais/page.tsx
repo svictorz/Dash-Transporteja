@@ -232,7 +232,7 @@ export default function DadosPessoaisPage() {
           avatar_url: profile.avatar_url
         }
       }))
-      alert(emailChanged ? 'Nome e telefone salvos. Confirme a mudança de e-mail pelos links enviados ao endereço atual e ao novo endereço.' : 'Perfil atualizado com sucesso!')
+      alert(emailChanged ? 'Nome e telefone salvos. Confirme os links mais recentes enviados ao e-mail atual e ao novo. Links de solicitações anteriores não funcionam.' : 'Perfil atualizado com sucesso!')
     } catch (error: any) {
       console.error('Erro ao salvar perfil:', error)
       alert(`Erro ao salvar perfil: ${error.message}`)

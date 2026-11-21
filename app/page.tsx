@@ -14,6 +14,15 @@ export default function HomePage() {
     // Verificar se o usuário já está logado
     const checkSession = async () => {
       try {
+        // O Supabase devolve falhas de confirmação no fragmento da URL.
+        // Preserve o aviso antes que o redirecionamento para /login o descarte.
+        const confirmationError = new URLSearchParams(window.location.hash.slice(1)).get('error_code')
+        if (confirmationError) {
+          router.replace('/login?erro_confirmacao=1')
+          setChecked(true)
+          return
+        }
+
         const { data: { session } } = await supabase.auth.getSession()
         
         if (!isMounted) return
