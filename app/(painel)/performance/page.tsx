@@ -150,7 +150,7 @@ function formatNumber(value: number): string {
 }
 
 const MONEY_FIELD_STORAGE_KEY = 'performance:visibleMoneyFields'
-const MONEY_FIELD_KEYS = ['freight', 'driver', 'taxes', 'netFreight', 'commission', 'nfTable'] as const
+const MONEY_FIELD_KEYS = ['freight', 'cancelledFreight', 'driver', 'taxes', 'netFreight', 'commission', 'nfTable'] as const
 type MoneyFieldKey = (typeof MONEY_FIELD_KEYS)[number]
 
 const EMPTY_DOCUMENTS: Record<DocumentKey, RouteDocument[]> = { freteDocs: [] }
@@ -158,6 +158,7 @@ const freightDocuments = createFreightDocumentService(supabase.storage.from('che
 
 const ALL_MONEY_VISIBLE: Record<MoneyFieldKey, boolean> = {
   freight: true,
+  cancelledFreight: true,
   driver: true,
   taxes: true,
   netFreight: true,
@@ -803,12 +804,14 @@ export default function PerformancePage() {
         if (r.status === 'delivered') existing.entregues += 1
         if (r.status === 'cancelled') existing.cancelados += 1
         if (r.status === 'pending' || r.status === 'inTransit' || r.status === 'pickedUp') existing.emAndamento += 1
-        existing.totalNf += r.nf_value ?? 0
-        existing.totalFreightValue += r.freight_value ?? r.nf_value ?? 0
-        existing.totalDriverValue += getRouteDriverTotalValue(r)
-        existing.totalTaxesValue += r.taxes_value ?? 0
-        existing.totalNetFreightValue += getRouteNetFreightValue(r)
-        existing.totalCommissionValue += r.commission_value ?? 0
+        if (r.status !== 'cancelled') {
+          existing.totalNf += r.nf_value ?? 0
+          existing.totalFreightValue += r.freight_value ?? r.nf_value ?? 0
+          existing.totalDriverValue += getRouteDriverTotalValue(r)
+          existing.totalTaxesValue += r.taxes_value ?? 0
+          existing.totalNetFreightValue += getRouteNetFreightValue(r)
+          existing.totalCommissionValue += r.commission_value ?? 0
+        }
         existing.totalKm += r.distance_km ?? 0
         return
       }
@@ -821,12 +824,12 @@ export default function PerformancePage() {
         entregues: r.status === 'delivered' ? 1 : 0,
         cancelados: r.status === 'cancelled' ? 1 : 0,
         emAndamento: r.status === 'pending' || r.status === 'inTransit' || r.status === 'pickedUp' ? 1 : 0,
-        totalNf: r.nf_value ?? 0,
-        totalFreightValue: r.freight_value ?? r.nf_value ?? 0,
-        totalDriverValue: getRouteDriverTotalValue(r),
-        totalTaxesValue: r.taxes_value ?? 0,
-        totalNetFreightValue: getRouteNetFreightValue(r),
-        totalCommissionValue: r.commission_value ?? 0,
+        totalNf: r.status === 'cancelled' ? 0 : r.nf_value ?? 0,
+        totalFreightValue: r.status === 'cancelled' ? 0 : r.freight_value ?? r.nf_value ?? 0,
+        totalDriverValue: r.status === 'cancelled' ? 0 : getRouteDriverTotalValue(r),
+        totalTaxesValue: r.status === 'cancelled' ? 0 : r.taxes_value ?? 0,
+        totalNetFreightValue: r.status === 'cancelled' ? 0 : getRouteNetFreightValue(r),
+        totalCommissionValue: r.status === 'cancelled' ? 0 : r.commission_value ?? 0,
         totalKm: r.distance_km ?? 0,
       })
     })
@@ -838,16 +841,20 @@ export default function PerformancePage() {
     const totalFretes = filteredRows.length
     const entregues = filteredRows.filter((r) => r.status === 'delivered').length
     const cancelados = filteredRows.filter((r) => r.status === 'cancelled').length
+    const cancelledFreightValue = filteredRows
+      .filter((r) => r.status === 'cancelled')
+      .reduce((sum, r) => sum + (r.freight_value ?? r.nf_value ?? 0), 0)
     const emAndamento = filteredRows.filter((r) => r.status === 'pending' || r.status === 'inTransit' || r.status === 'pickedUp').length
-    const totalNf = filteredRows.reduce((sum, r) => sum + (r.nf_value ?? 0), 0)
-    const totalFreightValue = filteredRows.reduce((sum, r) => sum + (r.freight_value ?? r.nf_value ?? 0), 0)
-    const totalDriverValue = filteredRows.reduce((sum, r) => sum + getRouteDriverTotalValue(r), 0)
-    const totalTaxesValue = filteredRows.reduce((sum, r) => sum + (r.taxes_value ?? 0), 0)
-    const totalNetFreightValue = filteredRows.reduce((sum, r) => sum + getRouteNetFreightValue(r), 0)
-    const totalCommissionValue = filteredRows.reduce((sum, r) => sum + (r.commission_value ?? 0), 0)
+    const financialRows = filteredRows.filter((r) => r.status !== 'cancelled')
+    const totalNf = financialRows.reduce((sum, r) => sum + (r.nf_value ?? 0), 0)
+    const totalFreightValue = financialRows.reduce((sum, r) => sum + (r.freight_value ?? r.nf_value ?? 0), 0)
+    const totalDriverValue = financialRows.reduce((sum, r) => sum + getRouteDriverTotalValue(r), 0)
+    const totalTaxesValue = financialRows.reduce((sum, r) => sum + (r.taxes_value ?? 0), 0)
+    const totalNetFreightValue = financialRows.reduce((sum, r) => sum + getRouteNetFreightValue(r), 0)
+    const totalCommissionValue = financialRows.reduce((sum, r) => sum + (r.commission_value ?? 0), 0)
     const totalKm = filteredRows.reduce((sum, r) => sum + (r.distance_km ?? 0), 0)
     const taxaEntrega = totalFretes > 0 ? (entregues / totalFretes) * 100 : 0
-    return { totalFretes, entregues, cancelados, emAndamento, totalNf, totalFreightValue, totalDriverValue, totalTaxesValue, totalNetFreightValue, totalCommissionValue, totalKm, taxaEntrega }
+    return { totalFretes, entregues, cancelados, cancelledFreightValue, emAndamento, totalNf, totalFreightValue, totalDriverValue, totalTaxesValue, totalNetFreightValue, totalCommissionValue, totalKm, taxaEntrega }
   }, [filteredRows])
 
   const selectedComercialLabel = useMemo(() => {
@@ -1477,7 +1484,7 @@ export default function PerformancePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-500 p-4">
           <p className="text-xs text-gray-500 dark:text-slate-300">Total de fretes</p>
           <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 mt-1">{formatNumber(totals.totalFretes)}</p>
@@ -1490,9 +1497,13 @@ export default function PerformancePage() {
           <p className="text-xs text-gray-500 dark:text-slate-300">Em andamento</p>
           <p className="text-2xl font-bold text-amber-700 mt-1">{formatNumber(totals.emAndamento)}</p>
         </div>
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-500 p-4">
+          <p className="text-xs text-gray-500 dark:text-slate-300">Fretes cancelados</p>
+          <p className="text-2xl font-bold text-red-700 dark:text-red-400 mt-1">{formatNumber(totals.cancelados)}</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-500 p-4">
           <p className="text-xs text-gray-500 dark:text-slate-300">Valor total dos fretes</p>
           <MoneyValueRow
@@ -1537,21 +1548,31 @@ export default function PerformancePage() {
             onToggle={() => toggleMoneyField('commission')}
           />
         </div>
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900 p-4">
+          <p className="text-xs text-red-700 dark:text-red-300">Valor bruto dos fretes cancelados</p>
+          <MoneyValueRow
+            value={totals.cancelledFreightValue}
+            visible={visibleMoney.cancelledFreight}
+            onToggle={() => toggleMoneyField('cancelledFreight')}
+          />
+        </div>
       </div>
 
-      <PerformanceCharts
-        rows={filteredRows}
-        activityRows={activityRows}
-        allRows={rows}
-        sellers={comerciais}
-        selectedSeller={selectedComercial}
-        userId={currentUserId}
-        role={role}
-        bounds={periodBounds}
-        period={periodo}
-        showRevenue={visibleMoney.freight}
-        showGoal={visibleMoney.freight && visibleMoney.netFreight}
-      />
+      {isStrictAdmin && (
+        <PerformanceCharts
+          rows={filteredRows}
+          activityRows={activityRows}
+          allRows={rows}
+          sellers={comerciais}
+          selectedSeller={selectedComercial}
+          userId={currentUserId}
+          role={role}
+          bounds={periodBounds}
+          period={periodo}
+          showRevenue={visibleMoney.freight}
+          showGoal={visibleMoney.freight && visibleMoney.netFreight}
+        />
+      )}
 
       {canViewGlobalPerformance ? (
         <div className="rounded-2xl border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-900 overflow-hidden">

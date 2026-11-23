@@ -45,6 +45,7 @@ function makePoints(routes: Route[], bounds: { start: Date | null; end: Date | n
     point.count += 1
     seller.count += 1
     if (!activity) {
+      if (route.status === 'cancelled') continue
       const value = dashboardFreightValue(route)
       point.total += value
       seller.value += value
@@ -138,8 +139,9 @@ function usePerformanceGoals({ rows, sellers, selectedSeller, userId, role, mont
     const date = getRouteOperationalDate(route)
     return date && date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth() && (selectedSeller === 'all' || (route.created_by_user_id ?? '__sem_responsavel__') === selectedSeller)
   })
-  const revenue = monthRows.reduce((sum, route) => sum + dashboardFreightValue(route), 0)
-  const netRevenue = monthRows.reduce((sum, route) => sum + getRouteNetFreightValue(route), 0)
+  const financialMonthRows = monthRows.filter(route => route.status !== 'cancelled')
+  const revenue = financialMonthRows.reduce((sum, route) => sum + dashboardFreightValue(route), 0)
+  const netRevenue = financialMonthRows.reduce((sum, route) => sum + getRouteNetFreightValue(route), 0)
   const sellerIds = new Set(sellers.filter(seller => isPerformanceSellerRole(seller.role)).map(seller => seller.id))
   const relevant = selectedSeller === 'all' ? goals.filter(goal => sellerIds.has(goal.user_id)) : goals.filter(goal => goal.user_id === selectedSeller)
   const amount = relevant.length ? relevant.reduce((sum, goal) => sum + goal.amount, 0) : null
@@ -179,6 +181,6 @@ export function PerformanceCharts({ rows, activityRows, allRows, sellers, select
   const revenueSeries = series.filter(seller => rows.some(route => (route.created_by_user_id ?? '__sem_responsavel__') === seller.id))
   const activitySeries = series.filter(seller => activity.some(point => (point.bySeller[seller.id]?.count ?? 0) > 0))
   const revenue = useMemo(() => makePoints(rows, revenueBounds, monthly, false), [rows, revenueBounds.start, revenueBounds.end, monthly])
-  const goals = usePerformanceGoals({ rows: allRows, sellers, selectedSeller, userId, role, month })
+  const goals = usePerformanceGoals({ rows: allRows.filter(route => route.status !== 'cancelled'), sellers, selectedSeller, userId, role, month })
   return <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]"><div className="grid gap-4"><RevenueChart points={revenue} series={revenueSeries.length ? revenueSeries : fallbackSeries} monthly={monthly} showValues={showRevenue} />{!goals.loading && !goals.error && <MonthlyGoalTrend routes={goals.monthRows} month={month} revenueGoal={goals.amount} netGoal={goals.netAmount} showValues={showGoal} />}</div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1"><FreightActivity points={activity} series={activitySeries.length ? activitySeries : fallbackSeries} monthly={monthly} /><PerformanceGoal {...goals} selectedSeller={selectedSeller} month={month} showValues={showGoal} /></div></div>
 }
