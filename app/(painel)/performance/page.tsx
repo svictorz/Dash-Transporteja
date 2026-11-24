@@ -1873,13 +1873,6 @@ export default function PerformancePage() {
                       {perfInfoInput('driver', 'pickupDate', 'Data de coleta (opcional)', { type: 'date' })}
                       {perfInfoInput('driver', 'estimatedDelivery', 'Previsão de entrega (opcional)', { type: 'date' })}
                     </div>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      {perfDriverInput('vehicle', 'Veículo')}
-                      {perfDriverInput('plate', 'Placa')}
-                      <label className="block text-xs font-medium text-gray-700"><span className="mb-1 block">Status de pagamento do motorista</span>
-                        <select value={editingDriverFields.driverPaymentStatus} onChange={(e) => setEditingDriverFields((prev) => ({ ...prev, driverPaymentStatus: e.target.value }))} disabled={activePerfBlock !== 'driver'} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100"><option value="">—</option>{PAYMENT_STATUS_FILTER_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}</select>
-                      </label>
-                    </div>
                   </PerfEditBlock>
 
                   <PerfEditBlock {...perfBlockProps('origin', 'Origem / Coleta', canManagePerfModal)}>
