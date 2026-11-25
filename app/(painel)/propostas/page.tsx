@@ -1,10 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { extractCotacao } from '@/lib/utils/cotacao-extraction'
-import { isAnalysisCurrent } from '@/lib/utils/cotacao-analysis-current'
 import { defaultCotacaoTemplates, defaultCotacaoTitles, hydrateCotacaoTemplates, validateCotacaoTemplates, validateCotacaoTitles, type CotacaoMessageTemplates, type CotacaoMessageTitles } from '@/lib/utils/cotacao-messages'
 import { parseCotacaoTaxPercent } from '@/lib/utils/cotacao-tax'
 import type { CotacaoDraft } from '@/lib/types/cotacao-erp'
@@ -19,17 +18,11 @@ import { similarFreightsQuery, type SimilarFreight } from '@/lib/utils/cotacao-s
 import './cotacao-print.css'
 import './cotacao-map.css'
 
-type QuoteRow = { id: string; owner_id: string; draft: CotacaoDraft; distance_km: number | null; distance_source: string | null; created_at: string }
 type Vehicle = { name: string; payloadKg: number; volumeM3: number; axles: number; pricePerKm?: number; anttCcd?: number; anttFixed?: number }
 type RuleSet = { vehicles?: Vehicle[]; anttSourceUrl?: string; anttEffectiveFrom?: string; selected_vehicle?: string; fractional_rule_id?: string; fractional_vehicle?: string } & { [key: string]: number | string | Vehicle[] | undefined }
 type Analysis = { id: string; result: { fracionado: Scenario; dedicado: Scenario }; snapshot: { draft: CotacaoDraft; distance_km: number; distance_source?: string; rules: RuleSet }; created_at: string }
 type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; occupancy_pct?: number | null; status?: string }
 const empty = () => extractCotacao('')
-const csvCell = (value: unknown) => {
-  const raw = String(value ?? '')
-  const safe = /^[=+@\-\t\r]/.test(raw) ? `'${raw}` : raw
-  return `"${safe.replace(/"/g, '""')}"`
-}
 const input = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
 const card = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900'
 // Valores iniciais reproduzidos da tabela enviada pelo usuário; não são preços comerciais aprovados.
@@ -39,7 +32,6 @@ const initialFleet = (): Vehicle[] => ANTT_REFERENCE_FLEET.map((vehicle, index) 
 export default function CotacaoPage() {
   const { user } = useCurrentUser()
   const isAdmin = user?.role === 'admin'
-  const [tab, setTab] = useState<'analisar' | 'historico'>('analisar')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<'tributos' | 'precos' | 'mensagens'>('tributos')
   const settingsDialogRef = useRef<HTMLElement>(null)
@@ -54,7 +46,6 @@ export default function CotacaoPage() {
   const [source, setSource] = useState<'route-api' | 'manual'>('manual')
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | null>(null)
   const [routeDuration, setRouteDuration] = useState<number | null>(null)
-  const [quotes, setQuotes] = useState<QuoteRow[]>([])
   const [similarFreights, setSimilarFreights] = useState<SimilarFreight[]>([])
   const [similarFreightsLoading, setSimilarFreightsLoading] = useState(false)
   const [similarFreightsError, setSimilarFreightsError] = useState('')
@@ -78,15 +69,6 @@ export default function CotacaoPage() {
   const [message, setMessage] = useState('')
   const [cnpjLoading, setCnpjLoading] = useState(false)
   const [cnpjErrors, setCnpjErrors] = useState<Partial<Record<CotacaoCnpjParty, string>>>({})
-  const viewingAnotherUser = Boolean(quoteId && user?.id && quotes.some(q => q.id === quoteId && q.owner_id !== user.id))
-
-  const refresh = useCallback(async () => {
-    if (!user?.id) return
-    const { data, error } = await supabase.from('erp_quotes').select('id,owner_id,draft,distance_km,distance_source,created_at').order('created_at', { ascending: false }).limit(100)
-    if (error) setMessage('Não foi possível carregar as cotações. Confirme se a migração do ERP foi aplicada.')
-    else setQuotes(data as QuoteRow[])
-  }, [user?.id])
-  useEffect(() => { void refresh() }, [refresh])
   useEffect(() => {
     if (!user?.id || !analysis) {
       setSimilarFreights([])
@@ -199,7 +181,6 @@ export default function CotacaoPage() {
 
   const save = async (): Promise<string | null> => {
     if (!user?.id) { setMessage('Aguarde a identificação da sua conta.'); return null }
-    if (viewingAnotherUser) { setMessage('Esta cotação pertence a outro usuário e está disponível somente para consulta.'); return null }
     if (!draft.origem.trim() || !draft.destino.trim()) { setMessage('Informe origem e destino.'); return null }
     const payload = { owner_id: user.id, draft, distance_km: distance ? Number(distance) : null, distance_source: distance ? source : null }
     const request = quoteId
@@ -207,7 +188,7 @@ export default function CotacaoPage() {
       : supabase.from('erp_quotes').insert(payload).select('id').single()
     const { data, error } = await request
     if (error) { setMessage('Não foi possível salvar a cotação.'); return null }
-    setQuoteId(data.id); setMessage('Cotação salva.'); void refresh(); return data.id
+    setQuoteId(data.id); setMessage('Cotação salva.'); return data.id
   }
 
   const route = async () => {
@@ -255,7 +236,7 @@ export default function CotacaoPage() {
   }
 
   const changeVehicle = async (name: string) => {
-    if (!analysis || !quoteId || !user?.id || viewingAnotherUser || busy || name === analysis.snapshot?.rules?.selected_vehicle) return
+    if (!analysis || !quoteId || !user?.id || busy || name === analysis.snapshot?.rules?.selected_vehicle) return
     const previousDraft = draft
     const nextDraft = { ...draft, selectedVehicleName: name }
     const compatible = (analysis.snapshot?.rules?.vehicles ?? []).some(vehicle =>
@@ -273,7 +254,6 @@ export default function CotacaoPage() {
       setDraft(nextDraft)
       setAnalysis(data as Analysis)
       setMessage(`Análise atualizada com ${name}.`)
-      void refresh()
     } catch (error) {
       if (saved) {
         const { error: restoreError } = await supabase.from('erp_quotes').update({ draft: previousDraft }).eq('id', quoteId).eq('owner_id', user.id)
@@ -281,15 +261,6 @@ export default function CotacaoPage() {
       }
       setAnalysisError(`Não foi possível atualizar o veículo: ${error instanceof Error ? error.message : 'tente novamente'}.`)
     } finally { setBusy(false) }
-  }
-
-  const openQuote = async (row: QuoteRow) => {
-    setCnpjErrors({})
-    setQuoteId(row.id); setDraft(row.draft); setRaw(row.draft.textoOriginal ?? ''); setDistance(String(row.distance_km ?? ''))
-    setSource(row.distance_source === 'route-api' ? 'route-api' : 'manual'); setRouteCoordinates(null); setRouteDuration(null); setTab('analisar')
-    const { data } = await supabase.from('erp_quote_analyses').select('id,result,snapshot,created_at').eq('quote_id', row.id).order('created_at', { ascending: false }).limit(1)
-    const latest = (data?.[0] as Analysis) ?? null
-    setAnalysis(isAnalysisCurrent(latest, row.draft, Number(row.distance_km)) ? latest : null)
   }
 
   const saveFleet = async () => {
@@ -470,13 +441,11 @@ export default function CotacaoPage() {
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Extraia, calcule e avalie uma carga em um só lugar.</p>
       </div>
       <nav className="flex flex-wrap items-center gap-2" aria-label="Seções da cotação">
-        <button type="button" onClick={() => setTab('analisar')} className={`rounded-lg px-3 py-2 text-sm ${tab === 'analisar' ? 'bg-[#2878ef] text-white' : 'border border-[#dce4ef] text-[#39526f] dark:border-slate-700 dark:text-white'}`}>Analisar</button>
-        <button type="button" onClick={() => setTab('historico')} className={`rounded-lg px-3 py-2 text-sm ${tab === 'historico' ? 'bg-[#2878ef] text-white' : 'border border-[#dce4ef] text-[#39526f] dark:border-slate-700 dark:text-white'}`}>Histórico</button>
         <button ref={settingsTriggerRef} type="button" aria-label="Configurações da cotação" title="Configurações da cotação" onClick={() => { setSettingsTab(isAdmin ? 'tributos' : 'mensagens'); setSettingsOpen(true) }} className="rounded-lg border border-[#dce4ef] px-3 py-2 text-[#173e91] hover:bg-blue-50 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800">⚙</button>
       </nav>
     </div>
     {message && <p role="status" className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:bg-blue-900/30 dark:text-blue-100">{message}</p>}
-    {tab === 'analisar' && <CotacaoAnalysisView
+    <CotacaoAnalysisView
       raw={raw}
       draft={draft}
       distance={distance}
@@ -484,7 +453,7 @@ export default function CotacaoPage() {
       routeCoordinates={routeCoordinates}
       routeDuration={routeDuration}
       busy={busy}
-      viewingAnotherUser={viewingAnotherUser}
+      viewingAnotherUser={false}
       cnpjLoading={cnpjLoading}
       cnpjErrors={cnpjErrors}
       analysis={analysis}
@@ -514,8 +483,7 @@ export default function CotacaoPage() {
       onPdfPriceChange={editPdfPrice}
       onPrint={printProposal}
       onDownloadJson={() => download(`cotacao-${quoteId}.json`, JSON.stringify({ draft: printDraft, analysis }, null, 2), 'application/json')}
-    />}
-    {tab === 'historico' && <section className={`${card} print:hidden`}><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Histórico de cotações</h2><button className="text-sm text-blue-600" onClick={() => download('cotacoes-jcn.csv', ['id;data;origem;destino;cliente;distancia_km', ...quotes.map(q => [q.id,q.created_at,q.draft.origem,q.draft.destino,q.draft.cliente,q.distance_km ?? ''].map(csvCell).join(';'))].join('\r\n'), 'text/csv;charset=utf-8')}>Exportar CSV</button></div><div className="space-y-2">{quotes.map(q => <button key={q.id} onClick={() => void openQuote(q)} className="flex w-full flex-wrap justify-between gap-2 rounded-lg border p-3 text-left text-sm dark:border-slate-700"><span>{q.draft.origem} → {q.draft.destino}</span><span>{q.draft.cliente || 'Cliente não informado'} · {new Date(q.created_at).toLocaleDateString('pt-BR')}</span></button>)}{quotes.length === 0 && <p className="text-sm text-slate-500">Nenhuma cotação salva.</p>}</div></section>}
+    />
     {settingsOpen && <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/70 p-3 print:hidden sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}>
       <section ref={settingsDialogRef} role="dialog" aria-modal="true" aria-labelledby="cotacao-settings-title" className="max-h-[calc(100vh-1.5rem)] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:max-h-[calc(100vh-3rem)]">
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-700 dark:bg-slate-900">
