@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
@@ -488,6 +489,8 @@ export default function PerformancePage() {
   const [freightStatusFilter, setFreightStatusFilter] = useState<'all' | RouteStatus>('all')
   const [driverPaymentStatusFilter, setDriverPaymentStatusFilter] = useState<PaymentStatusFilter>('all')
   const [didInitSelectedComercial, setDidInitSelectedComercial] = useState(false)
+  const [routesRefreshVersion, setRoutesRefreshVersion] = useState(0)
+  const hasLoadedRoutesRef = useRef(false)
   const [visibleMoney, setVisibleMoney] = useState<Record<MoneyFieldKey, boolean>>(ALL_MONEY_VISIBLE)
   const [selectedPerfRoute, setSelectedPerfRoute] = useState<Route | null>(null)
   const [perfOriginCep, setPerfOriginCep] = useState('')
@@ -655,11 +658,25 @@ export default function PerformancePage() {
   }, [selectedPerfRoute, documentsRetry])
 
   useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') setRoutesRefreshVersion((version) => version + 1)
+    }
+    window.addEventListener('focus', refreshIfVisible)
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    const interval = window.setInterval(refreshIfVisible, 30_000)
+    return () => {
+      window.removeEventListener('focus', refreshIfVisible)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
 
     async function load() {
       try {
-        setLoading(true)
+        if (!hasLoadedRoutesRef.current) setLoading(true)
         setError(null)
 
         const {
@@ -734,6 +751,7 @@ export default function PerformancePage() {
         if (cancelled) return
         setRows(scopedRows)
         setComerciais((usersRes.data as ComercialUser[]) || [])
+        hasLoadedRoutesRef.current = true
       } catch (err: unknown) {
         if (cancelled) return
         const msg = err instanceof Error ? err.message : 'Erro ao carregar performance'
@@ -747,7 +765,15 @@ export default function PerformancePage() {
     return () => {
       cancelled = true
     }
-  }, [didInitSelectedComercial])
+  }, [didInitSelectedComercial, routesRefreshVersion])
+
+  useEffect(() => {
+    if (!selectedPerfRoute || activePerfBlock) return
+    const latest = rows.find((route) => route.id === selectedPerfRoute.id)
+    if (latest && JSON.stringify(latest) !== JSON.stringify(selectedPerfRoute)) {
+      setSelectedPerfRoute(latest)
+    }
+  }, [rows, selectedPerfRoute, activePerfBlock])
 
   const periodBounds = useMemo(
     () => periodBoundsFromSelection(periodo, customStart, customEnd),
