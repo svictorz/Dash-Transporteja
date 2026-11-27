@@ -8,6 +8,7 @@ import { DASHBOARD_PERIODS, dashboardFreightValue, dashboardVariation, type Dash
 import { formatBRL, formatFreightShare, getRouteCommissionValue } from '@/lib/utils/freight-financials'
 import { formatDateDdMmYyyy } from '@/lib/utils/date-format'
 import CommissionPaidStatus from '@/components/transporteja/CommissionPaidStatus'
+import { smoothChartPath } from '@/lib/utils/chart-path'
 
 type Metrics = ReturnType<typeof buildDashboardMetrics>
 const panel = 'rounded-2xl border border-slate-200/80 bg-white dark:border-slate-700 dark:bg-slate-900'
@@ -33,7 +34,7 @@ function RevenueChart({ points, monthly }: { points: DashboardPoint[]; monthly: 
   const max = Math.max(1, ...points.map(point => point.value))
   const x = (index: number) => points.length === 1 ? 352 : 56 + index / (points.length - 1) * 592
   const y = (value: number) => 180 - (value - min) / (max - min) * 146
-  const path = points.map((point, index) => `${index ? 'L' : 'M'} ${x(index)} ${y(point.value)}`).join(' ')
+  const path = smoothChartPath(points.map((point, index) => ({ x: x(index), y: y(point.value) })))
   const area = points.length ? `${path} L ${x(points.length - 1)} ${y(0)} L ${x(0)} ${y(0)} Z` : ''
   const label = (date: Date) => date.toLocaleDateString('pt-BR', monthly ? { month: 'short', year: '2-digit' } : { day: '2-digit', month: 'short' })
   const step = Math.max(1, Math.ceil((points.length - 1) / 5))
@@ -74,7 +75,7 @@ function FreightActivity({ points, monthly }: { points: DashboardPoint[]; monthl
     <div className="mt-5 overflow-x-auto touch-auto"><div className="grid min-w-[280px] gap-2" style={{ gridTemplateColumns: `repeat(${Math.max(points.length, 1)}, minmax(32px, 1fr))`, width: minimumWidth }} role="list" aria-label={`Quantidade de fretes por ${monthly ? 'mês' : 'dia'} no período selecionado`}>
       {points.map(point => <div key={point.key} role="listitem" className="min-w-0 text-center" title={`${point.date.toLocaleDateString('pt-BR')}: ${point.count} fretes`}>
         <span className="block text-[11px] font-medium tabular-nums">{point.count}</span>
-        <div className="mt-2 flex h-24 items-end"><div className={`w-full rounded-t-md ${point.count > 0 && point.count === max ? 'bg-blue-500' : 'bg-slate-100 dark:bg-slate-800'}`} style={{ height: point.count ? `${point.count / max * 100}%` : '3px' }} /></div>
+        <div className="mt-2 flex h-24 items-end"><div className={`w-full rounded-t-xl ${point.count > 0 && point.count === max ? 'bg-blue-500' : 'bg-slate-100 dark:bg-slate-800'}`} style={{ height: point.count ? `${point.count / max * 100}%` : '3px' }} /></div>
         <span className="mt-2 block text-[10px] capitalize text-slate-500 dark:text-slate-400">{label(point.date)}</span><span className="block text-[10px] text-slate-400">{detail(point.date)}</span>
       </div>)}
     </div></div>

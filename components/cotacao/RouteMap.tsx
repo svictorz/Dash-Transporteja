@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-type RouteMapProps = { coordinates: [number, number][] | null; origin: string; destination: string }
+type RouteStop = { label: string; lat: number; lon: number; kind: 'origin' | 'destination' }
+type RouteMapProps = { coordinates: [number, number][] | null; stops: RouteStop[] }
 
 type LeafletApi = {
   map: (element: HTMLElement) => any
@@ -12,11 +13,11 @@ type LeafletApi = {
   divIcon: (options: Record<string, unknown>) => any
 }
 
-function pinIcon(api: LeafletApi, kind: 'origin' | 'destination') {
+function pinIcon(api: LeafletApi, kind: 'origin' | 'destination', number: number, multiple: boolean) {
   const pin = document.createElement('div')
   pin.className = `jcn-route-pin jcn-route-pin--${kind}`
   const letter = document.createElement('span')
-  letter.textContent = kind === 'origin' ? 'O' : 'D'
+  letter.textContent = `${kind === 'origin' ? 'O' : 'D'}${multiple ? number : ''}`
   pin.appendChild(letter)
   return api.divIcon({ html: pin, className: 'jcn-route-pin-icon', iconSize: [34, 42], iconAnchor: [17, 39] })
 }
@@ -49,7 +50,7 @@ function loadLeaflet(): Promise<LeafletApi> {
   return leafletPromise
 }
 
-export default function RouteMap({ coordinates, origin, destination }: RouteMapProps) {
+export default function RouteMap({ coordinates, stops }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const layersRef = useRef<any[]>([])
@@ -82,17 +83,24 @@ export default function RouteMap({ coordinates, origin, destination }: RouteMapP
     const api = (window as typeof window & { L?: LeafletApi }).L
     if (!api) return
     const line = api.polyline(coordinates, { color: '#2878ef', weight: 5 }).addTo(mapRef.current)
-    const start = api.marker(coordinates[0], { icon: pinIcon(api, 'origin') }).addTo(mapRef.current)
-    const end = api.marker(coordinates[coordinates.length - 1], { icon: pinIcon(api, 'destination') }).addTo(mapRef.current)
-    const startLabel = document.createElement('span')
-    startLabel.textContent = `Origem: ${origin}`
-    const endLabel = document.createElement('span')
-    endLabel.textContent = `Destino: ${destination}`
-    start.bindTooltip(startLabel, { permanent: true, direction: 'top', offset: [0, -35], className: 'jcn-route-tooltip jcn-route-tooltip--origin' }).openTooltip()
-    end.bindTooltip(endLabel, { permanent: true, direction: 'bottom', offset: [0, 5], className: 'jcn-route-tooltip jcn-route-tooltip--destination' }).openTooltip()
-    layersRef.current = [line, start, end]
+    const originCount = stops.filter(stop => stop.kind === 'origin').length
+    const destinationCount = stops.length - originCount
+    let originNumber = 0
+    let destinationNumber = 0
+    const markers = stops.map((stop, index) => {
+      const number = stop.kind === 'origin' ? ++originNumber : ++destinationNumber
+      const multiple = stop.kind === 'origin' ? originCount > 1 : destinationCount > 1
+      const marker = api.marker([stop.lat, stop.lon], { icon: pinIcon(api, stop.kind, number, multiple) }).addTo(mapRef.current)
+      const label = document.createElement('span')
+      label.textContent = `${stop.kind === 'origin' ? 'Origem' : 'Destino'} ${number}: ${stop.label}`
+      const permanent = index === 0 || index === stops.length - 1
+      marker.bindTooltip(label, { permanent, direction: index === 0 ? 'top' : 'bottom', offset: index === 0 ? [0, -35] : [0, 5], className: `jcn-route-tooltip jcn-route-tooltip--${stop.kind}` })
+      if (permanent) marker.openTooltip()
+      return marker
+    })
+    layersRef.current = [line, ...markers]
     mapRef.current.fitBounds(line.getBounds(), { padding: [70, 70] })
-  }, [coordinates, destination, origin, ready])
+  }, [coordinates, stops, ready])
 
   return <div className="relative overflow-hidden rounded-lg border border-[#c7d7ea] bg-[#eaf2f8]">
     <div ref={containerRef} className="h-[310px] w-full max-sm:h-[250px]" aria-label="Mapa da rota" />

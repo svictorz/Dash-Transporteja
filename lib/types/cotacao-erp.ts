@@ -1,6 +1,8 @@
 export type CotacaoDraft = {
   origem: string
   destino: string
+  origensAdicionais?: string[]
+  destinosAdicionais?: string[]
   pesoKg: number | null
   valorNota: number | null
   cubagemM3: number | null

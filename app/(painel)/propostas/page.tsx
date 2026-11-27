@@ -22,6 +22,7 @@ type Vehicle = { name: string; payloadKg: number; volumeM3: number; axles: numbe
 type RuleSet = { vehicles?: Vehicle[]; anttSourceUrl?: string; anttEffectiveFrom?: string; selected_vehicle?: string; fractional_rule_id?: string; fractional_vehicle?: string } & { [key: string]: number | string | Vehicle[] | undefined }
 type Analysis = { id: string; result: { fracionado: Scenario; dedicado: Scenario }; snapshot: { draft: CotacaoDraft; distance_km: number; distance_source?: string; rules: RuleSet }; created_at: string }
 type Scenario = { floor: number | null; taxes: number | null; insurance: number | null; pgr: number; tolls: number; collection: number; total: number | null; minimum?: number | null; occupancy_pct?: number | null; status?: string }
+type RouteStop = { label: string; lat: number; lon: number; kind: 'origin' | 'destination' }
 const empty = () => extractCotacao('')
 const input = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
 const card = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900'
@@ -45,6 +46,8 @@ export default function CotacaoPage() {
   const [distance, setDistance] = useState('')
   const [source, setSource] = useState<'route-api' | 'manual'>('manual')
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | null>(null)
+  const [routeStops, setRouteStops] = useState<RouteStop[]>([])
+  const routeRequestId = useRef(0)
   const [routeDuration, setRouteDuration] = useState<number | null>(null)
   const [similarFreights, setSimilarFreights] = useState<SimilarFreight[]>([])
   const [similarFreightsLoading, setSimilarFreightsLoading] = useState(false)
@@ -181,7 +184,9 @@ export default function CotacaoPage() {
 
   const save = async (): Promise<string | null> => {
     if (!user?.id) { setMessage('Aguarde a identificação da sua conta.'); return null }
-    if (!draft.origem.trim() || !draft.destino.trim()) { setMessage('Informe origem e destino.'); return null }
+    if (!draft.origem.trim() || !draft.destino.trim() || [...(draft.origensAdicionais ?? []), ...(draft.destinosAdicionais ?? [])].some(stop => !stop.trim())) {
+      setMessage('Informe todas as origens e destinos.'); return null
+    }
     const payload = { owner_id: user.id, draft, distance_km: distance ? Number(distance) : null, distance_source: distance ? source : null }
     const request = quoteId
       ? supabase.from('erp_quotes').update(payload).eq('id', quoteId).eq('owner_id', user.id).select('id').single()
@@ -192,19 +197,28 @@ export default function CotacaoPage() {
   }
 
   const route = async () => {
-    if (!draft.origem || !draft.destino) { setMessage('Informe origem e destino.'); return }
+    const origins = draft.origensAdicionais ?? []
+    const destinations = draft.destinosAdicionais ?? []
+    if (!draft.origem.trim() || !draft.destino.trim() || [...origins, ...destinations].some(stop => !stop.trim())) {
+      setMessage('Informe todas as origens e destinos antes de calcular a rota.'); return
+    }
+    const requestId = ++routeRequestId.current
     setBusy(true)
     try {
       const query = new URLSearchParams({ origem: draft.origem, destino: draft.destino, map: '1' })
+      origins.forEach(stop => query.append('origemExtra', stop))
+      destinations.forEach(stop => query.append('destinoExtra', stop))
       const response = await fetch(`/api/rotas/distancia?${query}`)
-      if (!response.ok) throw new Error('Rota indisponível')
       const result = await response.json()
+      if (requestId !== routeRequestId.current) return
+      if (!response.ok) throw new Error(result.error || 'Rota indisponível')
       if (!Number.isFinite(Number(result.distanciaKm)) || Number(result.distanciaKm) <= 0) throw new Error('Distância inválida')
       setDistance(String(result.distanciaKm)); setSource('route-api'); setAnalysis(null)
       setRouteCoordinates(Array.isArray(result.coordinates) ? result.coordinates : null)
+      setRouteStops(Array.isArray(result.paradas) ? result.paradas : [])
       setRouteDuration(Number.isFinite(Number(result.duracaoMin)) ? Number(result.duracaoMin) : null)
       setMessage('')
-    } catch { setMessage('Não foi possível calcular a rota. Confira as cidades ou informe a distância manualmente.') }
+    } catch (error) { if (requestId === routeRequestId.current) setMessage(error instanceof Error ? error.message : 'Não foi possível calcular a rota.') }
     finally { setBusy(false) }
   }
 
@@ -345,19 +359,24 @@ export default function CotacaoPage() {
   }
 
   const extract = () => {
+    routeRequestId.current++
     setAnalysisError('')
     setDraft(extractCotacao(raw))
     setQuoteId(null)
     setAnalysis(null)
     setDistance('')
     setRouteCoordinates(null)
+    setRouteStops([])
     setRouteDuration(null)
     setSource('manual')
     setCnpjErrors({})
   }
 
-  const editField = (key: keyof CotacaoDraft, value: string | number | null) => {
+  const editField = (key: keyof CotacaoDraft, value: string | number | string[] | null) => {
     setAnalysisError('')
+    if (key === 'remetenteCnpj' || key === 'destinatarioCnpj' || key === 'origem' || key === 'destino' || key === 'origensAdicionais' || key === 'destinosAdicionais') {
+      routeRequestId.current++
+    }
     setDraft(previous => {
       const next = { ...previous, [key]: value }
       if (key === 'remetenteCnpj') {
@@ -374,12 +393,14 @@ export default function CotacaoPage() {
     setAnalysis(null)
     if (key === 'remetenteCnpj' || key === 'destinatarioCnpj') {
       setCnpjErrors(previous => ({ ...previous, [key === 'remetenteCnpj' ? 'remetente' : 'destinatario']: '' }))
-      setDistance(''); setSource('manual'); setRouteCoordinates(null); setRouteDuration(null)
+      setDistance(''); setSource('manual'); setRouteCoordinates(null); setRouteStops([]); setRouteDuration(null)
     }
-    if (key === 'origem' || key === 'destino') {
+    if (key === 'origem' || key === 'destino' || key === 'origensAdicionais' || key === 'destinosAdicionais') {
       setRouteCoordinates(null)
+      setRouteStops([])
       setRouteDuration(null)
-      if (source === 'route-api') { setDistance(''); setSource('manual') }
+      setDistance('')
+      setSource('manual')
     }
   }
 
@@ -410,12 +431,14 @@ export default function CotacaoPage() {
       }
       setCnpjErrors(errors)
       if (updates.length) {
+        routeRequestId.current++
         setDraft(previous => updates.reduce((next, update) =>
           (next[update.field] ?? '').replace(/\D/g, '') === update.typed.replace(/\D/g, '')
             ? applyCnpjLocation(next, update.party, update.data) : next, previous))
         setDistance('')
         setSource('manual')
         setRouteCoordinates(null)
+        setRouteStops([])
         setRouteDuration(null)
         setAnalysis(null)
         setMessage('Endereço cadastral carregado. Confira os locais de coleta e entrega e recalcule a rota.')
@@ -426,10 +449,12 @@ export default function CotacaoPage() {
   }
 
   const editDistance = (value: string) => {
+    routeRequestId.current++
     setAnalysisError('')
     setDistance(value)
     setSource('manual')
     setRouteCoordinates(null)
+    setRouteStops([])
     setRouteDuration(null)
     setAnalysis(null)
   }
@@ -451,6 +476,7 @@ export default function CotacaoPage() {
       distance={distance}
       source={source}
       routeCoordinates={routeCoordinates}
+      routeStops={routeStops}
       routeDuration={routeDuration}
       busy={busy}
       viewingAnotherUser={false}
@@ -494,7 +520,7 @@ export default function CotacaoPage() {
       {message && <p role="status" className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:bg-blue-900/30 dark:text-blue-100">{message}</p>}
       {settingsTab === 'mensagens' && <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
         <h3 className="font-semibold">Layout das mensagens</h3>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Variáveis: {'{saudacao}'}, {'{cliente}'}, {'{origem}'}, {'{destino}'}, {'{distanciaKm}'}, {'{volumes}'}, {'{peso}'}, {'{valorNota}'}, {'{usuario}'}, {'{telefoneUsuario}'}, {'{emailUsuario}'}. Preços nos textos de apresentação e proposta: {'{precoFracionado}'} e {'{precoDedicado}'}.</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Variáveis: {'{saudacao}'}, {'{cliente}'}, {'{origem}'}, {'{destino}'}, {'{distanciaKm}'}, {'{volumes}'}, {'{peso}'}, {'{observacoes}'}, {'{valorNota}'}, {'{usuario}'}, {'{telefoneUsuario}'}, {'{emailUsuario}'}. Preços nos textos de apresentação e proposta: {'{precoFracionado}'} e {'{precoDedicado}'}.</p>
         <div className="mt-3 grid gap-3 lg:grid-cols-2">{(Object.keys(defaultCotacaoTemplates) as (keyof CotacaoMessageTemplates)[]).map(style => <div key={style} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700"><p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">{style}</p><label className="text-sm">Título<input className={`${input} mt-1`} maxLength={80} value={titleDraft[style]} onChange={event => setTitleDraft(previous => ({ ...previous, [style]: event.target.value }))} /></label><label className="mt-3 block text-sm">Corpo da mensagem<textarea className={`${input} mt-1 min-h-28`} value={templateDraft[style]} onChange={event => setTemplateDraft(previous => ({ ...previous, [style]: event.target.value }))} /></label></div>)}</div>
         <button type="button" onClick={() => void saveTemplates()} className="mt-3 rounded-lg bg-[#2878ef] px-4 py-2 text-sm font-semibold text-white">Salvar títulos e mensagens</button>
       </div>}

@@ -21,11 +21,11 @@ export function parseCotacaoLocation(value: string): { city: string; state: stri
 }
 
 export function similarFreightsQuery(
-  draft: { origem: string; destino: string; pesoKg: number | null },
+  draft: { origem: string; destino: string; destinosAdicionais?: string[]; pesoKg: number | null },
   distanceKm: number,
 ) {
   const origin = parseCotacaoLocation(draft.origem)
-  const destination = parseCotacaoLocation(draft.destino)
+  const destination = parseCotacaoLocation(draft.destinosAdicionais?.at(-1) || draft.destino)
   if (!origin.city || !origin.state || !destination.city || !destination.state) return null
   return {
     p_origin_city: origin.city,

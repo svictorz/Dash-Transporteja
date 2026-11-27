@@ -21,6 +21,7 @@ type Props = {
   distance: string
   source: 'route-api' | 'manual'
   routeCoordinates: [number, number][] | null
+  routeStops: Array<{ label: string; lat: number; lon: number; kind: 'origin' | 'destination' }>
   routeDuration: number | null
   busy: boolean
   viewingAnotherUser: boolean
@@ -42,7 +43,7 @@ type Props = {
   similarFreightsError: string
   onRawChange: (value: string) => void
   onExtract: () => void
-  onFieldChange: (key: keyof CotacaoDraft, value: string | number | null) => void
+  onFieldChange: (key: keyof CotacaoDraft, value: string | number | string[] | null) => void
   onLookupCnpjs: () => void
   onDistanceChange: (value: string) => void
   onRoute: () => void
@@ -62,7 +63,7 @@ const label = 'grid gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-3
 const subheading = 'mb-3 border-b border-gray-100 pb-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:text-slate-100'
 
 export default function CotacaoAnalysisView({
-  raw, draft, distance, source, routeCoordinates, routeDuration,
+  raw, draft, distance, source, routeCoordinates, routeStops, routeDuration,
   busy, viewingAnotherUser, cnpjLoading, cnpjErrors, analysis, analysisError, vehicles, anttSourceUrl, anttEffectiveFrom, templates, titles, messageContext, similarFreights, similarFreightsLoading, similarFreightsError, onRawChange, onExtract, onFieldChange, onLookupCnpjs, onDistanceChange, onRoute,
   onAnalyze, onVehicleChange, pdfPriceInputs, onPdfPriceChange, onPrint, onDownloadJson,
 }: Props) {
@@ -95,6 +96,10 @@ export default function CotacaoAnalysisView({
     setMessageStyle(kind === 'fracionado' ? 'Proposta fracionado' : 'Proposta dedicado')
     requestAnimationFrame(() => document.getElementById('cotacao-mensagem')?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   }
+  const extraOrigins = draft.origensAdicionais ?? []
+  const extraDestinations = draft.destinosAdicionais ?? []
+  const updateStops = (kind: 'origensAdicionais' | 'destinosAdicionais', values: string[]) => onFieldChange(kind, values)
+  const routeIncomplete = !draft.origem.trim() || !draft.destino.trim() || [...extraOrigins, ...extraDestinations].some(stop => !stop.trim())
 
   return <div className="grid items-start gap-[18px] xl:grid-cols-[minmax(0,42fr)_minmax(0,58fr)] print:hidden">
     <section className="rounded-2xl border border-gray-200 bg-white p-5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
@@ -102,26 +107,37 @@ export default function CotacaoAnalysisView({
       <textarea
         aria-label="Cole o pedido de frete"
         className={`${input} min-h-[180px] resize-y bg-[#fbfcfe] placeholder:text-slate-500 dark:bg-slate-950 dark:placeholder:text-slate-400`}
-        placeholder={'Formatos aceitos:\nWhatsApp/E-mail: Origem/Destino · Peso · Cubagem · CNPJ · Endereço · Telefone\ncargas.com.br: Rota → para · Nota · Peso\nColeta: dimensões de pallets · Valor coleta'}
+        placeholder={'Modelo mínimo para extrair e gerar a proposta:\nOrigem: São Paulo, SP\nDestino: Alvorada, TO\nPeso: 3.585,00 kg\nCubagem: 2,81 m³\nValor de Nota: R$ 14.916,47'}
         value={raw}
         onChange={event => onRawChange(event.target.value)}
       />
       <button type="button" onClick={onExtract} className="mt-2.5 w-full rounded-lg bg-[#2878ef] px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">
         ⌕ Extrair dados do frete
       </button>
-      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-        <p className="font-semibold">Modelo mínimo para extrair e gerar a proposta:</p>
-        <pre className="mt-2 whitespace-pre-wrap font-sans leading-relaxed">{'Origem: São Paulo, SP\nDestino: Alvorada, TO\nPeso: 3.585,00 kg\nCubagem: 2,81 m³\nValor de Nota: R$ 14.916,47'}</pre>
-      </div>
 
       <h2 className={`${subheading} mt-7`}>2. Dados da cotação</h2>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className={label}>Origem<input className={input} value={draft.origem} onChange={event => onFieldChange('origem', event.target.value)} placeholder="Cidade/UF" /></label>
-        <label className={label}>Destino<input className={input} value={draft.destino} onChange={event => onFieldChange('destino', event.target.value)} placeholder="Cidade/UF" /></label>
+        <div className="space-y-2">
+          <label className={label}>Origem<input className={input} value={draft.origem} onChange={event => onFieldChange('origem', event.target.value)} placeholder="Cidade/UF" /></label>
+          {extraOrigins.map((stop, index) => <div key={`origin-${index}`} className="flex items-end gap-1.5">
+            <label className={`${label} min-w-0 flex-1`}>Origem {index + 2}<input className={input} value={stop} onChange={event => updateStops('origensAdicionais', extraOrigins.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} placeholder="Cidade/UF" /></label>
+            <button type="button" aria-label={`Remover origem ${index + 2}`} onClick={() => updateStops('origensAdicionais', extraOrigins.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg px-2 py-2.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-rose-700 dark:hover:bg-slate-800">✕</button>
+          </div>)}
+          {extraOrigins.length < 4 && <button type="button" onClick={() => updateStops('origensAdicionais', [...extraOrigins, ''])} className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300">＋ Adicionar origem</button>}
+        </div>
+        <div className="space-y-2">
+          <label className={label}>Destino<input className={input} value={draft.destino} onChange={event => onFieldChange('destino', event.target.value)} placeholder="Cidade/UF" /></label>
+          {extraDestinations.map((stop, index) => <div key={`destination-${index}`} className="flex items-end gap-1.5">
+            <label className={`${label} min-w-0 flex-1`}>Destino {index + 2}<input className={input} value={stop} onChange={event => updateStops('destinosAdicionais', extraDestinations.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} placeholder="Cidade/UF" /></label>
+            <button type="button" aria-label={`Remover destino ${index + 2}`} onClick={() => updateStops('destinosAdicionais', extraDestinations.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg px-2 py-2.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-rose-700 dark:hover:bg-slate-800">✕</button>
+          </div>)}
+          {extraDestinations.length < 4 && <button type="button" onClick={() => updateStops('destinosAdicionais', [...extraDestinations, ''])} className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300">＋ Adicionar destino</button>}
+        </div>
         <label className={label}>Peso (kg)<input className={input} type="number" min="0" step="any" value={draft.pesoKg ?? ''} onChange={event => onFieldChange('pesoKg', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 3585" /></label>
         <label className={label}>Cubagem (m³) (Obrigatório)<input id="cotacao-cubagem" className={input} type="number" min="0.01" step="any" required value={draft.cubagemM3 ?? ''} onChange={event => onFieldChange('cubagemM3', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,81" /></label>
         <label className={label}>Quantidade<input className={input} type="number" min="0" value={draft.quantidade ?? ''} onChange={event => onFieldChange('quantidade', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 172" /></label>
         <label className={label}>Metros lineares (opcional)<input className={input} type="number" min="0" step="any" value={draft.linearMeters ?? ''} onChange={event => onFieldChange('linearMeters', event.target.value === '' ? null : Number(event.target.value))} placeholder="Ex.: 2,4" /></label>
+        <label className={`${label} sm:col-span-2`}>Observações<textarea className={`${input} min-h-20`} value={draft.observacoes} onChange={event => onFieldChange('observacoes', event.target.value)} placeholder="Ex.: tipo da carga, medidas e instruções de coleta" /></label>
         <label className={label}>Valor NF (R$)<input className={input} type="text" inputMode="decimal" aria-invalid={nfInvalid} value={nfInput} onChange={event => { setNfInput(event.target.value); setNfInvalid(false) }} onBlur={() => { const parsed = nfInput.trim() ? parseCotacaoNumber(nfInput) : null; setNfInvalid(Boolean(nfInput.trim()) && parsed === null); onFieldChange('valorNota', parsed) }} placeholder="Ex.: 17.900,00 ou 17900.00" />{nfInvalid && <span className="text-rose-600">Informe um valor de nota válido.</span>}</label>
       </div>
 
@@ -147,10 +163,10 @@ export default function CotacaoAnalysisView({
       <div className="mt-[18px] rounded-xl border border-gray-200 bg-gray-50 p-3.5 dark:border-slate-700 dark:bg-slate-800">
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-100">🗺 Mapa da rota / cálculo de distância</h3>
-          <button type="button" disabled={busy || !draft.origem || !draft.destino} onClick={onRoute} className="rounded-lg bg-[#2878ef] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">⌕ Calcular rota</button>
+          <button type="button" disabled={busy || routeIncomplete} onClick={onRoute} className="rounded-lg bg-[#2878ef] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">⌕ Calcular rota</button>
         </div>
-        <RouteMap coordinates={routeCoordinates} origin={draft.origem} destination={draft.destino} />
-        {routeCoordinates && <p className="mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">✓ Origem e destino marcados · {routeKm.toLocaleString('pt-BR')} km{routeDuration ? ` · ${Math.round(routeDuration / 60)} h` : ''}</p>}
+        <RouteMap coordinates={routeCoordinates} stops={routeStops} />
+        {routeCoordinates && <p className="mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">✓ {routeStops.length} paradas marcadas · {routeKm.toLocaleString('pt-BR')} km{routeDuration ? ` · ${Math.round(routeDuration / 60)} h` : ''}</p>}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -166,7 +182,6 @@ export default function CotacaoAnalysisView({
           <label className={label}>Cliente<input className={input} value={draft.cliente} onChange={event => onFieldChange('cliente', event.target.value)} placeholder="Ex.: Nicole" /></label>
           <label className={label}>E-mail<input className={input} type="email" value={draft.email} onChange={event => onFieldChange('email', event.target.value)} placeholder="Ex.: nome@empresa.com" /></label>
           <label className={label}>WhatsApp<input className={input} value={draft.telefone} onChange={event => onFieldChange('telefone', event.target.value)} placeholder="Ex.: (11) 9 6451-3724" /></label>
-          <label className={`${label} sm:col-span-2`}>Observações<textarea className={`${input} min-h-20`} value={draft.observacoes} onChange={event => onFieldChange('observacoes', event.target.value)} placeholder="Ex.: tipo da carga, medidas e instruções de coleta" /></label>
         </div>
       </details>
 
@@ -177,31 +192,12 @@ export default function CotacaoAnalysisView({
         </div>
       </div>
       {analysisError && <p role="alert" className="mt-2 text-center text-sm text-amber-700 dark:text-amber-300">{analysisError}</p>}
-      {analysis && vehicles.length > 0 && (draft.pesoKg || draft.cubagemM3) && <div className="mt-5 border-t border-[#e5ebf2] pt-4 dark:border-slate-700">
-        <h3 className="text-sm font-bold uppercase text-[#294669] dark:text-blue-200">Ocupação de frota</h3>
-        {vehicles.map(vehicle => {
-          const weightPercent = draft.pesoKg && vehicle.payloadKg > 0 ? draft.pesoKg / vehicle.payloadKg * 100 : 0
-          const volumePercent = draft.cubagemM3 && vehicle.volumeM3 && vehicle.volumeM3 > 0 ? draft.cubagemM3 / vehicle.volumeM3 * 100 : 0
-          const percent = Math.round(Math.max(weightPercent, volumePercent))
-          const exceedsCapacity = weightPercent > 100 || volumePercent > 100
-          const capacityStatus = exceedsCapacity ? 'Excede capacidade' : draft.pesoKg && draft.cubagemM3 ? 'Viável' : 'A confirmar'
-          return <div key={vehicle.name} className="mt-2 rounded-lg border border-[#e4ebf2] p-2 text-xs dark:border-slate-700">
-            <div className="flex flex-wrap justify-between gap-2"><strong>{vehicle.name} · {vehicle.axles} eixos</strong><span className={exceedsCapacity ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}>{capacityStatus}</span></div>
-            <p className="mt-1 text-slate-600 dark:text-slate-300">{draft.pesoKg?.toLocaleString('pt-BR') ?? '—'} / {vehicle.payloadKg.toLocaleString('pt-BR')} kg · {draft.cubagemM3?.toLocaleString('pt-BR') ?? '—'} / {vehicle.volumeM3?.toLocaleString('pt-BR') ?? '—'} m³</p>
-            <div className="mt-1 h-1.5 rounded-full bg-[#e8f1eb]"><div className={`h-1.5 rounded-full ${exceedsCapacity ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(percent, 100)}%` }} /></div>
-          </div>
-        })}
-      </div>}
     </section>
 
     <section className="min-h-[600px] overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
       <h2 className="border-b border-gray-100 px-5 py-4 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:text-slate-100">Painel de diagnóstico</h2>
       <div className="space-y-3 p-3.5">
         {analysis ? <>
-          <div className="rounded-xl border-l-4 border-emerald-500 bg-emerald-50 p-4 text-[#102548] dark:bg-emerald-950 dark:text-white">
-            <strong className="text-sm uppercase text-emerald-800 dark:text-emerald-200">Viabilidade calculada</strong>
-            <p className="mt-1 text-xs">Análise registrada em {new Date(analysis.created_at).toLocaleString('pt-BR')} com a frota, os percentuais e a margem informados.</p>
-          </div>
           {compatibleVehicles.length > 0 && <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
             <label htmlFor="cotacao-veiculo" className="text-xs font-semibold text-slate-600 dark:text-slate-300">Veículo dedicado</label>
             <select id="cotacao-veiculo" aria-label="Veículo da cotação" value={typeof analyzedVehicle === 'string' ? analyzedVehicle : ''} onChange={event => onVehicleChange(event.target.value)} disabled={busy || viewingAnotherUser} className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-white sm:max-w-[260px]">

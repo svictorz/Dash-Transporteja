@@ -3,7 +3,7 @@ import type { CotacaoDraft } from '@/lib/types/cotacao-erp'
 export type CotacaoMessageStyle = 'Abordagem inicial' | 'Confirmação de dados' | 'Apresentação de valores' | 'Acompanhamento' | 'Proposta fracionado' | 'Proposta dedicado'
 export type CotacaoMessageTemplates = Record<CotacaoMessageStyle | 'Anúncio Fretebrás', string>
 export type CotacaoMessageTitles = Record<keyof CotacaoMessageTemplates, string>
-type MessageDraft = Pick<CotacaoDraft, 'origem' | 'destino' | 'pesoKg' | 'valorNota' | 'cliente' | 'telefone' | 'quantidade'>
+type MessageDraft = Pick<CotacaoDraft, 'origem' | 'destino' | 'origensAdicionais' | 'destinosAdicionais' | 'pesoKg' | 'valorNota' | 'cliente' | 'telefone' | 'quantidade' | 'observacoes'>
 type Prices = { fracionado?: number; dedicado?: number }
 export type MessageContext = { distanceKm?: number | null; userName?: string | null; userPhone?: string | null; userEmail?: string | null }
 const brl = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -14,6 +14,7 @@ const legacyProposals = {
 const formalProposal = (priceToken: 'precoFracionado' | 'precoDedicado') => `Oi {cliente}, tudo bem? Segue a proposta pra sua carga de {origem} até {destino}, Distância de {distanciaKm}
 
 📦 {volumes} – {peso}
+📝 Observações: {observacoes}
 📄 Valor de NF: {valorNota}
 📡 Livre de carga e descarga
 🛡️ Seguro de carga + CT-e + ICMS + DIFAL já inclusos
@@ -71,7 +72,7 @@ export function hydrateCotacaoTemplates(saved: Record<string, string> | null | u
   return merged
 }
 
-const commonTokens = ['saudacao', 'cliente', 'origem', 'destino', 'peso', 'valorNota', 'volumes', 'distanciaKm', 'usuario', 'telefoneUsuario', 'emailUsuario']
+const commonTokens = ['saudacao', 'cliente', 'origem', 'destino', 'peso', 'observacoes', 'valorNota', 'volumes', 'distanciaKm', 'usuario', 'telefoneUsuario', 'emailUsuario']
 export function validateCotacaoTemplates(templates: CotacaoMessageTemplates): string | null {
   for (const [style, template] of Object.entries(templates)) {
     if (!template?.trim() || template.length > 4000) return `Revise o texto de ${style}.`
@@ -90,9 +91,10 @@ function render(template: string, draft: MessageDraft, prices?: Prices, context:
   const variables: Record<string, string> = {
     saudacao: draft.cliente.trim() ? `Olá, ${draft.cliente.trim()}!` : 'Olá!',
     cliente: draft.cliente.trim() || 'cliente',
-    origem: draft.origem || 'origem a confirmar',
-    destino: draft.destino || 'destino a confirmar',
+    origem: [draft.origem, ...(draft.origensAdicionais ?? [])].filter(Boolean).join(' → ') || 'origem a confirmar',
+    destino: [draft.destino, ...(draft.destinosAdicionais ?? [])].filter(Boolean).join(' → ') || 'destino a confirmar',
     peso: draft.pesoKg ? `${draft.pesoKg.toLocaleString('pt-BR')} kg` : 'a confirmar',
+    observacoes: draft.observacoes?.trim() || '',
     valorNota: draft.valorNota == null ? 'a confirmar' : brl(draft.valorNota),
     volumes: draft.quantidade == null ? 'Volumes a confirmar' : `${draft.quantidade.toLocaleString('pt-BR')} volumes`,
     distanciaKm: context.distanceKm && context.distanceKm > 0 ? `${context.distanceKm.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km` : 'distância a confirmar',
@@ -102,14 +104,24 @@ function render(template: string, draft: MessageDraft, prices?: Prices, context:
     precoFracionado: prices?.fracionado == null ? '' : brl(prices.fracionado),
     precoDedicado: prices?.dedicado == null ? '' : brl(prices.dedicado),
   }
-  return template.replace(/\{([^{}]+)\}/g, (_, key: string) => variables[key] ?? '')
+  const formatted = draft.observacoes?.trim()
+    ? template
+    : template
+      .replace(/^[ \t]*(?:📝[ \t]*)?Observações:[ \t]*\{observacoes\}[ \t]*(?:\r?\n)?/gmi, '')
+      .replace(/[;,]?[ \t]*observações:[ \t]*\{observacoes\}[.,;]?[ \t]*/gi, ' ')
+  return formatted.replace(/\{([^{}]+)\}/g, (_, key: string) => variables[key] ?? '')
 }
 
 export function cotacaoMessage(draft: MessageDraft, style: CotacaoMessageStyle, prices?: Prices, templates = defaultCotacaoTemplates, context: MessageContext = {}): string {
   if ((style === 'Apresentação de valores' && (prices?.fracionado == null || prices?.dedicado == null))
     || (style === 'Proposta fracionado' && prices?.fracionado == null)
     || (style === 'Proposta dedicado' && prices?.dedicado == null)) return ''
-  return render(templates[style] || defaultCotacaoTemplates[style], draft, prices, context)
+  const template = templates[style] || defaultCotacaoTemplates[style]
+  const message = render(template, draft, prices, context)
+  if (style.startsWith('Proposta ') && draft.observacoes?.trim() && !template.includes('{observacoes}')) {
+    return `${message}\n\n📝 Observações: ${draft.observacoes.trim()}`
+  }
+  return message
 }
 
 export function cotacaoAd(draft: MessageDraft, templates = defaultCotacaoTemplates): string {

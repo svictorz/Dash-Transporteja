@@ -90,7 +90,15 @@ export async function osrmDrivingRoute(
   lat2: number,
   includeGeometry = false
 ): Promise<OsrmRouteResult | null> {
-  const path = `${lon1},${lat1};${lon2},${lat2}`
+  return osrmDrivingRouteThrough([{ lon: lon1, lat: lat1 }, { lon: lon2, lat: lat2 }], includeGeometry)
+}
+
+export async function osrmDrivingRouteThrough(
+  stops: Array<{ lon: number; lat: number }>,
+  includeGeometry = false
+): Promise<OsrmRouteResult | null> {
+  if (stops.length < 2 || stops.some(stop => !Number.isFinite(stop.lon) || !Number.isFinite(stop.lat))) return null
+  const path = stops.map(stop => `${stop.lon},${stop.lat}`).join(';')
   const url = `${OSRM_BASE}/${path}?overview=${includeGeometry ? 'full' : 'false'}&alternatives=false&steps=false${includeGeometry ? '&geometries=geojson' : ''}`
 
   const res = await fetch(url, {
